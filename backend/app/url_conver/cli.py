@@ -7,7 +7,7 @@ Giao tiếp trực tiếp giữa Golang API Gateway và Python yt-dlp Engine qua
 import sys
 import json
 import argparse
-from app.url_conver.metadata import get_media_info
+from app.url_conver.metadata import get_media_info_with_error
 from app.url_conver.downloader import run_download_task
 
 
@@ -29,7 +29,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "info":
-        info, err = get_media_info(args.url)
+        info, err = get_media_info_with_error(args.url)
         if info:
             print(f"FINAL_RESULT:{json.dumps({'success': True, 'data': info})}", flush=True)
         else:

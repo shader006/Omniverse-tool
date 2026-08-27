@@ -47,11 +47,8 @@ def parse_friendly_error(err_str: str, url: str) -> str:
     return clean_err if clean_err else "Không thể trích xuất thông tin từ liên kết này."
 
 
-def get_media_info(url: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """
-    Trích xuất nhanh Metadata của Video / Audio từ URL sử dụng yt-dlp.
-    Trả về Tuple: (data_dict, error_message)
-    """
+def get_media_info_with_error(url: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    """Trích xuất Metadata kèm thông báo lỗi chi tiết"""
     cleaned_url = clean_url_key(url)
     try:
         with yt_dlp.YoutubeDL(FAST_INFO_OPTS) as ydl:
@@ -59,7 +56,6 @@ def get_media_info(url: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
             if not info:
                 return None, "Không tìm thấy dữ liệu video cho liên kết này."
 
-            # Xử lý trường hợp playlist / entries
             if 'entries' in info and info['entries']:
                 info = info['entries'][0]
 
@@ -91,3 +87,9 @@ def get_media_info(url: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     except Exception as e:
         err_msg = parse_friendly_error(str(e), url)
         return None, err_msg
+
+
+def get_media_info(url: str) -> Optional[Dict[str, Any]]:
+    """Hàm tương thích chuẩn trả về Dict hoặc None"""
+    data, _ = get_media_info_with_error(url)
+    return data
