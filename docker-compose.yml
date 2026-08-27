@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mediaflow_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./downloads:/app/downloads
+      - ./frontend:/frontend:ro
+      - ./tests:/app/tests:ro
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PYTHONUNBUFFERED=1
+
+  pingora:
+    build:
+      context: ./pingora
+      dockerfile: Dockerfile
+    container_name: mediaflow_pingora
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      - UPSTREAM_ADDR=app:8000
+      - RUST_LOG=info
+    depends_on:
+      - app
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: mediaflow_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - pingora

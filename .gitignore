@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Go
+backend/server
+*.exe
+*.exe~
+*.dll
+*.dylib
+*.out
+
+# Rust / Pingora
+target/
+pingora/target/
+**/*.rs.bk
+
+# Downloaded Media & Temporary files
+downloads/
+/downloads/
+*.mp3
+*.mp4
+*.m4a
+*.webm
+*.part
+*.ytdl
+*.aria2
+*.temp
+*.tmp
+*.log
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# IDE & System
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.directory
+*.swp
+*.swo
+*~

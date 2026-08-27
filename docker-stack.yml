@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  app:
+    image: omniversetool-app:latest
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 1024M
+      update_config:
+        parallelism: 1
+        delay: 5s
+        order: start-first
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+      - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
+      - ${WORKSPACE_DIR:-.}/tests:/app/tests:ro
+    networks:
+      - omniverse_net
+
+  pingora:
+    image: omniversetool-pingora:latest
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+    environment:
+      - UPSTREAM_ADDR=app:8000
+      - RUST_LOG=info
+    networks:
+      - omniverse_net
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    networks:
+      - omniverse_net
+
+  autoscaler:
+    image: omniversetool-autoscaler:latest
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+    environment:
+      - SWARM_SERVICE_NAME=omniverse_app
+      - MIN_REPLICAS=1
+      - MAX_REPLICAS=5
+      - CPU_SCALE_UP=65.0
+      - CPU_SCALE_DOWN=20.0
+      - CHECK_INTERVAL=8
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - omniverse_net
+
+networks:
+  omniverse_net:
+    driver: overlay
+    attachable: true

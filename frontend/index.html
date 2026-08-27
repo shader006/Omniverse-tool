@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MediaFlow - Convert & Download MP3 / MP4 Tốc Độ Cao</title>
+  <meta name="description" content="Chuyển đổi và tải video, âm thanh từ YouTube, TikTok, Facebook sang MP3/MP4 với đầy đủ các mức chất lượng 320kbps, 1080p.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <header class="navbar">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+      </div>
+      <span class="logo-text">Media<span>Flow</span></span>
+    </div>
+    <div class="nav-badge">v2.0 Turbo Engine</div>
+  </header>
+
+  <main class="container">
+    <!-- Hero Section -->
+    <section class="hero-section">
+      <h1 class="hero-title">Trình Chuyển Đổi <span class="gradient-text">MP3 & MP4</span> Trực Tuyến</h1>
+      <p class="hero-subtitle">Dán liên kết YouTube, TikTok, Facebook để bóc tách thông tin và tải về với chất lượng tùy chọn.</p>
+    </section>
+
+    <!-- Search / Convert Bar Card -->
+    <div class="card search-card">
+      <form id="convert-form" class="convert-input-wrapper">
+        <div class="input-field">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+          <input 
+            type="url" 
+            id="url-input" 
+            placeholder="Dán đường dẫn video hoặc audio vào đây..." 
+            required 
+            autocomplete="off"
+          />
+          <button type="button" id="paste-btn" class="btn-paste" title="Dán từ Clipboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Dán</span>
+          </button>
+        </div>
+        <button type="submit" id="convert-btn" class="btn-convert">
+          <span class="btn-text">Convert</span>
+          <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+            <polyline points="12 5 19 12 12 19"></polyline>
+          </svg>
+        </button>
+      </form>
+
+      <!-- Loading State for Info extraction -->
+      <div id="info-loading" class="info-loading hidden">
+        <div class="spinner"></div>
+        <span>Đang phân tích thông tin video & danh sách định dạng...</span>
+      </div>
+
+      <!-- Error Box -->
+      <div id="error-box" class="error-box hidden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span id="error-message">Đã có lỗi xảy ra. Vui lòng kiểm tra lại URL.</span>
+      </div>
+    </div>
+
+    <!-- Media Converter Card (Layout matching reference images) -->
+    <div id="media-result-card" class="card media-result-card hidden">
+      <!-- Media Header Info -->
+      <div class="media-header">
+        <div class="thumbnail-container">
+          <img id="media-thumb" src="" alt="Thumbnail">
+          <span id="media-duration" class="duration-tag">00:00</span>
+        </div>
+        <h2 id="media-title" class="media-title">Tiêu đề video</h2>
+      </div>
+
+      <!-- Format Switcher Tabs (MP3 / MP4) -->
+      <div class="format-tabs-wrapper">
+        <div class="format-tabs">
+          <button type="button" class="tab-btn active" data-tab="mp3">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+            MP3
+          </button>
+          <button type="button" class="tab-btn" data-tab="mp4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+            MP4
+          </button>
+        </div>
+      </div>
+
+      <!-- Global Active Progress Bar (When downloading) -->
+      <div id="active-progress-banner" class="active-progress-banner hidden">
+        <div class="progress-info-row">
+          <span id="active-status-text">Đang tải stream...</span>
+          <span id="active-percent-text">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="active-progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Quality Options Table -->
+      <div class="table-responsive">
+        <table class="quality-table">
+          <thead>
+            <tr>
+              <th class="col-quality">QUALITY</th>
+              <th class="col-format">FORMAT</th>
+              <th class="col-action">ACTION</th>
+            </tr>
+          </thead>
+          <tbody id="quality-table-body">
+            <!-- Rows dynamically generated based on active tab (MP3 / MP4) -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Supported Platforms Grid -->
+    <section class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3>Tốc Độ Tối Đa</h3>
+        <p>Tối ưu hóa đa luồng và trích xuất trực tiếp stream gốc chất lượng cao.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🎵</div>
+        <h3>Âm Thanh 320kbps</h3>
+        <p>Mã hóa âm thanh chuẩn Studio qua FFmpeg giữ nguyên chất lượng âm nhạc.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <h3>Tải Về Trực Tiếp</h3>
+        <p>Tự động xuất và kích hoạt tải file về máy người dùng sau khi convert xong.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>© 2026 MediaFlow Engine. Tối ưu cho Máy chủ Debian & Docker.</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
