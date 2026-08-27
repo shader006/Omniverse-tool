@@ -106,17 +106,9 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	// 2. Chạy Python url_conver worker qua CLI
 	cmd := exec.Command("python3", "-m", "app.url_conver.cli", "info", "--url", req.URL)
 	cmd.Dir = "/app"
-	out, err := cmd.Output()
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"detail":  fmt.Sprintf("Không thể lấy thông tin video: %v", err),
-		})
-		return
-	}
-
+	out, _ := cmd.CombinedOutput()
 	outStr := string(out)
+
 	var jsonStr string
 	if strings.Contains(outStr, "FINAL_RESULT:") {
 		jsonStr = strings.TrimSpace(outStr[strings.Index(outStr, "FINAL_RESULT:")+len("FINAL_RESULT:"):])
@@ -124,14 +116,27 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		jsonStr = strings.TrimSpace(outStr)
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
-		http.Error(w, `{"success":false,"detail":"Lỗi giải mã metadata"}`, http.StatusInternalServerError)
+	var result struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data,omitempty"`
+		Error   string                 `json:"error,omitempty"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil || !result.Success {
+		w.WriteHeader(http.StatusBadRequest)
+		errMsg := result.Error
+		if errMsg == "" {
+			errMsg = "Không thể trích xuất thông tin từ liên kết này. Vui lòng kiểm tra lại URL."
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  errMsg,
+		})
 		return
 	}
 
-	if data, ok := result["data"].(map[string]interface{}); ok {
-		s.cache.SetMetadata(cacheKey, data, DefaultCacheTTL)
+	if result.Data != nil {
+		s.cache.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -300,7 +305,7 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 
 	errText := res.Error
 	if errText == "" {
-		errText = "Lỗi khi xử lý tải file"
+		errText = "Lỗi khi xử lý tải file hoặc liên kết không khả dụng."
 	}
 	s.failJob(jobID, errText)
 }

@@ -29,11 +29,12 @@ def main():
     args = parser.parse_args()
 
     if args.command == "info":
-        info = get_media_info(args.url)
+        info, err = get_media_info(args.url)
         if info:
             print(f"FINAL_RESULT:{json.dumps({'success': True, 'data': info})}", flush=True)
         else:
-            print(f"FINAL_RESULT:{json.dumps({'success': False, 'error': 'Không thể trích xuất metadata'})}", flush=True)
+            err_msg = err if err else "Không thể trích xuất metadata từ liên kết này."
+            print(f"FINAL_RESULT:{json.dumps({'success': False, 'error': err_msg})}", flush=True)
             sys.exit(1)
 
     elif args.command == "download":
@@ -53,7 +54,7 @@ def main():
         if filename:
             print(f"FINAL_RESULT:{json.dumps({'success': True, 'filename': filename})}", flush=True)
         else:
-            print(f"FINAL_RESULT:{json.dumps({'success': False, 'error': 'Lỗi khi tải file'})}", flush=True)
+            print(f"FINAL_RESULT:{json.dumps({'success': False, 'error': 'Lỗi khi tải file hoặc định dạng không khả dụng.'})}", flush=True)
             sys.exit(1)
 
 
