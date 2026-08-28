@@ -414,13 +414,24 @@ func main() {
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)
 
+	// Serve static assets under /static/
+	mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
+		relPath := strings.TrimPrefix(r.URL.Path, "/static/")
+		filePath := filepath.Join(frontendDir, relPath)
+		if _, err := os.Stat(filePath); err == nil {
+			http.ServeFile(w, r, filePath)
+			return
+		}
+		http.NotFound(w, r)
+	})
+
 	// Serve Frontend Web UI
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
 			http.ServeFile(w, r, filepath.Join(frontendDir, "index.html"))
 			return
 		}
-		// Serve static assets
+		// Direct asset check
 		filePath := filepath.Join(frontendDir, r.URL.Path)
 		if _, err := os.Stat(filePath); err == nil {
 			http.ServeFile(w, r, filePath)
