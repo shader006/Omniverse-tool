@@ -8,7 +8,7 @@ import sys
 import json
 import argparse
 import traceback
-from app.transcribe.engine import get_transcribe_engine
+from app.transcribe.transcriber import get_transcribe_engine
 
 
 def main():

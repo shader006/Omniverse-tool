@@ -7,6 +7,6 @@ except ImportError:
     pass
 
 try:
-    from app.transcribe.engine import TranscribeEngine, get_transcribe_engine
+    from app.transcribe.transcriber import TranscribeEngine, get_transcribe_engine
 except ImportError:
     pass

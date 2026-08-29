@@ -14,7 +14,8 @@ import unittest
 # Thêm đường dẫn backend vào sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend")))
 
-from app.transcribe.engine import TranscribeEngine, format_timestamp_srt, format_timestamp_vtt
+from app.transcribe.transcriber import TranscribeEngine
+from app.transcribe.formatter import format_timestamp_srt, format_timestamp_vtt
 
 
 def generate_synthetic_audio(file_path: str, duration_sec: float = 3.0, freq: float = 440.0, sample_rate: int = 16000):
