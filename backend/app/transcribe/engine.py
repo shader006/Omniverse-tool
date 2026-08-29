@@ -87,8 +87,15 @@ class TranscribeEngine:
             language=lang,
             task=task,
             beam_size=beam_size,
+            condition_on_previous_text=False,
             vad_filter=vad_filter,
-            vad_parameters=dict(min_silence_duration_ms=500),
+            vad_parameters=dict(
+                threshold=0.35,
+                min_speech_duration_ms=250,
+                max_speech_duration_s=float("inf"),
+                min_silence_duration_ms=1500,
+                speech_pad_ms=400,
+            ) if vad_filter else None,
         )
 
         segments: List[Dict[str, Any]] = []
