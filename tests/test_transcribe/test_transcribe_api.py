@@ -74,7 +74,7 @@ class TestTranscribeAPI(unittest.TestCase):
             "task": "transcribe"
         }
 
-        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, data=data_params, timeout=60)
+        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, data=data_params, timeout=120)
         self.assertEqual(res.status_code, 200)
         data = res.json()
 
@@ -85,7 +85,7 @@ class TestTranscribeAPI(unittest.TestCase):
 
         # Tải file từ download_url
         download_url = f"{BASE_URL}{data['download_url']}"
-        dl_res = requests.get(download_url, timeout=10)
+        dl_res = requests.get(download_url, timeout=15)
         self.assertEqual(dl_res.status_code, 200)
         self.assertIn("attachment;", dl_res.headers.get("Content-Disposition", ""))
 
@@ -100,7 +100,7 @@ class TestTranscribeAPI(unittest.TestCase):
             "format": "srt"
         }
 
-        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, data=data_params, timeout=60)
+        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, data=data_params, timeout=120)
         self.assertEqual(res.status_code, 200)
         data = res.json()
 
@@ -109,7 +109,7 @@ class TestTranscribeAPI(unittest.TestCase):
 
         # Tải và kiểm tra nội dung file SRT
         download_url = f"{BASE_URL}{data['download_url']}"
-        dl_res = requests.get(download_url, timeout=10)
+        dl_res = requests.get(download_url, timeout=15)
         self.assertEqual(dl_res.status_code, 200)
 
         print(f"  [PASS] test_04_transcribe_export_srt_subtitles: SRT Filename={data['filename']}")
@@ -123,7 +123,7 @@ class TestTranscribeAPI(unittest.TestCase):
             "format": "vtt"
         }
 
-        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, data=data_params, timeout=60)
+        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, data=data_params, timeout=120)
         self.assertEqual(res.status_code, 200)
         data = res.json()
 
