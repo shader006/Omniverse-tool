@@ -642,7 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const transcribeFormatSelect = document.getElementById('transcribe-format');
   const btnStartTranscribe = document.getElementById('btn-start-transcribe');
 
-  const transcribeProgressCard = document.getElementById('transcribe-progress-card');
+  const transcribeProgressCard = document.getElementById('transcribe-progress-banner') || document.getElementById('transcribe-progress-card');
   const transcribeProgressText = document.getElementById('transcribe-progress-text');
   const transcribeResultCard = document.getElementById('transcribe-result-card');
   const transcribeResultText = document.getElementById('transcribe-result-text');
