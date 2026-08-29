@@ -10,27 +10,46 @@ document.addEventListener('DOMContentLoaded', () => {
   const sectionTranscribeMode = document.getElementById('section-transcribe-mode');
 
   function switchMode(mode) {
-    // Reset all buttons
-    [modeUrlBtn, modeFileBtn, modeTranscribeBtn].forEach(btn => {
-      if (btn) btn.classList.remove('active');
+    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn];
+    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode];
+
+    allBtns.forEach(btn => {
+      if (btn) {
+        if (btn.getAttribute('data-mode') === mode) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      }
     });
-    // Hide all sections
-    [sectionUrlMode, sectionFileMode, sectionTranscribeMode].forEach(sec => {
+
+    allSecs.forEach(sec => {
       if (sec) sec.classList.add('hidden');
     });
 
-    if (mode === 'url') {
-      if (modeUrlBtn) modeUrlBtn.classList.add('active');
-      if (sectionUrlMode) sectionUrlMode.classList.remove('hidden');
-    } else if (mode === 'file') {
-      if (modeFileBtn) modeFileBtn.classList.add('active');
-      if (sectionFileMode) sectionFileMode.classList.remove('hidden');
-    } else if (mode === 'transcribe') {
-      if (modeTranscribeBtn) modeTranscribeBtn.classList.add('active');
-      if (sectionTranscribeMode) sectionTranscribeMode.classList.remove('hidden');
+    if (mode === 'url' && sectionUrlMode) {
+      sectionUrlMode.classList.remove('hidden');
+    } else if (mode === 'file' && sectionFileMode) {
+      sectionFileMode.classList.remove('hidden');
+    } else if (mode === 'transcribe' && sectionTranscribeMode) {
+      sectionTranscribeMode.classList.remove('hidden');
     }
   }
 
+  // Event delegation trên container để click vào icon svg hay text đều hoạt động 100%
+  const modeSwitcher = document.querySelector('.mode-switcher');
+  if (modeSwitcher) {
+    modeSwitcher.addEventListener('click', (e) => {
+      const btn = e.target.closest('.mode-btn');
+      if (btn) {
+        e.preventDefault();
+        const mode = btn.getAttribute('data-mode');
+        if (mode) switchMode(mode);
+      }
+    });
+  }
+
+  // Backup direct listeners
   if (modeUrlBtn) modeUrlBtn.addEventListener('click', () => switchMode('url'));
   if (modeFileBtn) modeFileBtn.addEventListener('click', () => switchMode('file'));
   if (modeTranscribeBtn) modeTranscribeBtn.addEventListener('click', () => switchMode('transcribe'));
