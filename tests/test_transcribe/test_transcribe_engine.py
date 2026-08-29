@@ -93,6 +93,27 @@ class TestTranscribeEngine(unittest.TestCase):
 
         print("  [PASS] test_02_export_formats: TXT, SRT, VTT, JSON xuất chuẩn xác")
 
+    def test_03_edge_cases_empty_and_nulls(self):
+        """Kiểm tra chống lỗi tuple/list index out of range khi dữ liệu rỗng hoặc null"""
+        empty_result = {
+            "success": True,
+            "text": "",
+            "detected_language": "vi",
+            "segments": []
+        }
+
+        # Kiểm tra xuất khi không có segments (âm thanh im lặng)
+        srt_empty = self.engine.export_content(empty_result, "srt")
+        self.assertEqual(srt_empty, "")
+
+        vtt_empty = self.engine.export_content(empty_result, "vtt")
+        self.assertTrue(vtt_empty.startswith("WEBVTT"))
+
+        txt_empty = self.engine.export_content(empty_result, "txt")
+        self.assertEqual(txt_empty, "")
+
+        print("  [PASS] test_03_edge_cases_empty_and_nulls: Xử lý an toàn dữ liệu rỗng, không crash")
+
 
 if __name__ == "__main__":
     unittest.main()

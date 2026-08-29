@@ -109,12 +109,16 @@ class TranscribeEngine:
         duration_processed = round(time.time() - start_time, 2)
         full_text = " ".join(full_text_parts)
 
+        detected_lang = getattr(info, "language", None) or "vi"
+        lang_prob = getattr(info, "language_probability", 0.0) or 0.0
+        audio_dur = getattr(info, "duration", 0.0) or 0.0
+
         return {
             "success": True,
             "text": full_text,
-            "detected_language": info.language,
-            "language_probability": round(info.language_probability, 3),
-            "audio_duration": round(info.duration, 2),
+            "detected_language": detected_lang,
+            "language_probability": round(float(lang_prob), 3),
+            "audio_duration": round(float(audio_dur), 2),
             "processing_time": duration_processed,
             "segments": segments,
         }

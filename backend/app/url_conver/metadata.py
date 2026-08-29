@@ -56,20 +56,22 @@ def get_media_info_with_error(url: str) -> Tuple[Optional[Dict[str, Any]], Optio
             if not info:
                 return None, "Không tìm thấy dữ liệu video cho liên kết này."
 
-            if 'entries' in info and info['entries']:
+            if isinstance(info.get('entries'), (list, tuple)) and len(info['entries']) > 0:
                 info = info['entries'][0]
 
-            duration_secs = info.get('duration', 0)
-            if duration_secs:
+            duration_secs = info.get('duration', 0) or 0
+            try:
                 minutes = int(duration_secs) // 60
                 seconds = int(duration_secs) % 60
                 duration_str = f"{minutes}:{seconds:02d}"
-            else:
+            except Exception:
                 duration_str = "N/A"
 
             thumbnail = info.get('thumbnail') or ""
-            if not thumbnail and info.get('thumbnails'):
-                thumbnail = info['thumbnails'][-1].get('url', '')
+            if not thumbnail and isinstance(info.get('thumbnails'), (list, tuple)) and len(info['thumbnails']) > 0:
+                last_thumb = info['thumbnails'][-1]
+                if isinstance(last_thumb, dict):
+                    thumbnail = last_thumb.get('url', '')
 
             data = {
                 "title": info.get('title', 'Untitled Media'),
