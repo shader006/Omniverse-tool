@@ -69,7 +69,7 @@ class TranscribeEngine:
         language: Optional[str] = None,
         task: str = "transcribe",
         beam_size: int = 5,
-        vad_filter: bool = True,
+        vad_filter: bool = False,
     ) -> Dict[str, Any]:
         """
         Transcribe an audio or video file to text segments.
@@ -89,13 +89,9 @@ class TranscribeEngine:
             beam_size=beam_size,
             condition_on_previous_text=False,
             vad_filter=vad_filter,
-            vad_parameters=dict(
-                threshold=0.35,
-                min_speech_duration_ms=250,
-                max_speech_duration_s=float("inf"),
-                min_silence_duration_ms=1500,
-                speech_pad_ms=400,
-            ) if vad_filter else None,
+            no_speech_threshold=0.85,
+            compression_ratio_threshold=3.5,
+            log_prob_threshold=-1.5,
         )
 
         segments: List[Dict[str, Any]] = []
