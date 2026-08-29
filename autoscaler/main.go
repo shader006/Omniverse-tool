@@ -7,17 +7,22 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Cấu trúc dữ liệu Docker API
+// ─────────────────────────────────────────────────────────────
+// CẤU TRÚC DỮ LIỆU DOCKER SWARM & METRICS
+// ─────────────────────────────────────────────────────────────
+
 type ServiceSpec struct {
 	Name string `json:"Name"`
 	Mode struct {
@@ -74,7 +79,26 @@ type ServiceScaleConfig struct {
 	IntervalSec  int
 }
 
-// Client HTTP kết nối trực tiếp qua UNIX Socket của Docker
+type ScalingDecision int
+
+const (
+	DecisionNone ScalingDecision = iota
+	DecisionScaleUp
+	DecisionScaleDown
+)
+
+type CPUMetrics struct {
+	AvgCPU       float64
+	MaxCPU       float64
+	P95CPU       float64
+	EffectiveCPU float64 // Metric tổng hợp bảo vệ điểm nghẽn (bottleneck protection)
+	ValidSamples int
+}
+
+// ─────────────────────────────────────────────────────────────
+// TIỆN ÍCH MÔI TRƯỜNG VÀ HTTP CLIENT
+// ─────────────────────────────────────────────────────────────
+
 func newDockerUnixClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
@@ -111,26 +135,130 @@ func getEnvInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
-func calculateCPUPercent(stats *DockerCPUStats) float64 {
-	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage) - float64(stats.PreCPUStats.CPUUsage.TotalUsage)
-	systemDelta := float64(stats.CPUStats.SystemCPUUsage) - float64(stats.PreCPUStats.SystemCPUUsage)
+func getEnvBool(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		low := strings.ToLower(strings.TrimSpace(val))
+		return low == "true" || low == "1" || low == "yes"
+	}
+	return defaultVal
+}
+
+// ─────────────────────────────────────────────────────────────
+// 1 & 2. TÍNH TOÁN CPU & XỬ LÝ EDGE CASE ZERO SAMPLE
+// ─────────────────────────────────────────────────────────────
+
+// calculateCPUPercent tính toán % CPU từ stats Docker và lọc bỏ sample không hợp lệ (first-sample zero)
+func calculateCPUPercent(stats *DockerCPUStats) (float64, bool) {
+	if stats == nil {
+		return 0.0, false
+	}
+
+	// Kiểm tra tính hợp lệ của sample trước đó (tránh lỗi stats đầu tiên khi precpu = 0)
+	if stats.PreCPUStats.SystemCPUUsage == 0 || stats.PreCPUStats.CPUUsage.TotalUsage == 0 {
+		return 0.0, false
+	}
+
+	// Kiểm tra system delta phải tăng
+	if stats.CPUStats.SystemCPUUsage <= stats.PreCPUStats.SystemCPUUsage {
+		return 0.0, false
+	}
+
+	// Kiểm tra cpu usage không được giảm
+	if stats.CPUStats.CPUUsage.TotalUsage < stats.PreCPUStats.CPUUsage.TotalUsage {
+		return 0.0, false
+	}
+
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(stats.CPUStats.SystemCPUUsage - stats.PreCPUStats.SystemCPUUsage)
+
 	onlineCPUs := float64(stats.CPUStats.OnlineCPUs)
 	if onlineCPUs == 0 {
 		onlineCPUs = 1
 	}
 
-	if systemDelta > 0 && cpuDelta > 0 {
-		return (cpuDelta / systemDelta) * onlineCPUs * 100.0
+	percent := (cpuDelta / systemDelta) * onlineCPUs * 100.0
+	if percent < 0 {
+		percent = 0
 	}
-	return 0.0
+
+	return percent, true
 }
+
+// calculateCPUMetrics tính toán Avg, Max, P95 và Effective CPU
+func calculateCPUMetrics(samples []float64) CPUMetrics {
+	n := len(samples)
+	if n == 0 {
+		return CPUMetrics{}
+	}
+
+	var sum, maxVal float64
+	sorted := make([]float64, n)
+	copy(sorted, samples)
+	sort.Float64s(sorted)
+
+	for _, v := range sorted {
+		sum += v
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+
+	avg := sum / float64(n)
+
+	// Tính P95
+	p95Idx := int(math.Ceil(0.95*float64(n))) - 1
+	if p95Idx < 0 {
+		p95Idx = 0
+	}
+	if p95Idx >= n {
+		p95Idx = n - 1
+	}
+	p95 := sorted[p95Idx]
+
+	// Effective CPU: Kết hợp Avg và Max để không bỏ sót tình huống 1 container bị nghẽn đơn lẻ
+	// (Ví dụ: 1 container 90%, 2 container 10% ➔ Effective = max(36.7%, 90%*0.95) = 85.5% ➔ Kích hoạt Scale Up ngay!)
+	effective := math.Max(avg, maxVal*0.95)
+
+	return CPUMetrics{
+		AvgCPU:       avg,
+		MaxCPU:       maxVal,
+		P95CPU:       p95,
+		EffectiveCPU: effective,
+		ValidSamples: n,
+	}
+}
+
+// evaluateScalingDecision quyết định hành động Scale dựa trên metrics và ngưỡng cấu hình
+func evaluateScalingDecision(metrics CPUMetrics, cfg ServiceScaleConfig, currentReplicas uint64) ScalingDecision {
+	if metrics.ValidSamples == 0 {
+		return DecisionNone
+	}
+
+	// 1. Điều kiện Scale Up:
+	// Nếu EffectiveCPU (hoặc MaxCPU của bất kỳ container nào) vượt ngưỡng ScaleUp
+	if (metrics.EffectiveCPU >= cfg.CPUScaleUp || metrics.MaxCPU >= cfg.CPUScaleUp) && currentReplicas < cfg.MaxReplicas {
+		return DecisionScaleUp
+	}
+
+	// 2. Điều kiện Scale Down:
+	// CHỈ Scale Down khi CẢ MaxCPU và AvgCPU đều nằm dưới ngưỡng an toàn (không có container nào còn bận)
+	if metrics.MaxCPU <= cfg.CPUScaleDown && metrics.AvgCPU <= cfg.CPUScaleDown && currentReplicas > cfg.MinReplicas {
+		return DecisionScaleDown
+	}
+
+	return DecisionNone
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4. DEDUPLICATION CẤU HÌNH SERVICES (CHỐNG RACE CONDITION)
+// ─────────────────────────────────────────────────────────────
 
 func parseServicesConfig() []ServiceScaleConfig {
 	raw := getEnv("SERVICES_CONFIG", "")
 	var configs []ServiceScaleConfig
+	seenServices := make(map[string]bool)
 
 	if raw != "" {
-		// Format: "name:min:max:up:down:interval,name2:min:max:up:down:interval"
 		items := strings.Split(raw, ",")
 		for _, item := range items {
 			item = strings.TrimSpace(item)
@@ -140,6 +268,16 @@ func parseServicesConfig() []ServiceScaleConfig {
 			parts := strings.Split(item, ":")
 			if len(parts) >= 1 {
 				name := strings.TrimSpace(parts[0])
+				if name == "" {
+					continue
+				}
+
+				// Chống duplicate: Nếu service đã có controller thì bỏ qua
+				if seenServices[name] {
+					log.Printf("⚠️ [AUTOSCALER CONFIG] Bỏ qua cấu hình trùng lặp cho Service '%s'", name)
+					continue
+				}
+
 				minR := uint64(1)
 				maxR := uint64(5)
 				up := 65.0
@@ -172,6 +310,7 @@ func parseServicesConfig() []ServiceScaleConfig {
 					}
 				}
 
+				seenServices[name] = true
 				configs = append(configs, ServiceScaleConfig{
 					ServiceName:  name,
 					MinReplicas:  minR,
@@ -186,8 +325,9 @@ func parseServicesConfig() []ServiceScaleConfig {
 
 	// Fallback nếu không truyền SERVICES_CONFIG
 	if len(configs) == 0 {
+		defaultName := getEnv("SWARM_SERVICE_NAME", "omniverse_app")
 		configs = append(configs, ServiceScaleConfig{
-			ServiceName:  getEnv("SWARM_SERVICE_NAME", "omniverse_app"),
+			ServiceName:  defaultName,
 			MinReplicas:  uint64(getEnvInt("MIN_REPLICAS", 1)),
 			MaxReplicas:  uint64(getEnvInt("MAX_REPLICAS", 5)),
 			CPUScaleUp:   getEnvFloat("CPU_SCALE_UP", 65.0),
@@ -199,6 +339,10 @@ func parseServicesConfig() []ServiceScaleConfig {
 	return configs
 }
 
+// ─────────────────────────────────────────────────────────────
+// 3. MONITOR LOOP VỚI COOLDOWN TIMESTAMP (KHÔNG TIME.SLEEP GÂY BLOCK)
+// ─────────────────────────────────────────────────────────────
+
 func monitorAndScaleService(client *http.Client, cfg ServiceScaleConfig) {
 	log.Printf("🚀 [AUTOSCALER] Bắt đầu theo dõi Service: '%s' | Min=%d | Max=%d | ScaleUp>%.1f%% | ScaleDown<%.1f%% | Chu kỳ=%ds",
 		cfg.ServiceName, cfg.MinReplicas, cfg.MaxReplicas, cfg.CPUScaleUp, cfg.CPUScaleDown, cfg.IntervalSec)
@@ -206,8 +350,12 @@ func monitorAndScaleService(client *http.Client, cfg ServiceScaleConfig) {
 	ticker := time.NewTicker(time.Duration(cfg.IntervalSec) * time.Second)
 	defer ticker.Stop()
 
-	highCPUCount := 0
-	lowCPUCount := 0
+	highCPUStreak := 0
+	lowCPUStreak := 0
+
+	var lastScaleTime time.Time
+	const scaleUpCooldown = 20 * time.Second
+	const scaleDownCooldown = 40 * time.Second
 
 	for range ticker.C {
 		// 1. Lấy danh sách Services từ Docker
@@ -240,7 +388,7 @@ func monitorAndScaleService(client *http.Client, cfg ServiceScaleConfig) {
 
 		currentReplicas := target.Spec.Mode.Replicated.Replicas
 
-		// 2. Lấy danh sách task đang chạy của service này
+		// 2. Lấy danh sách task đang chạy của service
 		taskURL := fmt.Sprintf("http://localhost/v1.44/tasks?filters=%s",
 			url.QueryEscape(fmt.Sprintf(`{"service":["%s"],"desired-state":["running"]}`, target.ID)))
 
@@ -254,7 +402,7 @@ func monitorAndScaleService(client *http.Client, cfg ServiceScaleConfig) {
 		var tasks []SwarmTask
 		_ = json.Unmarshal(taskBody, &tasks)
 
-		var cpuPercentages []float64
+		var cpuSamples []float64
 		for _, t := range tasks {
 			cid := t.Status.ContainerStatus.ContainerID
 			if cid == "" {
@@ -271,63 +419,77 @@ func monitorAndScaleService(client *http.Client, cfg ServiceScaleConfig) {
 
 			var cStats DockerCPUStats
 			if json.Unmarshal(sBody, &cStats) == nil {
-				cpuP := calculateCPUPercent(&cStats)
-				cpuPercentages = append(cpuPercentages, cpuP)
+				if cpuP, valid := calculateCPUPercent(&cStats); valid {
+					cpuSamples = append(cpuSamples, cpuP)
+				}
 			}
 		}
 
-		var avgCPU float64
-		if len(cpuPercentages) > 0 {
-			var total float64
-			for _, v := range cpuPercentages {
-				total += v
-			}
-			avgCPU = total / float64(len(cpuPercentages))
-		}
+		metrics := calculateCPUMetrics(cpuSamples)
+		log.Printf("📊 [%s] Replicas: %d/%d | Containers: %d | Avg: %.1f%% | Max: %.1f%% | P95: %.1f%% | Effective: %.1f%%",
+			cfg.ServiceName, currentReplicas, cfg.MaxReplicas, metrics.ValidSamples, metrics.AvgCPU, metrics.MaxCPU, metrics.P95CPU, metrics.EffectiveCPU)
 
-		log.Printf("📊 [%s] Replicas: %d/%d | Containers: %d | Avg CPU: %.1f%%",
-			cfg.ServiceName, currentReplicas, cfg.MaxReplicas, len(cpuPercentages), avgCPU)
+		decision := evaluateScalingDecision(metrics, cfg, currentReplicas)
 
-		// 3. Ra quyết định Scale
-		if avgCPU >= cfg.CPUScaleUp {
-			highCPUCount++
-			lowCPUCount = 0
-			if highCPUCount >= 2 && currentReplicas < cfg.MaxReplicas {
+		// 3. Ra quyết định Scale với Timestamp Cooldown (Non-blocking)
+		now := time.Now()
+		switch decision {
+		case DecisionScaleUp:
+			highCPUStreak++
+			lowCPUStreak = 0
+
+			if highCPUStreak >= 2 {
+				if now.Sub(lastScaleTime) < scaleUpCooldown {
+					log.Printf("⏳ [%s SCALE UP COOLDOWN] Đang trong thời gian cooldown sau lần scale trước (còn %v)",
+						cfg.ServiceName, scaleUpCooldown-now.Sub(lastScaleTime))
+					continue
+				}
+
 				newReplicas := currentReplicas + 1
 				if newReplicas > cfg.MaxReplicas {
 					newReplicas = cfg.MaxReplicas
 				}
-				log.Printf("🚀 [%s SCALE UP] CPU cao (%.1f%% >= %.1f%%) ➔ Tăng từ %d ➔ %d Replicas!",
-					cfg.ServiceName, avgCPU, cfg.CPUScaleUp, currentReplicas, newReplicas)
+
+				log.Printf("🚀 [%s SCALE UP] CPU cao (Max=%.1f%%, Avg=%.1f%% >= %.1f%%) ➔ Tăng từ %d ➔ %d Replicas!",
+					cfg.ServiceName, metrics.MaxCPU, metrics.AvgCPU, cfg.CPUScaleUp, currentReplicas, newReplicas)
 
 				scaleService(client, target, newReplicas)
-				highCPUCount = 0
-				time.Sleep(15 * time.Second)
+				lastScaleTime = time.Now()
+				highCPUStreak = 0
 			}
-		} else if avgCPU <= cfg.CPUScaleDown {
-			lowCPUCount++
-			highCPUCount = 0
-			if lowCPUCount >= 4 && currentReplicas > cfg.MinReplicas {
+
+		case DecisionScaleDown:
+			lowCPUStreak++
+			highCPUStreak = 0
+
+			if lowCPUStreak >= 4 {
+				if now.Sub(lastScaleTime) < scaleDownCooldown {
+					log.Printf("⏳ [%s SCALE DOWN COOLDOWN] Đang trong thời gian cooldown sau lần scale trước (còn %v)",
+						cfg.ServiceName, scaleDownCooldown-now.Sub(lastScaleTime))
+					continue
+				}
+
 				newReplicas := currentReplicas - 1
 				if newReplicas < cfg.MinReplicas {
 					newReplicas = cfg.MinReplicas
 				}
-				log.Printf("📉 [%s SCALE DOWN] CPU nhàn rỗi (%.1f%% <= %.1f%%) ➔ Giảm từ %d ➔ %d Replicas.",
-					cfg.ServiceName, avgCPU, cfg.CPUScaleDown, currentReplicas, newReplicas)
+
+				log.Printf("📉 [%s SCALE DOWN] CPU nhàn rỗi (Max=%.1f%% <= %.1f%%) ➔ Giảm từ %d ➔ %d Replicas.",
+					cfg.ServiceName, metrics.MaxCPU, cfg.CPUScaleDown, currentReplicas, newReplicas)
 
 				scaleService(client, target, newReplicas)
-				lowCPUCount = 0
-				time.Sleep(10 * time.Second)
+				lastScaleTime = time.Now()
+				lowCPUStreak = 0
 			}
-		} else {
-			highCPUCount = 0
-			lowCPUCount = 0
+
+		default:
+			highCPUStreak = 0
+			lowCPUStreak = 0
 		}
 	}
 }
 
 func scaleService(client *http.Client, service *SwarmService, newReplicas uint64) {
-	// Truy vấn lại service mới nhất để lấy Index Version chính xác
 	inspectURL := fmt.Sprintf("http://localhost/v1.44/services/%s", service.ID)
 	resp, err := client.Get(inspectURL)
 	if err == nil && resp.StatusCode == 200 {
@@ -370,12 +532,12 @@ func scaleService(client *http.Client, service *SwarmService, newReplicas uint64
 }
 
 // ─────────────────────────────────────────────────────────────
-// DOCKER AUTO GARBAGE COLLECTOR (Dọn dẹp Container & Image cũ)
+// 5. DOCKER AUTO GARBAGE COLLECTOR (BẢO VỆ BUILD CACHE CI/CD)
 // ─────────────────────────────────────────────────────────────
+
 func startDockerAutoPruner(client *http.Client, interval time.Duration) {
 	log.Printf("🧹 [DOCKER GC] Khởi động chế độ tự động dọn dẹp (Chu kỳ: %v)...", interval)
 
-	// Chạy chu kỳ dọn dẹp
 	runPrune := func() {
 		log.Printf("🧹 [DOCKER GC] Bắt đầu quét và dọn dẹp tài nguyên Docker dư thừa...")
 		var totalFreed int64 = 0
@@ -412,28 +574,32 @@ func startDockerAutoPruner(client *http.Client, interval time.Duration) {
 			}
 		}
 
-		// 3. Dọn dẹp Build Cache
-		if resp, err := client.Post("http://localhost/v1.44/build/prune", "application/json", nil); err == nil {
-			body, _ := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			var bRes struct {
-				CachesDeleted  []string `json:"CachesDeleted"`
-				SpaceReclaimed int64    `json:"SpaceReclaimed"`
-			}
-			if json.Unmarshal(body, &bRes) == nil && len(bRes.CachesDeleted) > 0 {
-				totalFreed += bRes.SpaceReclaimed
-				log.Printf("  • Đã xóa %d build cache layers (Giải phóng %.2f MB)",
-					len(bRes.CachesDeleted), float64(bRes.SpaceReclaimed)/(1024*1024))
+		// 3. Dọn dẹp Build Cache An Toàn (Chỉ xóa nếu được bật PRUNE_BUILD_CACHE=true để tránh làm chậm CI/CD)
+		if getEnvBool("PRUNE_BUILD_CACHE", false) {
+			// Chỉ xóa build cache cũ hơn 48h (until=48h) và giữ lại 5GB dung lượng đệm
+			buildPruneURL := fmt.Sprintf("http://localhost/v1.44/build/prune?filters=%s&keep-storage=%d",
+				url.QueryEscape(`{"until":["48h"]}`), int64(5*1024*1024*1024))
+
+			if resp, err := client.Post(buildPruneURL, "application/json", nil); err == nil {
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				var bRes struct {
+					CachesDeleted  []string `json:"CachesDeleted"`
+					SpaceReclaimed int64    `json:"SpaceReclaimed"`
+				}
+				if json.Unmarshal(body, &bRes) == nil && len(bRes.CachesDeleted) > 0 {
+					totalFreed += bRes.SpaceReclaimed
+					log.Printf("  • Đã xóa %d old build cache layers (Giải phóng %.2f MB)",
+						len(bRes.CachesDeleted), float64(bRes.SpaceReclaimed)/(1024*1024))
+				}
 			}
 		}
 
 		log.Printf("✨ [DOCKER GC] Hoàn tất dọn dẹp! Tổng dung lượng giải phóng: %.2f MB", float64(totalFreed)/(1024*1024))
 	}
 
-	// Chạy lần đầu sau 10 giây khởi động
 	time.AfterFunc(10*time.Second, runPrune)
 
-	// Lặp lại theo interval
 	ticker := time.NewTicker(interval)
 	for range ticker.C {
 		runPrune()
@@ -446,7 +612,6 @@ func main() {
 
 	log.Printf("⚡ [GOLANG MULTI-SERVICE AUTOSCALER] Khởi động với %d services được quản lý.", len(configs))
 
-	// Chu kỳ Garbage Collection (Mặc định 6 giờ, có thể tùy chỉnh qua AUTO_PRUNE_INTERVAL_HOURS)
 	pruneHours := getEnvInt("AUTO_PRUNE_INTERVAL_HOURS", 6)
 	go startDockerAutoPruner(client, time.Duration(pruneHours)*time.Hour)
 
