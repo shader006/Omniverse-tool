@@ -2,25 +2,49 @@
 import os
 import sys
 import unittest
+import argparse
+
+# Thêm backend directory vào sys.path
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
 
 def main():
-    print("=" * 60)
-    print("   BẮT ĐẦU CHẠY BỘ KIỂM THỬ (TEST SUITE) - MEDIAFLOW")
-    print("=" * 60)
+    parser = argparse.ArgumentParser(description="Chạy bộ kiểm thử (Test Suite) của MediaFlow")
+    parser.add_argument("--url", action="store_true", help="Chỉ chạy các bài test liên quan đến URL to MP3/MP4")
+    parser.add_argument("--file-conver", action="store_true", help="Chỉ chạy các bài test liên quan đến File Conver (Gotenberg)")
+    args = parser.parse_args()
 
-    test_dir = os.path.dirname(os.path.abspath(__file__))
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
     loader = unittest.TestLoader()
-    suite = loader.discover(start_dir=test_dir, pattern="test_*.py")
+
+    if args.url:
+        target_dir = os.path.join(tests_dir, "test_url")
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY BỘ TEST: URL TO MP3 / MP4")
+        print("=" * 65)
+        suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
+    elif args.file_conver:
+        target_dir = os.path.join(tests_dir, "test_file_conver")
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY BỘ TEST: FILE CONVER (GOTENBERG)")
+        print("=" * 65)
+        suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
+    else:
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY TOÀN BỘ BỘ KIỂM THỬ (TEST_URL & TEST_FILE_CONVER)")
+        print("=" * 65)
+        suite = loader.discover(start_dir=tests_dir, pattern="test_*.py")
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
-    print("=" * 60)
+    print("=" * 65)
     if result.wasSuccessful():
-        print("🎉 TẤT CẢ CÁC BÀI TEST ĐỀU THÀNH CÔNG (PASSED)!")
+        print(f"🎉 TẤT CẢ {result.testsRun} BÀI TEST ĐỀU THÀNH CÔNG (PASSED)!")
     else:
         print(f"❌ CÓ {len(result.failures)} BÀI TEST THẤT BẠI, {len(result.errors)} LỖI!")
-    print("=" * 60)
+    print("=" * 65)
 
     sys.exit(0 if result.wasSuccessful() else 1)
 

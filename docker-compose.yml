@@ -14,7 +14,17 @@ services:
       - ./tests:/app/tests:ro
     environment:
       - DOWNLOAD_DIR=/app/downloads
+      - GOTENBERG_URL=http://gotenberg:3000
       - PYTHONUNBUFFERED=1
+    depends_on:
+      - gotenberg
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: mediaflow_gotenberg
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
 
   pingora:
     build:

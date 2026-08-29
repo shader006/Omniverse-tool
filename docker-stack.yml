@@ -17,11 +17,24 @@ services:
         order: start-first
     environment:
       - DOWNLOAD_DIR=/app/downloads
+      - GOTENBERG_URL=http://gotenberg:3000
       - PYTHONUNBUFFERED=1
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
       - ${WORKSPACE_DIR:-.}/tests:/app/tests:ro
+    networks:
+      - omniverse_net
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 1024M
     networks:
       - omniverse_net
 
@@ -37,7 +50,7 @@ services:
         protocol: tcp
         mode: host
     environment:
-      - UPSTREAM_ADDR=app:8000
+      - UPSTREAM_ADDR=tasks.app:8000
       - RUST_LOG=info
     networks:
       - omniverse_net
