@@ -369,11 +369,86 @@ func scaleService(client *http.Client, service *SwarmService, newReplicas uint64
 	}
 }
 
+// ─────────────────────────────────────────────────────────────
+// DOCKER AUTO GARBAGE COLLECTOR (Dọn dẹp Container & Image cũ)
+// ─────────────────────────────────────────────────────────────
+func startDockerAutoPruner(client *http.Client, interval time.Duration) {
+	log.Printf("🧹 [DOCKER GC] Khởi động chế độ tự động dọn dẹp (Chu kỳ: %v)...", interval)
+
+	// Chạy chu kỳ dọn dẹp
+	runPrune := func() {
+		log.Printf("🧹 [DOCKER GC] Bắt đầu quét và dọn dẹp tài nguyên Docker dư thừa...")
+		var totalFreed int64 = 0
+
+		// 1. Dọn dẹp Stopped Containers
+		if resp, err := client.Post("http://localhost/v1.44/containers/prune", "application/json", nil); err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var cRes struct {
+				ContainersDeleted []string `json:"ContainersDeleted"`
+				SpaceReclaimed    int64    `json:"SpaceReclaimed"`
+			}
+			if json.Unmarshal(body, &cRes) == nil && len(cRes.ContainersDeleted) > 0 {
+				totalFreed += cRes.SpaceReclaimed
+				log.Printf("  • Đã xóa %d stopped containers (Giải phóng %.2f MB)",
+					len(cRes.ContainersDeleted), float64(cRes.SpaceReclaimed)/(1024*1024))
+			}
+		}
+
+		// 2. Dọn dẹp Unused Images (dangling=false để xóa cả image cũ không còn tag/container dùng)
+		imagePruneURL := fmt.Sprintf("http://localhost/v1.44/images/prune?filters=%s",
+			url.QueryEscape(`{"dangling":["false"]}`))
+		if resp, err := client.Post(imagePruneURL, "application/json", nil); err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var iRes struct {
+				ImagesDeleted  []interface{} `json:"ImagesDeleted"`
+				SpaceReclaimed int64         `json:"SpaceReclaimed"`
+			}
+			if json.Unmarshal(body, &iRes) == nil && len(iRes.ImagesDeleted) > 0 {
+				totalFreed += iRes.SpaceReclaimed
+				log.Printf("  • Đã xóa %d unused images (Giải phóng %.2f MB)",
+					len(iRes.ImagesDeleted), float64(iRes.SpaceReclaimed)/(1024*1024))
+			}
+		}
+
+		// 3. Dọn dẹp Build Cache
+		if resp, err := client.Post("http://localhost/v1.44/build/prune", "application/json", nil); err == nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			var bRes struct {
+				CachesDeleted  []string `json:"CachesDeleted"`
+				SpaceReclaimed int64    `json:"SpaceReclaimed"`
+			}
+			if json.Unmarshal(body, &bRes) == nil && len(bRes.CachesDeleted) > 0 {
+				totalFreed += bRes.SpaceReclaimed
+				log.Printf("  • Đã xóa %d build cache layers (Giải phóng %.2f MB)",
+					len(bRes.CachesDeleted), float64(bRes.SpaceReclaimed)/(1024*1024))
+			}
+		}
+
+		log.Printf("✨ [DOCKER GC] Hoàn tất dọn dẹp! Tổng dung lượng giải phóng: %.2f MB", float64(totalFreed)/(1024*1024))
+	}
+
+	// Chạy lần đầu sau 10 giây khởi động
+	time.AfterFunc(10*time.Second, runPrune)
+
+	// Lặp lại theo interval
+	ticker := time.NewTicker(interval)
+	for range ticker.C {
+		runPrune()
+	}
+}
+
 func main() {
 	configs := parseServicesConfig()
 	client := newDockerUnixClient()
 
 	log.Printf("⚡ [GOLANG MULTI-SERVICE AUTOSCALER] Khởi động với %d services được quản lý.", len(configs))
+
+	// Chu kỳ Garbage Collection (Mặc định 6 giờ, có thể tùy chỉnh qua AUTO_PRUNE_INTERVAL_HOURS)
+	pruneHours := getEnvInt("AUTO_PRUNE_INTERVAL_HOURS", 6)
+	go startDockerAutoPruner(client, time.Duration(pruneHours)*time.Hour)
 
 	var wg sync.WaitGroup
 	for _, cfg := range configs {
