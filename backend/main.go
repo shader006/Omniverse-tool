@@ -22,6 +22,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"omniverse_backend/transcribe"
 )
 
 type Job struct {
@@ -560,52 +562,21 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	s.mediaLimiter <- struct{}{}
 	defer func() { <-s.mediaLimiter }()
 
-	// Gọi Python CLI app.transcribe.cli
-	cmd := exec.Command("python3", "-m", "app.transcribe.cli",
-		"--input", tempFilePath,
-		"--language", language,
-		"--format", format,
-		"--task", task,
-		"--output-dir", s.downloadDir,
-	)
-	cmd.Dir = "/app"
-
-	outBytes, _ := cmd.CombinedOutput()
-	outStr := string(outBytes)
-
-	var jsonStr string
-	if strings.Contains(outStr, "FINAL_RESULT:") {
-		jsonStr = strings.TrimSpace(outStr[strings.Index(outStr, "FINAL_RESULT:")+len("FINAL_RESULT:"):])
-	} else {
-		lines := strings.Split(strings.TrimSpace(outStr), "\n")
-		for i := len(lines) - 1; i >= 0; i-- {
-			line := strings.TrimSpace(lines[i])
-			if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
-				jsonStr = line
-				break
-			}
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if jsonStr == "" {
-		w.WriteHeader(http.StatusInternalServerError)
+	// Gọi Go Native Transcribe Engine (whisper.cpp)
+	result, err := transcribe.TranscribeMedia(tempFilePath, language, format, task, s.downloadDir)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"detail":  "Lỗi xử lý nhận diện giọng nói: " + outStr,
+			"detail":  "Lỗi xử lý nhận diện giọng nói: " + err.Error(),
 		})
 		return
 	}
 
-	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil || parsed["success"] == false {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(jsonStr))
-		return
-	}
-
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(jsonStr))
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {

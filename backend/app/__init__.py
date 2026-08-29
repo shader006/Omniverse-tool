@@ -6,7 +6,4 @@ try:
 except ImportError:
     pass
 
-try:
-    from app.transcribe.transcriber import TranscribeEngine, get_transcribe_engine
-except ImportError:
-    pass
+

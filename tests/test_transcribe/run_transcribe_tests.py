@@ -12,7 +12,7 @@ def main():
     sys.path.insert(0, os.path.abspath(os.path.join(current_dir, "../..")))
 
     print("=" * 65)
-    print("   BẮT ĐẦU CHẠY BỘ TEST: EXTRACT TEXT (FASTER-WHISPER CPU)")
+    print("   BẮT ĐẦU CHẠY BỘ TEST: EXTRACT TEXT (GOLANG WHISPER.CPP CPU)")
     print("=" * 65)
 
     loader = unittest.TestLoader()
