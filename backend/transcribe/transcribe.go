@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -258,12 +259,17 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		}
 	}
 
+	realAudioDur := getMediaDuration(inputPath)
+	if realAudioDur == 0 && len(segments) > 0 {
+		realAudioDur = mathRound(segments[len(segments)-1].End, 2)
+	}
+
 	return &TranscribeResult{
 		Success:             true,
 		Text:                fullText,
 		DetectedLanguage:    detectedLang,
 		LanguageProbability: 0.95,
-		AudioDuration:       processingDuration,
+		AudioDuration:       realAudioDur,
 		ProcessingTime:      mathRound(processingDuration, 2),
 		Segments:            segments,
 		Filename:            targetFilename,
@@ -271,6 +277,18 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		DownloadURL:         fmt.Sprintf("/api/file/%s", targetFilename),
 		ExportFormat:        outFormat,
 	}, nil
+}
+
+func getMediaDuration(filePath string) float64 {
+	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
+	out, err := cmd.Output()
+	if err == nil {
+		durStr := strings.TrimSpace(string(out))
+		if d, parseErr := strconv.ParseFloat(durStr, 64); parseErr == nil && d > 0 {
+			return mathRound(d, 2)
+		}
+	}
+	return 0.0
 }
 
 func mathRound(val float64, precision int) float64 {

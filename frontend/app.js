@@ -801,8 +801,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (transcribeResultText) transcribeResultText.value = data.text || '';
 
+        const formatDuration = (sec) => {
+          if (!sec || isNaN(sec)) return '0s';
+          const s = Math.round(sec);
+          const m = Math.floor(s / 60);
+          const remS = s % 60;
+          return m > 0 ? `${m}m ${remS}s` : `${sec}s`;
+        };
+
         if (tagLang) tagLang.textContent = `Ngôn ngữ: ${(data.detected_language || 'vi').toUpperCase()}`;
-        if (tagDuration) tagDuration.textContent = `Thời lượng: ${data.audio_duration || 0}s`;
+        if (tagDuration) tagDuration.textContent = `Thời lượng: ${formatDuration(data.audio_duration)}`;
         if (tagTime) tagTime.textContent = `Xử lý: ${data.processing_time || 0}s`;
 
         if (transcribeDownloadBtn) {
