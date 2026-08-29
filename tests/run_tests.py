@@ -13,7 +13,8 @@ def main():
     parser = argparse.ArgumentParser(description="Chạy bộ kiểm thử (Test Suite) của MediaFlow")
     parser.add_argument("--url", action="store_true", help="Chỉ chạy các bài test liên quan đến URL to MP3/MP4")
     parser.add_argument("--file-conver", action="store_true", help="Chỉ chạy các bài test liên quan đến File Conver (Gotenberg)")
-    parser.add_argument("--transcribe", action="store_true", help="Chỉ chạy các bài test liên quan đến Extract Text (faster-whisper)")
+    parser.add_argument("--transcribe", action="store_true", help="Chỉ chạy các bài test liên quan đến Extract Text (whisper.cpp)")
+    parser.add_argument("--autoscaler", action="store_true", help="Chỉ chạy các bài test liên quan đến Docker Swarm Autoscaler")
     args = parser.parse_args()
 
     tests_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,12 +35,18 @@ def main():
     elif args.transcribe:
         target_dir = os.path.join(tests_dir, "test_transcribe")
         print("=" * 65)
-        print("   BẮT ĐẦU CHẠY BỘ TEST: EXTRACT TEXT (FASTER-WHISPER)")
+        print("   BẮT ĐẦU CHẠY BỘ TEST: EXTRACT TEXT (WHISPER.CPP CPU)")
+        print("=" * 65)
+        suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
+    elif args.autoscaler:
+        target_dir = os.path.join(tests_dir, "autoscaler")
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY BỘ TEST: DOCKER SWARM AUTOSCALER")
         print("=" * 65)
         suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
     else:
         print("=" * 65)
-        print("   BẮT ĐẦU CHẠY TOÀN BỘ BỘ KIỂM THỬ (URL + FILE CONVER + TRANSCRIBE)")
+        print("   BẮT ĐẦU CHẠY TOÀN BỘ BỘ KIỂM THỬ (URL + FILE CONVER + TRANSCRIBE + AUTOSCALER)")
         print("=" * 65)
         suite = loader.discover(start_dir=tests_dir, pattern="test_*.py")
 
