@@ -89,9 +89,12 @@ class TranscribeEngine:
             beam_size=beam_size,
             condition_on_previous_text=False,
             vad_filter=vad_filter,
-            no_speech_threshold=0.85,
-            compression_ratio_threshold=3.5,
+            no_speech_threshold=0.8,
+            compression_ratio_threshold=3.0,
             log_prob_threshold=-1.5,
+            hallucination_silence_threshold=2.0,
+            no_repeat_ngram_size=3,
+            repetition_penalty=1.2,
         )
 
         segments: List[Dict[str, Any]] = []
@@ -99,6 +102,11 @@ class TranscribeEngine:
 
         for seg in segments_gen:
             clean_text = seg.text.strip()
+            # Lọc bỏ các phân đoạn ảo giác sinh ra trên nền nhạc không lời (outro solo guitar/drums)
+            no_speech = getattr(seg, "no_speech_prob", 0.0) or 0.0
+            if no_speech > 0.85:
+                continue
+
             if clean_text:
                 full_text_parts.append(clean_text)
                 segments.append({
