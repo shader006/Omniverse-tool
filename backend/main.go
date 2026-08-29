@@ -468,6 +468,146 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Giới hạn kích thước upload media 250MB
+	if err := r.ParseMultipartForm(250 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Kích thước file tải lên vượt quá giới hạn cho phép (250MB).",
+		})
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không tìm thấy file tải lên (tham số 'file').",
+		})
+		return
+	}
+	defer file.Close()
+
+	originalFilename := header.Filename
+	ext := strings.ToLower(filepath.Ext(originalFilename))
+	allowedExts := map[string]bool{
+		".mp3": true, ".mp4": true, ".wav": true, ".m4a": true,
+		".webm": true, ".flac": true, ".ogg": true, ".aac": true,
+		".mov": true, ".avi": true, ".mkv": true,
+	}
+
+	if !allowedExts[ext] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Định dạng file '%s' không được hỗ trợ để nhận diện giọng nói. Vui lòng tải file audio/video.", ext),
+		})
+		return
+	}
+
+	language := r.FormValue("language")
+	if language == "" {
+		language = "auto"
+	}
+	format := r.FormValue("format")
+	if format == "" {
+		format = "txt"
+	}
+	task := r.FormValue("task")
+	if task == "" {
+		task = "transcribe"
+	}
+
+	// Lưu file tạm thời vào s.downloadDir
+	tempFileName := fmt.Sprintf("%s_%s", randomID(), originalFilename)
+	tempFilePath := filepath.Join(s.downloadDir, tempFileName)
+
+	destFile, err := os.Create(tempFilePath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không thể lưu file tải lên: " + err.Error(),
+		})
+		return
+	}
+
+	_, err = io.Copy(destFile, file)
+	destFile.Close()
+	if err != nil {
+		_ = os.Remove(tempFilePath)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi khi ghi dữ liệu file tải lên: " + err.Error(),
+		})
+		return
+	}
+
+	// Dùng mediaLimiter để tránh nghẽn CPU khi nhiều user cùng transcribe
+	s.mediaLimiter <- struct{}{}
+	defer func() { <-s.mediaLimiter }()
+
+	// Gọi Python CLI app.transcribe.cli
+	cmd := exec.Command("python3", "-m", "app.transcribe.cli",
+		"--input", tempFilePath,
+		"--language", language,
+		"--format", format,
+		"--task", task,
+		"--output-dir", s.downloadDir,
+	)
+	cmd.Dir = "/app"
+
+	outBytes, _ := cmd.CombinedOutput()
+	outStr := string(outBytes)
+
+	var jsonStr string
+	if strings.Contains(outStr, "FINAL_RESULT:") {
+		jsonStr = strings.TrimSpace(outStr[strings.Index(outStr, "FINAL_RESULT:")+len("FINAL_RESULT:"):])
+	} else {
+		lines := strings.Split(strings.TrimSpace(outStr), "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			line := strings.TrimSpace(lines[i])
+			if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
+				jsonStr = line
+				break
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if jsonStr == "" {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi xử lý nhận diện giọng nói: " + outStr,
+		})
+		return
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil || parsed["success"] == false {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(jsonStr))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(jsonStr))
+}
+
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -845,6 +985,7 @@ func main() {
 	mux.HandleFunc("/api/info", server.handleInfo)
 	mux.HandleFunc("/api/download", server.handleDownload)
 	mux.HandleFunc("/api/convert/file", server.handleConvertFile)
+	mux.HandleFunc("/api/transcribe", server.handleTranscribe)
 	mux.HandleFunc("/api/status/", server.handleStatus)
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)

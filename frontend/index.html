@@ -37,7 +37,7 @@
   </header>
 
   <main class="container">
-    <!-- Mode Switcher Navigation (2 Nút chọn chế độ) -->
+    <!-- Mode Switcher Navigation (3 Nút chọn chế độ) -->
     <div class="mode-switcher-wrapper">
       <div class="mode-switcher">
         <button type="button" class="mode-btn active" id="mode-url-btn" data-mode="url">
@@ -56,6 +56,15 @@
             <polyline points="10 9 9 9 8 9"></polyline>
           </svg>
           <span>File Conver</span>
+        </button>
+        <button type="button" class="mode-btn" id="mode-transcribe-btn" data-mode="transcribe">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="23"></line>
+            <line x1="8" y1="23" x2="16" y2="23"></line>
+          </svg>
+          <span>Extract Text (Whisper)</span>
         </button>
       </div>
     </div>
@@ -315,6 +324,157 @@
           <span class="format-badge"><span class="badge-dot dot-md"></span> Markdown (.md)</span>
           <span class="format-badge"><span class="badge-dot dot-html"></span> HTML / Web</span>
           <span class="format-badge"><span class="badge-dot dot-txt"></span> Text (.txt, .rtf)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SECTION 3: EXTRACT TEXT (FASTER-WHISPER) ==================== -->
+    <section id="section-transcribe-mode" class="mode-section hidden">
+      <!-- Hero Section -->
+      <div class="hero-section">
+        <h1 class="hero-title">Trích Xuất Văn Bản <span class="gradient-text">Từ MP3 & MP4</span></h1>
+        <p class="hero-subtitle">Nhận diện giọng nói siêu nhanh với faster-whisper AI CPU, xuất file văn bản hoặc phụ đề (.txt, .srt, .vtt).</p>
+      </div>
+
+      <div class="card file-card">
+        <!-- Dropzone / Upload Area -->
+        <div class="dropzone" id="transcribe-dropzone">
+          <input type="file" id="transcribe-file-input" class="file-input-hidden" accept=".mp3,.mp4,.wav,.m4a,.webm,.flac,.ogg,.aac,.mov,.avi,.mkv" />
+          <div class="dropzone-content" id="transcribe-dropzone-prompt">
+            <div class="dropzone-icon transcribe-icon">
+              <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </div>
+            <h3 class="dropzone-title">Kéo & thả file Audio/Video vào đây</h3>
+            <p class="dropzone-desc">hoặc <span class="browse-link">Chọn file từ máy tính</span></p>
+            <div class="dropzone-hints">Hỗ trợ MP3, MP4, WAV, M4A, WEBM, FLAC, OGG (Tối đa 250MB)</div>
+          </div>
+
+          <!-- File Selected Info -->
+          <div class="file-selected-info hidden" id="transcribe-file-info">
+            <div class="file-info-icon" id="transcribe-file-icon">🎵</div>
+            <div class="file-info-details">
+              <div class="file-info-name" id="transcribe-file-name">audio.mp3</div>
+              <div class="file-info-meta" id="transcribe-file-meta">5.4 MB • MP3 Audio</div>
+            </div>
+            <button type="button" class="btn-remove-file" id="btn-remove-transcribe-file" title="Xóa file">✕</button>
+          </div>
+        </div>
+
+        <!-- Transcribe Options Form -->
+        <div class="file-options-panel hidden" id="transcribe-options-panel">
+          <div class="options-grid">
+            <div class="option-group">
+              <label for="transcribe-language">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                <span>Ngôn ngữ âm thanh</span>
+              </label>
+              <select id="transcribe-language" class="select-field">
+                <option value="auto" selected>✨ Tự động nhận diện</option>
+                <option value="vi">🇻🇳 Tiếng Việt (Vietnamese)</option>
+                <option value="en">🇬🇧 Tiếng Anh (English)</option>
+                <option value="ja">🇯🇵 Tiếng Nhật (Japanese)</option>
+                <option value="ko">🇰🇷 Tiếng Hàn (Korean)</option>
+                <option value="zh">🇨🇳 Tiếng Trung (Chinese)</option>
+                <option value="fr">🇫🇷 Tiếng Pháp (French)</option>
+                <option value="de">🇩🇪 Tiếng Đức (German)</option>
+              </select>
+            </div>
+
+            <div class="option-group">
+              <label for="transcribe-format">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span>Định dạng xuất file</span>
+              </label>
+              <select id="transcribe-format" class="select-field">
+                <option value="txt" selected>📄 Văn bản thuần (.txt)</option>
+                <option value="srt">🎬 Phụ đề Video SubRip (.srt)</option>
+                <option value="vtt">🌐 Phụ đề WebVTT (.vtt)</option>
+                <option value="json">📊 Dữ liệu JSON Timestamps (.json)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Action Button -->
+          <div class="convert-action-row">
+            <button type="button" id="btn-start-transcribe" class="btn-start-convert">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Trích Xuất Văn Bản</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Processing State -->
+        <div class="conversion-progress-card hidden" id="transcribe-progress-card">
+          <div class="progress-spinner"></div>
+          <h4 class="progress-status-title" id="transcribe-progress-text">Đang nhận diện giọng nói qua faster-whisper AI...</h4>
+          <p class="progress-status-subtitle">Vui lòng đợi giây lát, Silero VAD đang lọc tạp âm và trích xuất câu chữ.</p>
+        </div>
+
+        <!-- Result Card -->
+        <div class="file-result-card hidden" id="transcribe-result-card">
+          <div class="result-header">
+            <div class="result-success-icon">✓</div>
+            <div class="result-header-text">
+              <h4>Trích xuất văn bản thành công!</h4>
+              <div class="transcribe-meta-tags" id="transcribe-meta-tags">
+                <span class="meta-tag" id="tag-lang">Ngôn ngữ: Tiếng Việt</span>
+                <span class="meta-tag" id="tag-duration">Thời lượng: 0s</span>
+                <span class="meta-tag" id="tag-time">Xử lý: 0s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Textarea Preview -->
+          <div class="transcribe-preview-box">
+            <div class="preview-box-header">
+              <span>Nội dung trích xuất:</span>
+              <button type="button" id="btn-copy-transcribe" class="btn-copy-text" title="Sao chép nội dung">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span id="copy-btn-label">Sao chép</span>
+              </button>
+            </div>
+            <textarea id="transcribe-result-text" class="transcribe-textarea" readonly rows="8" placeholder="Văn bản nhận diện sẽ hiển thị ở đây..."></textarea>
+          </div>
+
+          <!-- Download Action Buttons -->
+          <div class="result-actions">
+            <a href="#" id="transcribe-download-btn" class="btn-download-file" download>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Tải File Văn Bản</span>
+            </a>
+            <button type="button" id="btn-transcribe-another" class="btn-another">Trích xuất file khác</button>
+          </div>
+        </div>
+
+        <!-- Badges Supported Formats -->
+        <div class="supported-formats-row">
+          <span class="format-badge"><span class="badge-dot dot-word"></span> MP3 Audio</span>
+          <span class="format-badge"><span class="badge-dot dot-excel"></span> MP4 Video</span>
+          <span class="format-badge"><span class="badge-dot dot-ppt"></span> WAV Audio</span>
+          <span class="format-badge"><span class="badge-dot dot-md"></span> M4A / AAC</span>
+          <span class="format-badge"><span class="badge-dot dot-html"></span> WEBM Video</span>
+          <span class="format-badge"><span class="badge-dot dot-txt"></span> FLAC / OGG</span>
         </div>
       </div>
     </section>

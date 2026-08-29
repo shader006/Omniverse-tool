@@ -13,6 +13,7 @@ def main():
     parser = argparse.ArgumentParser(description="Chạy bộ kiểm thử (Test Suite) của MediaFlow")
     parser.add_argument("--url", action="store_true", help="Chỉ chạy các bài test liên quan đến URL to MP3/MP4")
     parser.add_argument("--file-conver", action="store_true", help="Chỉ chạy các bài test liên quan đến File Conver (Gotenberg)")
+    parser.add_argument("--transcribe", action="store_true", help="Chỉ chạy các bài test liên quan đến Extract Text (faster-whisper)")
     args = parser.parse_args()
 
     tests_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,9 +31,15 @@ def main():
         print("   BẮT ĐẦU CHẠY BỘ TEST: FILE CONVER (GOTENBERG)")
         print("=" * 65)
         suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
+    elif args.transcribe:
+        target_dir = os.path.join(tests_dir, "test_transcribe")
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY BỘ TEST: EXTRACT TEXT (FASTER-WHISPER)")
+        print("=" * 65)
+        suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
     else:
         print("=" * 65)
-        print("   BẮT ĐẦU CHẠY TOÀN BỘ BỘ KIỂM THỬ (TEST_URL & TEST_FILE_CONVER)")
+        print("   BẮT ĐẦU CHẠY TOÀN BỘ BỘ KIỂM THỬ (URL + FILE CONVER + TRANSCRIBE)")
         print("=" * 65)
         suite = loader.discover(start_dir=tests_dir, pattern="test_*.py")
 

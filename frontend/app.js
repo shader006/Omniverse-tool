@@ -1,30 +1,39 @@
 document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
-  // 1. MODE SWITCHER (URL to MP3/MP4 vs File Conver)
+  // 1. MODE SWITCHER (URL to MP3/MP4 vs File Conver vs Extract Text)
   // ==========================================
   const modeUrlBtn = document.getElementById('mode-url-btn');
   const modeFileBtn = document.getElementById('mode-file-btn');
+  const modeTranscribeBtn = document.getElementById('mode-transcribe-btn');
   const sectionUrlMode = document.getElementById('section-url-mode');
   const sectionFileMode = document.getElementById('section-file-mode');
+  const sectionTranscribeMode = document.getElementById('section-transcribe-mode');
 
   function switchMode(mode) {
+    // Reset all buttons
+    [modeUrlBtn, modeFileBtn, modeTranscribeBtn].forEach(btn => {
+      if (btn) btn.classList.remove('active');
+    });
+    // Hide all sections
+    [sectionUrlMode, sectionFileMode, sectionTranscribeMode].forEach(sec => {
+      if (sec) sec.classList.add('hidden');
+    });
+
     if (mode === 'url') {
-      modeUrlBtn.classList.add('active');
-      modeFileBtn.classList.remove('active');
-      sectionUrlMode.classList.remove('hidden');
-      sectionFileMode.classList.add('hidden');
-    } else {
-      modeFileBtn.classList.add('active');
-      modeUrlBtn.classList.remove('active');
-      sectionFileMode.classList.remove('hidden');
-      sectionUrlMode.classList.add('hidden');
+      if (modeUrlBtn) modeUrlBtn.classList.add('active');
+      if (sectionUrlMode) sectionUrlMode.classList.remove('hidden');
+    } else if (mode === 'file') {
+      if (modeFileBtn) modeFileBtn.classList.add('active');
+      if (sectionFileMode) sectionFileMode.classList.remove('hidden');
+    } else if (mode === 'transcribe') {
+      if (modeTranscribeBtn) modeTranscribeBtn.classList.add('active');
+      if (sectionTranscribeMode) sectionTranscribeMode.classList.remove('hidden');
     }
   }
 
-  if (modeUrlBtn && modeFileBtn) {
-    modeUrlBtn.addEventListener('click', () => switchMode('url'));
-    modeFileBtn.addEventListener('click', () => switchMode('file'));
-  }
+  if (modeUrlBtn) modeUrlBtn.addEventListener('click', () => switchMode('url'));
+  if (modeFileBtn) modeFileBtn.addEventListener('click', () => switchMode('file'));
+  if (modeTranscribeBtn) modeTranscribeBtn.addEventListener('click', () => switchMode('transcribe'));
 
   // ==========================================
   // 2. URL TO MP3 / MP4 LOGIC
@@ -593,6 +602,210 @@ document.addEventListener('DOMContentLoaded', () => {
 
       } catch (err) {
         showFileError(err.message || 'Lỗi kết nối tới máy chủ khi chuyển đổi file.');
+      }
+    });
+  }
+
+  // ==========================================
+  // 4. EXTRACT TEXT (FASTER-WHISPER) LOGIC
+  // ==========================================
+  const transcribeDropzone = document.getElementById('transcribe-dropzone');
+  const transcribeFileInput = document.getElementById('transcribe-file-input');
+  const transcribePrompt = document.getElementById('transcribe-dropzone-prompt');
+  const transcribeFileInfo = document.getElementById('transcribe-file-info');
+  const transcribeFileName = document.getElementById('transcribe-file-name');
+  const transcribeFileMeta = document.getElementById('transcribe-file-meta');
+  const transcribeFileIcon = document.getElementById('transcribe-file-icon');
+  const btnRemoveTranscribeFile = document.getElementById('btn-remove-transcribe-file');
+
+  const transcribeOptionsPanel = document.getElementById('transcribe-options-panel');
+  const transcribeLanguageSelect = document.getElementById('transcribe-language');
+  const transcribeFormatSelect = document.getElementById('transcribe-format');
+  const btnStartTranscribe = document.getElementById('btn-start-transcribe');
+
+  const transcribeProgressCard = document.getElementById('transcribe-progress-card');
+  const transcribeProgressText = document.getElementById('transcribe-progress-text');
+  const transcribeResultCard = document.getElementById('transcribe-result-card');
+  const transcribeResultText = document.getElementById('transcribe-result-text');
+  const btnCopyTranscribe = document.getElementById('btn-copy-transcribe');
+  const copyBtnLabel = document.getElementById('copy-btn-label');
+  const transcribeDownloadBtn = document.getElementById('transcribe-download-btn');
+  const btnTranscribeAnother = document.getElementById('btn-transcribe-another');
+  const tagLang = document.getElementById('tag-lang');
+  const tagDuration = document.getElementById('tag-duration');
+  const tagTime = document.getElementById('tag-time');
+
+  let selectedTranscribeFile = null;
+
+  function resetTranscribeSelection() {
+    selectedTranscribeFile = null;
+    if (transcribeFileInput) transcribeFileInput.value = '';
+    if (transcribePrompt) transcribePrompt.classList.remove('hidden');
+    if (transcribeFileInfo) transcribeFileInfo.classList.add('hidden');
+    if (transcribeOptionsPanel) transcribeOptionsPanel.classList.add('hidden');
+    if (transcribeProgressCard) transcribeProgressCard.classList.add('hidden');
+    if (transcribeResultCard) transcribeResultCard.classList.add('hidden');
+    if (btnStartTranscribe) {
+      btnStartTranscribe.disabled = false;
+      btnStartTranscribe.innerHTML = `
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        <span>Trích Xuất Văn Bản</span>
+      `;
+    }
+  }
+
+  function handleTranscribeFileSelect(file) {
+    if (!file) return;
+    selectedTranscribeFile = file;
+
+    if (transcribeFileName) transcribeFileName.textContent = file.name;
+    if (transcribeFileMeta) {
+      const ext = file.name.split('.').pop().toUpperCase();
+      transcribeFileMeta.textContent = `${formatFileBytes(file.size)} • ${ext} Media`;
+    }
+    if (transcribeFileIcon) {
+      const isVideo = /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name);
+      transcribeFileIcon.textContent = isVideo ? '🎬' : '🎵';
+    }
+
+    if (transcribePrompt) transcribePrompt.classList.add('hidden');
+    if (transcribeFileInfo) transcribeFileInfo.classList.remove('hidden');
+    if (transcribeOptionsPanel) transcribeOptionsPanel.classList.remove('hidden');
+    if (transcribeResultCard) transcribeResultCard.classList.add('hidden');
+    if (transcribeProgressCard) transcribeProgressCard.classList.add('hidden');
+  }
+
+  if (transcribeFileInput) {
+    transcribeFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleTranscribeFileSelect(e.target.files[0]);
+      }
+    });
+  }
+
+  if (transcribeDropzone) {
+    ['dragenter', 'dragover'].forEach(eventName => {
+      transcribeDropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        transcribeDropzone.classList.add('drag-over');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      transcribeDropzone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        transcribeDropzone.classList.remove('drag-over');
+      });
+    });
+
+    transcribeDropzone.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleTranscribeFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (btnRemoveTranscribeFile) {
+    btnRemoveTranscribeFile.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resetTranscribeSelection();
+    });
+  }
+
+  if (btnTranscribeAnother) {
+    btnTranscribeAnother.addEventListener('click', () => {
+      resetTranscribeSelection();
+      if (transcribeDropzone) transcribeDropzone.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  if (btnCopyTranscribe && transcribeResultText) {
+    btnCopyTranscribe.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(transcribeResultText.value);
+        if (copyBtnLabel) copyBtnLabel.textContent = 'Đã chép!';
+        setTimeout(() => {
+          if (copyBtnLabel) copyBtnLabel.textContent = 'Sao chép';
+        }, 2000);
+      } catch (err) {
+        transcribeResultText.select();
+        document.execCommand('copy');
+        if (copyBtnLabel) copyBtnLabel.textContent = 'Đã chép!';
+        setTimeout(() => {
+          if (copyBtnLabel) copyBtnLabel.textContent = 'Sao chép';
+        }, 2000);
+      }
+    });
+  }
+
+  if (btnStartTranscribe) {
+    btnStartTranscribe.addEventListener('click', async () => {
+      if (!selectedTranscribeFile) {
+        alert('Vui lòng chọn hoặc kéo thả file âm thanh / video trước!');
+        return;
+      }
+
+      btnStartTranscribe.disabled = true;
+      btnStartTranscribe.innerHTML = `
+        <div class="spinner" style="width:16px;height:16px;border-width:2px;"></div>
+        <span>Đang nhận diện giọng nói...</span>
+      `;
+
+      if (transcribeProgressCard) transcribeProgressCard.classList.remove('hidden');
+      if (transcribeResultCard) transcribeResultCard.classList.add('hidden');
+      if (transcribeProgressCard) transcribeProgressCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      const formData = new FormData();
+      formData.append('file', selectedTranscribeFile);
+      if (transcribeLanguageSelect) {
+        formData.append('language', transcribeLanguageSelect.value);
+      }
+      if (transcribeFormatSelect) {
+        formData.append('format', transcribeFormatSelect.value);
+      }
+
+      try {
+        const res = await fetch('/api/transcribe', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.detail || data.error || 'Quá trình trích xuất văn bản thất bại.');
+        }
+
+        if (transcribeProgressCard) transcribeProgressCard.classList.add('hidden');
+        if (transcribeResultCard) transcribeResultCard.classList.remove('hidden');
+
+        if (transcribeResultText) transcribeResultText.value = data.text || '';
+
+        if (tagLang) tagLang.textContent = `Ngôn ngữ: ${(data.detected_language || 'vi').toUpperCase()}`;
+        if (tagDuration) tagDuration.textContent = `Thời lượng: ${data.audio_duration || 0}s`;
+        if (tagTime) tagTime.textContent = `Xử lý: ${data.processing_time || 0}s`;
+
+        if (transcribeDownloadBtn) {
+          transcribeDownloadBtn.href = data.download_url;
+          transcribeDownloadBtn.setAttribute('download', data.filename || 'transcript.txt');
+        }
+
+        if (transcribeResultCard) transcribeResultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        btnStartTranscribe.disabled = false;
+        btnStartTranscribe.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          <span>Trích Xuất Lại</span>
+        `;
+      } catch (err) {
+        if (transcribeProgressCard) transcribeProgressCard.classList.add('hidden');
+        btnStartTranscribe.disabled = false;
+        btnStartTranscribe.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          <span>Thử Lại</span>
+        `;
+        alert(err.message || 'Lỗi khi gửi yêu cầu trích xuất văn bản.');
       }
     });
   }
