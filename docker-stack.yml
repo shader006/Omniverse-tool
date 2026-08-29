@@ -17,7 +17,9 @@ services:
         order: start-first
     environment:
       - DOWNLOAD_DIR=/app/downloads
-      - GOTENBERG_URL=http://gotenberg:3000
+      - GOTENBERG_URL=http://tasks.gotenberg:3000
+      - POGOCACHE_ADDR=pogocache:9401
+      - MAX_MEDIA_CONCURRENT_JOBS=2
       - PYTHONUNBUFFERED=1
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
@@ -26,15 +28,32 @@ services:
     networks:
       - omniverse_net
 
-  gotenberg:
-    image: gotenberg/gotenberg:8
+  pogocache:
+    image: pogocache/pogocache:latest
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
       resources:
         limits:
+          memory: 256M
+    networks:
+      - omniverse_net
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
           memory: 1024M
+      update_config:
+        parallelism: 1
+        delay: 5s
+        order: start-first
     networks:
       - omniverse_net
 
@@ -75,6 +94,7 @@ services:
       restart_policy:
         condition: on-failure
     environment:
+      - SERVICES_CONFIG=omniverse_app:1:5:65.0:20.0:8,omniverse_gotenberg:1:4:70.0:25.0:8
       - SWARM_SERVICE_NAME=omniverse_app
       - MIN_REPLICAS=1
       - MAX_REPLICAS=5

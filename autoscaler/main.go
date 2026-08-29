@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -61,6 +63,15 @@ type DockerCPUStats struct {
 		} `json:"cpu_usage"`
 		SystemCPUUsage uint64 `json:"system_cpu_usage"`
 	} `json:"precpu_stats"`
+}
+
+type ServiceScaleConfig struct {
+	ServiceName  string
+	MinReplicas  uint64
+	MaxReplicas  uint64
+	CPUScaleUp   float64
+	CPUScaleDown float64
+	IntervalSec  int
 }
 
 // Client HTTP kết nối trực tiếp qua UNIX Socket của Docker
@@ -114,30 +125,95 @@ func calculateCPUPercent(stats *DockerCPUStats) float64 {
 	return 0.0
 }
 
-func main() {
-	serviceName := getEnv("SWARM_SERVICE_NAME", "omniverse_app")
-	minReplicas := uint64(getEnvInt("MIN_REPLICAS", 1))
-	maxReplicas := uint64(getEnvInt("MAX_REPLICAS", 5))
-	cpuScaleUp := getEnvFloat("CPU_SCALE_UP", 65.0)
-	cpuScaleDown := getEnvFloat("CPU_SCALE_DOWN", 20.0)
-	intervalSec := getEnvInt("CHECK_INTERVAL", 8)
+func parseServicesConfig() []ServiceScaleConfig {
+	raw := getEnv("SERVICES_CONFIG", "")
+	var configs []ServiceScaleConfig
 
-	log.Printf("🚀 [GOLANG AUTOSCALER] Khởi động bộ tự động scale hiệu năng cao cho Swarm: %s", serviceName)
-	log.Printf("⚙️ [CONFIG] Min=%d, Max=%d, ScaleUp > %.1f%%, ScaleDown < %.1f%%, Interval=%ds",
-		minReplicas, maxReplicas, cpuScaleUp, cpuScaleDown, intervalSec)
+	if raw != "" {
+		// Format: "name:min:max:up:down:interval,name2:min:max:up:down:interval"
+		items := strings.Split(raw, ",")
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			parts := strings.Split(item, ":")
+			if len(parts) >= 1 {
+				name := strings.TrimSpace(parts[0])
+				minR := uint64(1)
+				maxR := uint64(5)
+				up := 65.0
+				down := 20.0
+				interval := 8
 
-	client := newDockerUnixClient()
-	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
+				if len(parts) >= 2 {
+					if v, err := strconv.ParseUint(parts[1], 10, 64); err == nil {
+						minR = v
+					}
+				}
+				if len(parts) >= 3 {
+					if v, err := strconv.ParseUint(parts[2], 10, 64); err == nil {
+						maxR = v
+					}
+				}
+				if len(parts) >= 4 {
+					if v, err := strconv.ParseFloat(parts[3], 64); err == nil {
+						up = v
+					}
+				}
+				if len(parts) >= 5 {
+					if v, err := strconv.ParseFloat(parts[4], 64); err == nil {
+						down = v
+					}
+				}
+				if len(parts) >= 6 {
+					if v, err := strconv.Atoi(parts[5]); err == nil && v > 0 {
+						interval = v
+					}
+				}
+
+				configs = append(configs, ServiceScaleConfig{
+					ServiceName:  name,
+					MinReplicas:  minR,
+					MaxReplicas:  maxR,
+					CPUScaleUp:   up,
+					CPUScaleDown: down,
+					IntervalSec:  interval,
+				})
+			}
+		}
+	}
+
+	// Fallback nếu không truyền SERVICES_CONFIG
+	if len(configs) == 0 {
+		configs = append(configs, ServiceScaleConfig{
+			ServiceName:  getEnv("SWARM_SERVICE_NAME", "omniverse_app"),
+			MinReplicas:  uint64(getEnvInt("MIN_REPLICAS", 1)),
+			MaxReplicas:  uint64(getEnvInt("MAX_REPLICAS", 5)),
+			CPUScaleUp:   getEnvFloat("CPU_SCALE_UP", 65.0),
+			CPUScaleDown: getEnvFloat("CPU_SCALE_DOWN", 20.0),
+			IntervalSec:  getEnvInt("CHECK_INTERVAL", 8),
+		})
+	}
+
+	return configs
+}
+
+func monitorAndScaleService(client *http.Client, cfg ServiceScaleConfig) {
+	log.Printf("🚀 [AUTOSCALER] Bắt đầu theo dõi Service: '%s' | Min=%d | Max=%d | ScaleUp>%.1f%% | ScaleDown<%.1f%% | Chu kỳ=%ds",
+		cfg.ServiceName, cfg.MinReplicas, cfg.MaxReplicas, cfg.CPUScaleUp, cfg.CPUScaleDown, cfg.IntervalSec)
+
+	ticker := time.NewTicker(time.Duration(cfg.IntervalSec) * time.Second)
 	defer ticker.Stop()
 
 	highCPUCount := 0
 	lowCPUCount := 0
 
 	for range ticker.C {
-		// 1. Lấy danh sách Services
+		// 1. Lấy danh sách Services từ Docker
 		resp, err := client.Get("http://localhost/v1.44/services")
 		if err != nil {
-			log.Printf("⚠️ Lỗi truy vấn Docker Services: %v", err)
+			log.Printf("⚠️ [%s] Lỗi truy vấn Docker Services: %v", cfg.ServiceName, err)
 			continue
 		}
 
@@ -151,7 +227,8 @@ func main() {
 
 		var target *SwarmService
 		for i := range services {
-			if services[i].Spec.Name == serviceName || (len(services[i].Spec.Name) >= len(serviceName) && services[i].Spec.Name[len(services[i].Spec.Name)-len(serviceName):] == serviceName) {
+			sName := services[i].Spec.Name
+			if sName == cfg.ServiceName || (len(sName) >= len(cfg.ServiceName) && sName[len(sName)-len(cfg.ServiceName):] == cfg.ServiceName) {
 				target = &services[i]
 				break
 			}
@@ -208,35 +285,35 @@ func main() {
 			avgCPU = total / float64(len(cpuPercentages))
 		}
 
-		log.Printf("📊 [METRICS] Replicas: %d/%d | Containers: %d | Avg CPU: %.1f%%",
-			currentReplicas, maxReplicas, len(cpuPercentages), avgCPU)
+		log.Printf("📊 [%s] Replicas: %d/%d | Containers: %d | Avg CPU: %.1f%%",
+			cfg.ServiceName, currentReplicas, cfg.MaxReplicas, len(cpuPercentages), avgCPU)
 
 		// 3. Ra quyết định Scale
-		if avgCPU >= cpuScaleUp {
+		if avgCPU >= cfg.CPUScaleUp {
 			highCPUCount++
 			lowCPUCount = 0
-			if highCPUCount >= 2 && currentReplicas < maxReplicas {
+			if highCPUCount >= 2 && currentReplicas < cfg.MaxReplicas {
 				newReplicas := currentReplicas + 1
-				if newReplicas > maxReplicas {
-					newReplicas = maxReplicas
+				if newReplicas > cfg.MaxReplicas {
+					newReplicas = cfg.MaxReplicas
 				}
-				log.Printf("🚀 [SCALE UP] CPU cao (%.1f%% >= %.1f%%) ➔ Tăng từ %d ➔ %d Replicas!",
-					avgCPU, cpuScaleUp, currentReplicas, newReplicas)
+				log.Printf("🚀 [%s SCALE UP] CPU cao (%.1f%% >= %.1f%%) ➔ Tăng từ %d ➔ %d Replicas!",
+					cfg.ServiceName, avgCPU, cfg.CPUScaleUp, currentReplicas, newReplicas)
 
 				scaleService(client, target, newReplicas)
 				highCPUCount = 0
 				time.Sleep(15 * time.Second)
 			}
-		} else if avgCPU <= cpuScaleDown {
+		} else if avgCPU <= cfg.CPUScaleDown {
 			lowCPUCount++
 			highCPUCount = 0
-			if lowCPUCount >= 4 && currentReplicas > minReplicas {
+			if lowCPUCount >= 4 && currentReplicas > cfg.MinReplicas {
 				newReplicas := currentReplicas - 1
-				if newReplicas < minReplicas {
-					newReplicas = minReplicas
+				if newReplicas < cfg.MinReplicas {
+					newReplicas = cfg.MinReplicas
 				}
-				log.Printf("📉 [SCALE DOWN] CPU nhàn rỗi (%.1f%% <= %.1f%%) ➔ Giảm từ %d ➔ %d Replicas.",
-					avgCPU, cpuScaleDown, currentReplicas, newReplicas)
+				log.Printf("📉 [%s SCALE DOWN] CPU nhàn rỗi (%.1f%% <= %.1f%%) ➔ Giảm từ %d ➔ %d Replicas.",
+					cfg.ServiceName, avgCPU, cfg.CPUScaleDown, currentReplicas, newReplicas)
 
 				scaleService(client, target, newReplicas)
 				lowCPUCount = 0
@@ -250,6 +327,19 @@ func main() {
 }
 
 func scaleService(client *http.Client, service *SwarmService, newReplicas uint64) {
+	// Truy vấn lại service mới nhất để lấy Index Version chính xác
+	inspectURL := fmt.Sprintf("http://localhost/v1.44/services/%s", service.ID)
+	resp, err := client.Get(inspectURL)
+	if err == nil && resp.StatusCode == 200 {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var latestService SwarmService
+		if json.Unmarshal(body, &latestService) == nil {
+			service.Version = latestService.Version
+			service.Spec = latestService.Spec
+		}
+	}
+
 	service.Spec.Mode.Replicated.Replicas = newReplicas
 
 	updatePayload, err := json.Marshal(service.Spec)
@@ -264,17 +354,35 @@ func scaleService(client *http.Client, service *SwarmService, newReplicas uint64
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req)
+	uResp, err := client.Do(req)
 	if err != nil {
-		log.Printf("❌ Lỗi khi scale service: %v", err)
+		log.Printf("❌ [%s] Lỗi khi scale service: %v", service.Spec.Name, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer uResp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		log.Printf("✅ Cập nhật Replicas thành công: %d", newReplicas)
+	if uResp.StatusCode >= 200 && uResp.StatusCode < 300 {
+		log.Printf("✅ [%s] Cập nhật Replicas thành công: %d", service.Spec.Name, newReplicas)
 	} else {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("⚠️ Lỗi API scale (%d): %s", resp.StatusCode, string(body))
+		body, _ := io.ReadAll(uResp.Body)
+		log.Printf("⚠️ [%s] Lỗi API scale (%d): %s", service.Spec.Name, uResp.StatusCode, string(body))
 	}
+}
+
+func main() {
+	configs := parseServicesConfig()
+	client := newDockerUnixClient()
+
+	log.Printf("⚡ [GOLANG MULTI-SERVICE AUTOSCALER] Khởi động với %d services được quản lý.", len(configs))
+
+	var wg sync.WaitGroup
+	for _, cfg := range configs {
+		wg.Add(1)
+		go func(c ServiceScaleConfig) {
+			defer wg.Done()
+			monitorAndScaleService(client, c)
+		}(cfg)
+	}
+
+	wg.Wait()
 }

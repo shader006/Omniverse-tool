@@ -9,14 +9,18 @@ import (
 	"fmt"
 	"io"
 	"log"
+	mathRand "math/rand"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -45,12 +49,196 @@ type DownloadRequest struct {
 	Quality string `json:"quality"`
 }
 
+// -------------------------------------------------------------
+// THUẬT TOÁN LOAD BALANCING TẦNG NỘI BỘ: P2C + PEAK-EWMA + DYNAMIC DNS + CIRCUIT BREAKER
+// -------------------------------------------------------------
+type NodeStats struct {
+	activeConns         int64
+	ewmaLatencyMs       float64
+	consecutiveFailures int
+	circuitOpenUntil    time.Time
+	mu                  sync.Mutex
+}
+
+type GotenbergLoadBalancer struct {
+	rawTarget string
+	scheme    string
+	host      string
+	port      string
+	statsMap  sync.Map // map[string]*NodeStats
+	alpha     float64
+}
+
+func NewGotenbergLoadBalancer(rawURL string) *GotenbergLoadBalancer {
+	scheme := "http"
+	host := "gotenberg"
+	port := "3000"
+
+	u, err := url.Parse(rawURL)
+	if err == nil && u.Host != "" {
+		if u.Scheme != "" {
+			scheme = u.Scheme
+		}
+		h, p, splitErr := net.SplitHostPort(u.Host)
+		if splitErr == nil {
+			host = h
+			port = p
+		} else {
+			host = u.Host
+		}
+	} else {
+		trimmed := strings.TrimPrefix(strings.TrimPrefix(rawURL, "http://"), "https://")
+		parts := strings.Split(trimmed, ":")
+		if len(parts) == 2 {
+			host = parts[0]
+			port = parts[1]
+		} else if len(parts) == 1 && parts[0] != "" {
+			host = parts[0]
+		}
+	}
+
+	return &GotenbergLoadBalancer{
+		rawTarget: strings.TrimRight(rawURL, "/"),
+		scheme:    scheme,
+		host:      host,
+		port:      port,
+		alpha:     0.2,
+	}
+}
+
+func (lb *GotenbergLoadBalancer) getOrCreateStats(addr string) *NodeStats {
+	val, loaded := lb.statsMap.Load(addr)
+	if loaded {
+		return val.(*NodeStats)
+	}
+	newStats := &NodeStats{
+		activeConns:   0,
+		ewmaLatencyMs: 15.0,
+	}
+	actual, _ := lb.statsMap.LoadOrStore(addr, newStats)
+	return actual.(*NodeStats)
+}
+
+func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(err error)) {
+	// 1. Dynamic DNS Discovery: Phân giải danh sách IP thực tế của các replicas trong Swarm
+	var allAddrs []string
+	ips, err := net.LookupIP(lb.host)
+	if err == nil && len(ips) > 0 {
+		for _, ip := range ips {
+			allAddrs = append(allAddrs, net.JoinHostPort(ip.String(), lb.port))
+		}
+	}
+
+	now := time.Now()
+	var eligibleAddrs []string
+
+	// 2. Lọc qua Circuit Breaker & Concurrency Threshold (Max 4 active jobs)
+	for _, addr := range allAddrs {
+		s := lb.getOrCreateStats(addr)
+		s.mu.Lock()
+		isCircuitOpen := now.Before(s.circuitOpenUntil)
+		conns := atomic.LoadInt64(&s.activeConns)
+		s.mu.Unlock()
+
+		if !isCircuitOpen && conns < 4 {
+			eligibleAddrs = append(eligibleAddrs, addr)
+		}
+	}
+
+	// Nếu tất cả node đều bận/khóa, fallback chọn các node không bị circuit breaker
+	if len(eligibleAddrs) == 0 {
+		for _, addr := range allAddrs {
+			s := lb.getOrCreateStats(addr)
+			s.mu.Lock()
+			isCircuitOpen := now.Before(s.circuitOpenUntil)
+			s.mu.Unlock()
+			if !isCircuitOpen {
+				eligibleAddrs = append(eligibleAddrs, addr)
+			}
+		}
+	}
+
+	// Fallback cuối cùng nếu mọi node đều bị circuit breaker
+	if len(eligibleAddrs) == 0 {
+		eligibleAddrs = allAddrs
+	}
+
+	var selectedAddr string
+	if len(eligibleAddrs) >= 2 {
+		// 3. Thuật toán P2C: Bốc ngẫu nhiên 2 node ứng viên từ tập eligible
+		idx1 := mathRand.Intn(len(eligibleAddrs))
+		idx2 := mathRand.Intn(len(eligibleAddrs))
+		for idx2 == idx1 {
+			idx2 = mathRand.Intn(len(eligibleAddrs))
+		}
+
+		a1 := eligibleAddrs[idx1]
+		a2 := eligibleAddrs[idx2]
+
+		s1 := lb.getOrCreateStats(a1)
+		s2 := lb.getOrCreateStats(a2)
+
+		s1.mu.Lock()
+		ewma1 := s1.ewmaLatencyMs
+		s1.mu.Unlock()
+
+		s2.mu.Lock()
+		ewma2 := s2.ewmaLatencyMs
+		s2.mu.Unlock()
+
+		conns1 := float64(atomic.LoadInt64(&s1.activeConns))
+		conns2 := float64(atomic.LoadInt64(&s2.activeConns))
+
+		// Peak-EWMA Load Score = (ActiveConns + 1) * EWMA_Latency
+		score1 := (conns1 + 1.0) * ewma1
+		score2 := (conns2 + 1.0) * ewma2
+
+		if score1 <= score2 {
+			selectedAddr = a1
+		} else {
+			selectedAddr = a2
+		}
+	} else if len(eligibleAddrs) == 1 {
+		selectedAddr = eligibleAddrs[0]
+	} else {
+		selectedAddr = net.JoinHostPort(lb.host, lb.port)
+	}
+
+	stats := lb.getOrCreateStats(selectedAddr)
+	atomic.AddInt64(&stats.activeConns, 1)
+	startTime := time.Now()
+
+	finishFunc := func(reqErr error) {
+		elapsedMs := float64(time.Since(startTime).Microseconds()) / 1000.0
+		atomic.AddInt64(&stats.activeConns, -1)
+
+		stats.mu.Lock()
+		defer stats.mu.Unlock()
+		if reqErr != nil {
+			// Penalty cho node phản hồi lỗi/timeout
+			stats.ewmaLatencyMs = lb.alpha*(elapsedMs+500.0) + (1.0-lb.alpha)*stats.ewmaLatencyMs
+			stats.consecutiveFailures++
+			// Nếu lỗi liên tiếp >= 3 lần ➔ Khóa node 15s (Circuit Breaker Tripped)
+			if stats.consecutiveFailures >= 3 {
+				stats.circuitOpenUntil = time.Now().Add(15 * time.Second)
+				log.Printf("⚠️ [CIRCUIT BREAKER] Node Gotenberg '%s' lỗi %d lần ➔ Tạm ngắt trong 15s!", selectedAddr, stats.consecutiveFailures)
+			}
+		} else {
+			stats.ewmaLatencyMs = lb.alpha*elapsedMs + (1.0-lb.alpha)*stats.ewmaLatencyMs
+			stats.consecutiveFailures = 0
+		}
+	}
+
+	fullURL := fmt.Sprintf("%s://%s%s", lb.scheme, selectedAddr, subPath)
+	return fullURL, finishFunc
+}
+
 type Server struct {
-	cache        *CacheManager
-	jobs         sync.Map
+	pogo         *PogocacheEngine
+	mediaLimiter chan struct{}
 	downloadDir  string
 	frontendDir  string
-	gotenbergURL string
+	gotenbergLB  *GotenbergLoadBalancer
 }
 
 func randomID() string {
@@ -87,7 +275,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	gotenbergHealthy := false
-	resp, err := http.Get(s.gotenbergURL + "/health")
+	healthURL, finish := s.gotenbergLB.SelectEndpoint("/health")
+	resp, err := http.Get(healthURL)
+	finish(err)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		gotenbergHealthy = true
 		_ = resp.Body.Close()
@@ -95,11 +285,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":            "healthy",
-		"engine":            "Omniverse-Golang-Core",
-		"version":           "3.1.0",
-		"gotenberg_status":  gotenbergHealthy,
-		"gotenberg_url":     s.gotenbergURL,
+		"status":           "healthy",
+		"engine":           "Omniverse-Golang-Core",
+		"version":          "3.1.0",
+		"gotenberg_status": gotenbergHealthy,
+		"gotenberg_url":    s.gotenbergLB.rawTarget,
+		"lb_algorithm":     "P2C-Peak-EWMA-Dynamic",
 	})
 }
 
@@ -143,16 +334,18 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	pdfa := r.FormValue("pdfa") // ví dụ: "PDF/A-1b", "PDF/A-2b", "PDF/A-3b"
 
 	// Quyết định endpoint Gotenberg dựa trên đuôi file
-	var gotenbergEndpoint string
+	var endpointSubpath string
 	switch ext {
 	case ".html", ".htm":
-		gotenbergEndpoint = s.gotenbergURL + "/forms/chromium/convert/html"
+		endpointSubpath = "/forms/chromium/convert/html"
 	case ".md", ".markdown":
-		gotenbergEndpoint = s.gotenbergURL + "/forms/libreoffice/convert"
+		endpointSubpath = "/forms/libreoffice/convert"
 	default:
 		// Office formats (.docx, .doc, .xlsx, .xls, .pptx, .ppt, .odt, .ods, .odp, .rtf, .txt, .pdf)
-		gotenbergEndpoint = s.gotenbergURL + "/forms/libreoffice/convert"
+		endpointSubpath = "/forms/libreoffice/convert"
 	}
+
+	gotenbergEndpoint, finish := s.gotenbergLB.SelectEndpoint(endpointSubpath)
 
 	// Chuẩn bị multipart body gửi sang Gotenberg
 	bodyBuf := &bytes.Buffer{}
@@ -212,6 +405,7 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	resp, err := client.Do(req)
+	finish(err)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -288,9 +482,9 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// 1. Kiểm tra Go In-Memory Cache (0.0001 ms)
+	// 1. Kiểm tra Pogocache Engine (0.0001 ms)
 	cacheKey := GenerateCacheKey(req.URL, "info", "info")
-	if cachedData, found := s.cache.GetMetadata(cacheKey); found {
+	if cachedData, found := s.pogo.GetMetadata(cacheKey); found {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"data":    cachedData,
@@ -332,7 +526,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result.Data != nil {
-		s.cache.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
+		s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -362,7 +556,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// 1. Kiểm tra File Cache trong ổ đĩa
-	if cachedFile, found := s.cache.FindCachedFile(req.URL, req.Format, req.Quality); found {
+	if cachedFile, found := s.pogo.FindCachedFile(req.URL, req.Format, req.Quality); found {
 		job := Job{
 			JobID:       jobID,
 			URL:         req.URL,
@@ -376,7 +570,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 			DownloadURL: fmt.Sprintf("/api/file/%s", cachedFile),
 			CreatedAt:   float64(time.Now().Unix()),
 		}
-		s.jobs.Store(jobID, job)
+		s.pogo.PublishJobUpdate(job)
 
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
@@ -386,7 +580,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Tạo Job mới trong RAM
+	// 2. Tạo Job mới và lưu vào Pogocache Engine
 	job := Job{
 		JobID:     jobID,
 		URL:       req.URL,
@@ -398,9 +592,9 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		ETA:       "-",
 		CreatedAt: float64(time.Now().Unix()),
 	}
-	s.jobs.Store(jobID, job)
+	s.pogo.PublishJobUpdate(job)
 
-	// 3. Khởi động Goroutine tải ngầm gọi Python url_conver
+	// 3. Khởi động Goroutine tải ngầm gọi Python url_conver (kèm Semaphore Concurrency Limiter)
 	go s.processDownloadJob(jobID, req.URL, req.Format, req.Quality)
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -411,10 +605,13 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
-	if val, ok := s.jobs.Load(jobID); ok {
-		j := val.(Job)
+	// Giới hạn số lượng ffmpeg chạy đồng thời (tránh bóp nghẽn CPU)
+	s.mediaLimiter <- struct{}{}
+	defer func() { <-s.mediaLimiter }()
+
+	if j, ok := s.pogo.GetJob(jobID); ok {
 		j.Status = "downloading"
-		s.jobs.Store(jobID, j)
+		s.pogo.PublishJobUpdate(j)
 	}
 
 	cmd := exec.Command("python3", "-m", "app.url_conver.cli", "download",
@@ -450,11 +647,10 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 				Message string  `json:"message"`
 			}
 			if err := json.Unmarshal([]byte(jsonStr), &prog); err == nil {
-				if val, ok := s.jobs.Load(jobID); ok {
-					j := val.(Job)
+				if j, ok := s.pogo.GetJob(jobID); ok {
 					j.Percent = prog.Percent
 					j.Speed = prog.Message
-					s.jobs.Store(jobID, j)
+					s.pogo.PublishJobUpdate(j)
 				}
 			}
 		}
@@ -487,13 +683,12 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 		}
 
 		if jsonStr != "" && json.Unmarshal([]byte(jsonStr), &res) == nil && res.Success {
-			if val, ok := s.jobs.Load(jobID); ok {
-				j := val.(Job)
+			if j, ok := s.pogo.GetJob(jobID); ok {
 				j.Status = "completed"
 				j.Percent = 100.0
 				j.Filename = res.Filename
 				j.DownloadURL = fmt.Sprintf("/api/file/%s", res.Filename)
-				s.jobs.Store(jobID, j)
+				s.pogo.PublishJobUpdate(j)
 				return
 			}
 		}
@@ -507,17 +702,16 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 }
 
 func (s *Server) failJob(jobID, errMsg string) {
-	if val, ok := s.jobs.Load(jobID); ok {
-		j := val.(Job)
+	if j, ok := s.pogo.GetJob(jobID); ok {
 		j.Status = "error"
 		j.Error = errMsg
-		s.jobs.Store(jobID, j)
+		s.pogo.PublishJobUpdate(j)
 	}
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimPrefix(r.URL.Path, "/api/status/")
-	val, ok := s.jobs.Load(jobID)
+	val, ok := s.pogo.GetJob(jobID)
 	if !ok {
 		http.Error(w, `{"error":"Không tìm thấy Job ID"}`, http.StatusNotFound)
 		return
@@ -538,26 +732,48 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 
-	ticker := time.NewTicker(500 * time.Millisecond)
+	// Đăng ký nhận sự kiện realtime từ Pogocache Engine
+	jobCh, cleanup := s.pogo.SubscribeJob(r.Context(), jobID)
+	defer cleanup()
+
+	// Gửi ngay trạng thái ban đầu nếu có
+	if initialJob, exists := s.pogo.GetJob(jobID); exists {
+		data, _ := json.Marshal(initialJob)
+		_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
+		flusher.Flush()
+		if initialJob.Status == "completed" || initialJob.Status == "error" {
+			return
+		}
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-r.Context().Done():
 			return
-		case <-ticker.C:
-			val, exists := s.jobs.Load(jobID)
-			if !exists {
+		case job, ok := <-jobCh:
+			if !ok {
 				return
 			}
-			job := val.(Job)
 			data, _ := json.Marshal(job)
 			_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
 			flusher.Flush()
-
 			if job.Status == "completed" || job.Status == "error" {
 				return
+			}
+		case <-ticker.C:
+			// Heartbeat và Polling an toàn
+			if currentJob, exists := s.pogo.GetJob(jobID); exists {
+				data, _ := json.Marshal(currentJob)
+				_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
+				flusher.Flush()
+				if currentJob.Status == "completed" || currentJob.Status == "error" {
+					return
+				}
 			}
 		}
 	}
@@ -601,11 +817,27 @@ func main() {
 		gotenbergURL = "http://gotenberg:3000"
 	}
 
+	pogoAddr := os.Getenv("POGOCACHE_ADDR")
+	if pogoAddr == "" {
+		pogoAddr = os.Getenv("REDIS_ADDR")
+	}
+	if pogoAddr == "" {
+		pogoAddr = "pogocache:9401"
+	}
+
+	maxMediaJobs := 2
+	if envVal := os.Getenv("MAX_MEDIA_CONCURRENT_JOBS"); envVal != "" {
+		if val, err := strconv.Atoi(envVal); err == nil && val > 0 {
+			maxMediaJobs = val
+		}
+	}
+
 	server := &Server{
-		cache:        NewCacheManager(downloadDir),
+		pogo:         NewPogocacheEngine(pogoAddr, downloadDir),
+		mediaLimiter: make(chan struct{}, maxMediaJobs),
 		downloadDir:  downloadDir,
 		frontendDir:  frontendDir,
-		gotenbergURL: strings.TrimRight(gotenbergURL, "/"),
+		gotenbergLB:  NewGotenbergLoadBalancer(gotenbergURL),
 	}
 
 	mux := http.NewServeMux()

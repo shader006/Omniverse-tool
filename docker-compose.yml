@@ -15,9 +15,19 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - GOTENBERG_URL=http://gotenberg:3000
+      - POGOCACHE_ADDR=pogocache:9401
+      - MAX_MEDIA_CONCURRENT_JOBS=2
       - PYTHONUNBUFFERED=1
     depends_on:
       - gotenberg
+      - pogocache
+
+  pogocache:
+    image: pogocache/pogocache:latest
+    container_name: mediaflow_pogocache
+    restart: unless-stopped
+    ports:
+      - "9401:9401"
 
   gotenberg:
     image: gotenberg/gotenberg:8
