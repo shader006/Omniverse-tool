@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--autoscaler", action="store_true", help="Chỉ chạy các bài test liên quan đến Docker Swarm Autoscaler")
     parser.add_argument("--benchmark-limits", action="store_true", help="Chạy benchmark đo lường giới hạn thời lượng xử lý audio/video")
     parser.add_argument("--benchmark-model", action="store_true", help="Chạy benchmark so sánh hiệu năng giữa ggml-base.bin và ggml-small.bin")
+    parser.add_argument("--benchmark-stage1", action="store_true", help="Chạy benchmark so sánh hiệu năng tối ưu Giai đoạn 1 cho Whisper Small")
     args = parser.parse_args()
 
     tests_dir = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,11 @@ def main():
     if args.benchmark_model:
         import subprocess
         bench_script = os.path.join(tests_dir, "benchmark_base_vs_small.py")
+        sys.exit(subprocess.call([sys.executable, bench_script]))
+
+    if args.benchmark_stage1:
+        import subprocess
+        bench_script = os.path.join(tests_dir, "benchmark_stage1_optimization.py")
         sys.exit(subprocess.call([sys.executable, bench_script]))
 
     if args.url:

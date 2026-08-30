@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -162,11 +163,24 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 
 	outPrefix := filepath.Join(downloadDir, fmt.Sprintf("%s_transcript", baseName))
 
-	// 3. Chuẩn bị tham số gọi whisper.cpp
+	// Tự động xác định số luồng CPU tối ưu (tối đa 8 threads cho hiệu năng cao nhất trên multi-core)
+	threads := runtime.NumCPU()
+	if threads > 8 {
+		threads = 8
+	} else if threads < 2 {
+		threads = 2
+	}
+
+	// 3. Chuẩn bị tham số gọi whisper.cpp tối ưu (Giai đoạn 1)
 	args := []string{
 		"-m", modelPath,
 		"-f", audioToProcess,
-		"-t", "4",
+		"-t", strconv.Itoa(threads),
+		"--beam-size", "2",
+		"--temperature", "0.0",
+		"--no-fallback",
+		"--flash-attn",
+		"--max-len", "60",
 		"--output-file", outPrefix,
 		"--output-txt",
 		"--output-srt",
