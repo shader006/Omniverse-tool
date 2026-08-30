@@ -161,6 +161,8 @@ services:
     environment:
       - POGOCACHE_ADDR=pogocache:9401
       - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_gotenberg
+      - PRUNE_BUILD_CACHE=true
+      - AUTO_PRUNE_INTERVAL_HOURS=6
     networks:
       - omniverse_net
 
