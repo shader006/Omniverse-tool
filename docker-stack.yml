@@ -1,8 +1,60 @@
 version: '3.8'
 
 services:
-  app:
-    image: omniversetool-app:latest
+  gateway:
+    image: omniversetool-gateway:latest
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 256M
+      update_config:
+        parallelism: 1
+        delay: 5s
+        order: start-first
+    ports:
+      - target: 8000
+        published: 8000
+        protocol: tcp
+        mode: host
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - FRONTEND_DIR=/frontend
+      - GOTENBERG_URL=http://tasks.gotenberg:3000
+      - POGOCACHE_ADDR=tasks.pogocache:9401
+      - WORKER_YTDLP_URL=http://tasks.worker-ytdlp:8001
+      - WORKER_WHISPER_URL=http://tasks.worker-whisper:8002
+      - WORKER_RMBG_URL=http://tasks.worker-rmbg:8003
+      - MAX_MEDIA_CONCURRENT_JOBS=4
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+      - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
+    networks:
+      - omniverse_net
+
+  worker-ytdlp:
+    image: omniversetool-worker-ytdlp:latest
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 512M
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8001
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+    networks:
+      - omniverse_net
+
+  worker-whisper:
+    image: omniversetool-worker-whisper:latest
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -11,21 +63,30 @@ services:
       resources:
         limits:
           memory: 1024M
-      update_config:
-        parallelism: 1
-        delay: 5s
-        order: start-first
     environment:
       - DOWNLOAD_DIR=/app/downloads
-      - GOTENBERG_URL=http://tasks.gotenberg:3000
-      - POGOCACHE_ADDR=pogocache:9401
-      - MAX_MEDIA_CONCURRENT_JOBS=2
-      - PYTHONUNBUFFERED=1
-      - WHISPER_MODEL_PATH=/app/models/whisper/ggml-small.bin
+      - PORT=8002
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
-      - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
-      - ${WORKSPACE_DIR:-.}/tests:/app/tests:ro
+    networks:
+      - omniverse_net
+
+  worker-rmbg:
+    image: omniversetool-worker-rmbg:latest
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 4096M
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8003
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+      - ${WORKSPACE_DIR:-.}/models/rembg:/root/.rembg
     networks:
       - omniverse_net
 
@@ -33,6 +94,7 @@ services:
     image: pogocache/pogocache:latest
     deploy:
       replicas: 1
+      endpoint_mode: dnsrr
       restart_policy:
         condition: on-failure
       resources:
@@ -58,18 +120,6 @@ services:
     networks:
       - omniverse_net
 
-  lightpanda:
-    image: lightpanda/browser:nightly
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-      resources:
-        limits:
-          memory: 256M
-    networks:
-      - omniverse_net
-
   pingora:
     image: omniversetool-pingora:latest
     deploy:
@@ -82,7 +132,7 @@ services:
         protocol: tcp
         mode: host
     environment:
-      - UPSTREAM_ADDR=tasks.app:8000
+      - UPSTREAM_ADDR=tasks.gateway:8000
       - RUST_LOG=info
     networks:
       - omniverse_net
@@ -101,21 +151,16 @@ services:
     image: omniversetool-autoscaler:latest
     deploy:
       replicas: 1
+      restart_policy:
+        condition: on-failure
       placement:
         constraints:
           - node.role == manager
-      restart_policy:
-        condition: on-failure
-    environment:
-      - SERVICES_CONFIG=omniverse_app:1:5:65.0:20.0:8,omniverse_gotenberg:1:4:70.0:25.0:8
-      - SWARM_SERVICE_NAME=omniverse_app
-      - MIN_REPLICAS=1
-      - MAX_REPLICAS=5
-      - CPU_SCALE_UP=65.0
-      - CPU_SCALE_DOWN=20.0
-      - CHECK_INTERVAL=8
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - POGOCACHE_ADDR=pogocache:9401
+      - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_gotenberg
     networks:
       - omniverse_net
 

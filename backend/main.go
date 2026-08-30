@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -236,11 +237,67 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 }
 
 type Server struct {
-	pogo         *PogocacheEngine
-	mediaLimiter chan struct{}
-	downloadDir  string
-	frontendDir  string
-	gotenbergLB  *GotenbergLoadBalancer
+	pogo             *PogocacheEngine
+	mediaLimiter     chan struct{}
+	downloadDir      string
+	frontendDir      string
+	gotenbergLB      *GotenbergLoadBalancer
+	workerYtdlpURL   string
+	workerWhisperURL string
+	workerRmbgURL    string
+	httpClient       *http.Client
+}
+
+func (s *Server) callWorkerJSON(workerBaseURL string, path string, payload interface{}) ([]byte, int, error) {
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, http.StatusBadRequest, err
+	}
+	targetURL := strings.TrimRight(workerBaseURL, "/") + path
+	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(jsonBytes))
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, http.StatusBadGateway, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	return respBody, resp.StatusCode, err
+}
+
+func (s *Server) forwardMultipartToWorker(workerBaseURL string, path string, fileBytes []byte, filename string, fieldName string, formValues map[string]string) ([]byte, int, error) {
+	bodyBuf := &bytes.Buffer{}
+	writer := multipart.NewWriter(bodyBuf)
+	part, err := writer.CreateFormFile(fieldName, filename)
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	if _, err := part.Write(fileBytes); err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	for k, v := range formValues {
+		_ = writer.WriteField(k, v)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+
+	targetURL := strings.TrimRight(workerBaseURL, "/") + path
+	req, err := http.NewRequest(http.MethodPost, targetURL, bodyBuf)
+	if err != nil {
+		return nil, http.StatusInternalServerError, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, http.StatusBadGateway, err
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	return respBody, resp.StatusCode, err
 }
 
 func randomID() string {
@@ -530,7 +587,41 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		task = "transcribe"
 	}
 
-	// Lưu file tạm thời vào s.downloadDir
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không thể đọc nội dung file: " + err.Error(),
+		})
+		return
+	}
+
+	// 1. Nếu có Worker Whisper Microservice -> Forward qua HTTP
+	if s.workerWhisperURL != "" {
+		respBody, statusCode, callErr := s.forwardMultipartToWorker(
+			s.workerWhisperURL,
+			"/api/transcribe",
+			fileBytes,
+			originalFilename,
+			"file",
+			map[string]string{
+				"language": language,
+				"format":   format,
+				"task":     task,
+			},
+		)
+		if callErr == nil && statusCode == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(respBody)
+			return
+		}
+		log.Printf("⚠️ [WORKER WHISPER] Gọi worker thất bại (%v), fallback sang cục bộ...", callErr)
+	}
+
+	// 2. Fallback sang Go Native Transcribe Engine (whisper.cpp cục bộ)
 	tempFileName := fmt.Sprintf("%s_%s", randomID(), originalFilename)
 	tempFilePath := filepath.Join(s.downloadDir, tempFileName)
 
@@ -545,25 +636,14 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = io.Copy(destFile, file)
+	_, _ = destFile.Write(fileBytes)
 	destFile.Close()
-	if err != nil {
-		_ = os.Remove(tempFilePath)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"detail":  "Lỗi khi ghi dữ liệu file tải lên: " + err.Error(),
-		})
-		return
-	}
 	defer os.Remove(tempFilePath)
 
 	// Dùng mediaLimiter để tránh nghẽn CPU khi nhiều user cùng transcribe
 	s.mediaLimiter <- struct{}{}
 	defer func() { <-s.mediaLimiter }()
 
-	// Gọi Go Native Transcribe Engine (whisper.cpp)
 	result, err := transcribe.TranscribeMedia(tempFilePath, language, format, task, s.downloadDir)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -578,6 +658,204 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Giới hạn upload ảnh tối đa 50MB
+	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Kích thước file tải lên vượt quá giới hạn cho phép (50MB).",
+		})
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không tìm thấy file ảnh tải lên (tham số 'file').",
+		})
+		return
+	}
+	defer file.Close()
+
+	originalFilename := header.Filename
+	ext := strings.ToLower(filepath.Ext(originalFilename))
+	allowedExts := map[string]bool{
+		".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".bmp": true,
+	}
+
+	if !allowedExts[ext] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Định dạng file '%s' không được hỗ trợ. Vui lòng chọn ảnh PNG, JPG, WEBP hoặc BMP.", ext),
+		})
+		return
+	}
+
+	model := r.FormValue("model")
+	if model == "" {
+		model = "bria-rmbg"
+	}
+	bgColor := r.FormValue("bg_color")
+	alphaMatting := r.FormValue("alpha_matting") == "true"
+
+	fileBytes, err := io.ReadAll(file)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không thể đọc file ảnh: " + err.Error(),
+		})
+		return
+	}
+
+	// 1. Nếu có Worker RMBG Microservice -> Forward qua HTTP
+	if s.workerRmbgURL != "" {
+		alphaStr := "false"
+		if alphaMatting {
+			alphaStr = "true"
+		}
+		respBody, statusCode, callErr := s.forwardMultipartToWorker(
+			s.workerRmbgURL,
+			"/api/remove-bg",
+			fileBytes,
+			originalFilename,
+			"file",
+			map[string]string{
+				"model":         model,
+				"bg_color":      bgColor,
+				"alpha_matting": alphaStr,
+			},
+		)
+		if callErr == nil && statusCode == http.StatusOK {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(respBody)
+			return
+		}
+		log.Printf("⚠️ [WORKER RMBG] Gọi worker thất bại (%v), fallback sang CLI cục bộ...", callErr)
+	}
+
+	// 2. Fallback sang CLI cục bộ
+	id := randomID()
+	tempInputName := fmt.Sprintf("in_%s%s", id, ext)
+	tempInputPath := filepath.Join(s.downloadDir, tempInputName)
+
+	destFile, err := os.Create(tempInputPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không thể lưu file tải lên: " + err.Error(),
+		})
+		return
+	}
+
+	_, _ = destFile.Write(fileBytes)
+	destFile.Close()
+	defer os.Remove(tempInputPath)
+
+	// File kết quả lưu vào s.downloadDir
+	baseNameWithoutExt := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
+	outputFilename := fmt.Sprintf("%s_%s_nobg.png", id, baseNameWithoutExt)
+	outputPath := filepath.Join(s.downloadDir, outputFilename)
+
+	// Giới hạn concurrency để tránh nghẽn CPU
+	s.mediaLimiter <- struct{}{}
+	defer func() { <-s.mediaLimiter }()
+
+	startTime := time.Now()
+
+	// Gọi python subprocess app.rmbg.cli
+	args := []string{
+		"-m", "app.rmbg.cli", "process",
+		"--input", tempInputPath,
+		"--output", outputPath,
+		"--model", model,
+	}
+	if bgColor != "" && bgColor != "transparent" {
+		args = append(args, "--bg-color", bgColor)
+	}
+	if alphaMatting {
+		args = append(args, "--alpha-matting")
+	}
+
+	cmd := exec.Command("python3", args...)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		log.Printf("[RMBG ERROR] Python execution failed: %v, stderr: %s", err, stderrBuf.String())
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi khi xử lý tách nền: " + stderrBuf.String(),
+		})
+		return
+	}
+
+	var cliResp struct {
+		Success        bool                   `json:"success"`
+		OutputPath     string                 `json:"output_path"`
+		OutputFilename string                 `json:"output_filename"`
+		Error          string                 `json:"error"`
+		Metadata       map[string]interface{} `json:"metadata"`
+	}
+
+	if err := json.Unmarshal(stdoutBuf.Bytes(), &cliResp); err != nil || !cliResp.Success {
+		errMsg := cliResp.Error
+		if errMsg == "" {
+			errMsg = "Không thể phân tích kết quả từ module AI"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  errMsg,
+		})
+		return
+	}
+
+	// Đọc ảnh kết quả và mã hóa base64 để frontend preview tức thì
+	outBytes, readErr := os.ReadFile(outputPath)
+	var base64Data string
+	var resultSize int64
+	if readErr == nil {
+		resultSize = int64(len(outBytes))
+		base64Data = "data:image/png;base64," + base64.StdEncoding.EncodeToString(outBytes)
+	}
+
+	processingDuration := time.Since(startTime)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":            true,
+		"filename":           outputFilename,
+		"download_url":       "/api/file/" + outputFilename,
+		"original_filename":  originalFilename,
+		"processing_time_ms": processingDuration.Milliseconds(),
+		"result_size_bytes":  resultSize,
+		"preview_base64":     base64Data,
+		"metadata":           cliResp.Metadata,
+	})
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -605,7 +883,28 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Chạy Python url_conver worker qua CLI
+	// 2. Nếu có Worker YT-DLP Microservice -> Gọi qua HTTP
+	if s.workerYtdlpURL != "" {
+		respBytes, statusCode, err := s.callWorkerJSON(s.workerYtdlpURL, "/api/info", req)
+		if err == nil && statusCode == http.StatusOK {
+			var result struct {
+				Success bool                   `json:"success"`
+				Data    map[string]interface{} `json:"data,omitempty"`
+				Error   string                 `json:"error,omitempty"`
+			}
+			if json.Unmarshal(respBytes, &result) == nil && result.Success {
+				if result.Data != nil {
+					s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(respBytes)
+				return
+			}
+		}
+		log.Printf("⚠️ [WORKER YT-DLP] Gọi worker /api/info thất bại (%v), fallback sang CLI cục bộ...", err)
+	}
+
+	// 3. Chạy Python url_conver worker qua CLI cục bộ
 	cmd := exec.Command("python3", "-m", "app.url_conver.cli", "info", "--url", req.URL)
 	cmd.Dir = "/app"
 	out, _ := cmd.CombinedOutput()
@@ -726,6 +1025,24 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 		s.pogo.PublishJobUpdate(j)
 	}
 
+	// 1. Nếu có Worker YT-DLP Microservice -> Chuyển giao qua HTTP
+	if s.workerYtdlpURL != "" {
+		payload := map[string]string{
+			"job_id":       jobID,
+			"url":          url,
+			"format":       mediaFormat,
+			"quality":      quality,
+			"download_dir": s.downloadDir,
+		}
+		_, statusCode, err := s.callWorkerJSON(s.workerYtdlpURL, "/api/download", payload)
+		if err == nil && statusCode == http.StatusOK {
+			log.Printf("✅ [WORKER YT-DLP] Đã chuyển giao Job %s sang worker-ytdlp xử lý", jobID)
+			return
+		}
+		log.Printf("⚠️ [WORKER YT-DLP] Gọi worker /api/download thất bại (%v), fallback sang CLI cục bộ...", err)
+	}
+
+	// 2. Fallback sang CLI cục bộ
 	cmd := exec.Command("python3", "-m", "app.url_conver.cli", "download",
 		"--url", url,
 		"--format", mediaFormat,
@@ -944,12 +1261,22 @@ func main() {
 		}
 	}
 
+	workerYtdlpURL := os.Getenv("WORKER_YTDLP_URL")
+	workerWhisperURL := os.Getenv("WORKER_WHISPER_URL")
+	workerRmbgURL := os.Getenv("WORKER_RMBG_URL")
+
 	server := &Server{
-		pogo:         NewPogocacheEngine(pogoAddr, downloadDir),
-		mediaLimiter: make(chan struct{}, maxMediaJobs),
-		downloadDir:  downloadDir,
-		frontendDir:  frontendDir,
-		gotenbergLB:  NewGotenbergLoadBalancer(gotenbergURL),
+		pogo:             NewPogocacheEngine(pogoAddr, downloadDir),
+		mediaLimiter:     make(chan struct{}, maxMediaJobs),
+		downloadDir:      downloadDir,
+		frontendDir:      frontendDir,
+		gotenbergLB:      NewGotenbergLoadBalancer(gotenbergURL),
+		workerYtdlpURL:   workerYtdlpURL,
+		workerWhisperURL: workerWhisperURL,
+		workerRmbgURL:    workerRmbgURL,
+		httpClient: &http.Client{
+			Timeout: 180 * time.Second,
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -958,6 +1285,7 @@ func main() {
 	mux.HandleFunc("/api/download", server.handleDownload)
 	mux.HandleFunc("/api/convert/file", server.handleConvertFile)
 	mux.HandleFunc("/api/transcribe", server.handleTranscribe)
+	mux.HandleFunc("/api/remove-bg", server.handleRemoveBackground)
 	mux.HandleFunc("/api/status/", server.handleStatus)
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)

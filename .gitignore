@@ -28,6 +28,9 @@ pingora/target/
 # Downloaded Media & Temporary files
 downloads/
 /downloads/
+models/
+*.onnx
+*.bin
 *.mp3
 *.mp4
 *.m4a

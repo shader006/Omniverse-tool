@@ -1,26 +1,69 @@
 services:
-  app:
+  gateway:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: mediaflow_app
+    container_name: mediaflow_gateway
     restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/app:/app/app
       - ./downloads:/app/downloads
       - ./frontend:/frontend:ro
-      - ./tests:/app/tests:ro
     environment:
       - DOWNLOAD_DIR=/app/downloads
+      - FRONTEND_DIR=/frontend
       - GOTENBERG_URL=http://gotenberg:3000
       - POGOCACHE_ADDR=pogocache:9401
-      - MAX_MEDIA_CONCURRENT_JOBS=2
-      - PYTHONUNBUFFERED=1
+      - WORKER_YTDLP_URL=http://worker-ytdlp:8001
+      - WORKER_WHISPER_URL=http://worker-whisper:8002
+      - WORKER_RMBG_URL=http://worker-rmbg:8003
+      - MAX_MEDIA_CONCURRENT_JOBS=4
     depends_on:
       - gotenberg
       - pogocache
+      - worker-ytdlp
+      - worker-whisper
+      - worker-rmbg
+
+  worker-ytdlp:
+    build:
+      context: ./backend
+      dockerfile: services/worker_ytdlp/Dockerfile
+    container_name: mediaflow_worker_ytdlp
+    restart: unless-stopped
+    volumes:
+      - ./downloads:/app/downloads
+      - ./backend/app:/app/app
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8001
+
+  worker-whisper:
+    build:
+      context: ./backend
+      dockerfile: services/worker_whisper/Dockerfile
+    container_name: mediaflow_worker_whisper
+    restart: unless-stopped
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8002
+
+  worker-rmbg:
+    build:
+      context: ./backend
+      dockerfile: services/worker_rmbg/Dockerfile
+    container_name: mediaflow_worker_rmbg
+    restart: unless-stopped
+    volumes:
+      - ./downloads:/app/downloads
+      - ./models/rembg:/root/.rembg
+      - ./backend/app:/app/app
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8003
 
   pogocache:
     image: pogocache/pogocache:latest
@@ -45,10 +88,10 @@ services:
     ports:
       - "80:80"
     environment:
-      - UPSTREAM_ADDR=app:8000
+      - UPSTREAM_ADDR=gateway:8000
       - RUST_LOG=info
     depends_on:
-      - app
+      - gateway
 
   tunnel:
     image: cloudflare/cloudflared:latest
@@ -57,4 +100,3 @@ services:
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       - pingora
-
