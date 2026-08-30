@@ -5,13 +5,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const modeUrlBtn = document.getElementById('mode-url-btn');
   const modeFileBtn = document.getElementById('mode-file-btn');
   const modeTranscribeBtn = document.getElementById('mode-transcribe-btn');
+  const modeBgBtn = document.getElementById('mode-bg-btn');
   const sectionUrlMode = document.getElementById('section-url-mode');
   const sectionFileMode = document.getElementById('section-file-mode');
   const sectionTranscribeMode = document.getElementById('section-transcribe-mode');
+  const sectionBgMode = document.getElementById('section-bg-mode');
 
   function switchMode(mode) {
-    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn];
-    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode];
+    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn, modeBgBtn];
+    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode, sectionBgMode];
 
     allBtns.forEach(btn => {
       if (btn) {
@@ -33,7 +35,21 @@ document.addEventListener('DOMContentLoaded', () => {
       sectionFileMode.classList.remove('hidden');
     } else if (mode === 'transcribe' && sectionTranscribeMode) {
       sectionTranscribeMode.classList.remove('hidden');
+    } else if (mode === 'bg' && sectionBgMode) {
+      sectionBgMode.classList.remove('hidden');
     }
+  }
+
+  // Gán switchMode vào window để inline onclick và debugging đều hoạt động 100%
+  window.switchMode = switchMode;
+
+  // Kiểm tra nếu có hash trên URL (ví dụ #bg)
+  if (window.location.hash === '#bg') {
+    switchMode('bg');
+  } else if (window.location.hash === '#file') {
+    switchMode('file');
+  } else if (window.location.hash === '#transcribe') {
+    switchMode('transcribe');
   }
 
   // Event delegation trên container để click vào icon svg hay text đều hoạt động 100%
@@ -53,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (modeUrlBtn) modeUrlBtn.addEventListener('click', () => switchMode('url'));
   if (modeFileBtn) modeFileBtn.addEventListener('click', () => switchMode('file'));
   if (modeTranscribeBtn) modeTranscribeBtn.addEventListener('click', () => switchMode('transcribe'));
+  if (modeBgBtn) modeBgBtn.addEventListener('click', () => switchMode('bg'));
 
   // ==========================================
   // 2. URL TO MP3 / MP4 LOGIC
@@ -1109,4 +1126,298 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // ==========================================
+  // 4. REMOVE BACKGROUND (BRIA RMBG-1.4 & ONNX) LOGIC
+  // ==========================================
+  const bgDropzone = document.getElementById('bg-dropzone');
+  const bgFileInput = document.getElementById('bg-file-input');
+  const bgPrompt = document.getElementById('bg-dropzone-prompt');
+  const bgFileInfo = document.getElementById('bg-file-info');
+  const bgSourceThumb = document.getElementById('bg-source-thumb');
+  const bgFileName = document.getElementById('bg-file-name');
+  const bgFileMeta = document.getElementById('bg-file-meta');
+  const btnRemoveBgFile = document.getElementById('btn-remove-bg-file');
+
+  const bgOptionsPanel = document.getElementById('bg-options-panel');
+  const bgModelSelect = document.getElementById('bg-model-select');
+  const bgColorSelect = document.getElementById('bg-color-select');
+  const bgCustomColorInput = document.getElementById('bg-custom-color-input');
+  const bgAlphaMatting = document.getElementById('bg-alpha-matting');
+  const btnStartRemoveBg = document.getElementById('btn-start-remove-bg');
+
+  const bgProgressCard = document.getElementById('bg-progress-card');
+  const bgProgressText = document.getElementById('bg-progress-text');
+  const bgErrorBox = document.getElementById('bg-error-box');
+  const bgErrorMessage = document.getElementById('bg-error-message');
+
+  const bgResultCard = document.getElementById('bg-result-card');
+  const bgResultStats = document.getElementById('bg-result-stats');
+  const bgCompareBeforeImg = document.getElementById('bg-compare-before-img');
+  const bgCompareAfterImg = document.getElementById('bg-compare-after-img');
+  const bgCompareAfterWrapper = document.getElementById('bg-compare-after-wrapper');
+  const bgComparisonSlider = document.getElementById('bg-comparison-slider');
+  const bgComparisonHandle = document.getElementById('bg-comparison-handle');
+  const bgDownloadBtn = document.getElementById('bg-download-btn');
+  const btnRemoveBgAnother = document.getElementById('btn-remove-bg-another');
+
+  let selectedBgFile = null;
+  let bgSourceDataUrl = '';
+
+  function showBgError(msg) {
+    if (bgErrorMessage) bgErrorMessage.textContent = msg;
+    if (bgErrorBox) {
+      bgErrorBox.classList.remove('hidden');
+      bgErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function hideBgError() {
+    if (bgErrorBox) bgErrorBox.classList.add('hidden');
+  }
+
+  function resetBgSelection() {
+    selectedBgFile = null;
+    bgSourceDataUrl = '';
+    if (bgFileInput) bgFileInput.value = '';
+    if (bgFileInfo) bgFileInfo.classList.add('hidden');
+    if (bgPrompt) bgPrompt.classList.remove('hidden');
+    if (bgOptionsPanel) bgOptionsPanel.classList.add('hidden');
+    if (bgResultCard) bgResultCard.classList.add('hidden');
+    if (bgProgressCard) bgProgressCard.classList.add('hidden');
+    hideBgError();
+  }
+
+  function handleBgFileSelect(file) {
+    if (!file) return;
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp'];
+    const ext = file.name.split('.').pop().toLowerCase();
+    const validExts = ['png', 'jpg', 'jpeg', 'webp', 'bmp'];
+
+    if (!validTypes.includes(file.type) && !validExts.includes(ext)) {
+      showBgError('Định dạng file không hợp lệ! Vui lòng chọn ảnh PNG, JPG, WEBP hoặc BMP.');
+      return;
+    }
+
+    if (file.size > 50 * 1024 * 1024) {
+      showBgError('File vượt quá kích thước cho phép (tối đa 50MB).');
+      return;
+    }
+
+    hideBgError();
+    selectedBgFile = file;
+
+    const sizeStr = file.size > 1024 * 1024
+      ? (file.size / (1024 * 1024)).toFixed(2) + ' MB'
+      : (file.size / 1024).toFixed(1) + ' KB';
+
+    if (bgFileName) bgFileName.textContent = file.name;
+    if (bgFileMeta) bgFileMeta.textContent = `${ext.toUpperCase()} • ${sizeStr}`;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      bgSourceDataUrl = e.target.result;
+      if (bgSourceThumb) bgSourceThumb.src = bgSourceDataUrl;
+      if (bgCompareBeforeImg) bgCompareBeforeImg.src = bgSourceDataUrl;
+    };
+    reader.readAsDataURL(file);
+
+    if (bgPrompt) bgPrompt.classList.add('hidden');
+    if (bgFileInfo) bgFileInfo.classList.remove('hidden');
+    if (bgOptionsPanel) bgOptionsPanel.classList.remove('hidden');
+    if (bgResultCard) bgResultCard.classList.add('hidden');
+  }
+
+  // Dropzone Events
+  if (bgDropzone) {
+    bgDropzone.addEventListener('click', (e) => {
+      if (e.target.closest('#btn-remove-bg-file')) return;
+      if (bgFileInput) bgFileInput.click();
+    });
+
+    bgDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      bgDropzone.classList.add('dragover');
+    });
+
+    bgDropzone.addEventListener('dragleave', () => {
+      bgDropzone.classList.remove('dragover');
+    });
+
+    bgDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      bgDropzone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        handleBgFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+  }
+
+  if (bgFileInput) {
+    bgFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleBgFileSelect(e.target.files[0]);
+      }
+    });
+  }
+
+  if (btnRemoveBgFile) {
+    btnRemoveBgFile.addEventListener('click', (e) => {
+      e.stopPropagation();
+      resetBgSelection();
+    });
+  }
+
+  if (btnRemoveBgAnother) {
+    btnRemoveBgAnother.addEventListener('click', () => {
+      resetBgSelection();
+      if (bgDropzone) bgDropzone.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+
+  // Paste image directly from Clipboard (Ctrl+V)
+  window.addEventListener('paste', (e) => {
+    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          switchMode('bg');
+          handleBgFileSelect(blob);
+          break;
+        }
+      }
+    }
+  });
+
+  // Toggle custom color input
+  if (bgColorSelect && bgCustomColorInput) {
+    bgColorSelect.addEventListener('change', () => {
+      if (bgColorSelect.value === 'custom') {
+        bgCustomColorInput.classList.remove('hidden');
+      } else {
+        bgCustomColorInput.classList.add('hidden');
+      }
+    });
+  }
+
+  // Comparison Slider Interaction
+  function updateComparisonSlider(val) {
+    if (bgCompareAfterWrapper) {
+      bgCompareAfterWrapper.style.width = `${val}%`;
+    }
+    if (bgComparisonHandle) {
+      bgComparisonHandle.style.left = `${val}%`;
+    }
+  }
+
+  if (bgComparisonSlider) {
+    bgComparisonSlider.addEventListener('input', (e) => {
+      updateComparisonSlider(e.target.value);
+    });
+  }
+
+  // Start Remove Background API Call
+  if (btnStartRemoveBg) {
+    btnStartRemoveBg.addEventListener('click', async () => {
+      if (!selectedBgFile) {
+        showBgError('Vui lòng chọn hoặc kéo thả một bức ảnh cần tách nền.');
+        return;
+      }
+
+      hideBgError();
+      if (bgResultCard) bgResultCard.classList.add('hidden');
+      if (bgProgressCard) bgProgressCard.classList.remove('hidden');
+
+      btnStartRemoveBg.disabled = true;
+      btnStartRemoveBg.innerHTML = `
+        <div class="spinner-small"></div>
+        <span>Đang Xử Lý Tách Nền...</span>
+      `;
+
+      let selectedColor = bgColorSelect ? bgColorSelect.value : 'transparent';
+      if (selectedColor === 'custom' && bgCustomColorInput) {
+        selectedColor = bgCustomColorInput.value;
+      }
+
+      const formData = new FormData();
+      formData.append('file', selectedBgFile);
+      formData.append('model', bgModelSelect ? bgModelSelect.value : 'bria-rmbg');
+      formData.append('bg_color', selectedColor);
+      formData.append('alpha_matting', bgAlphaMatting && bgAlphaMatting.checked ? 'true' : 'false');
+
+      try {
+        const response = await fetch('/api/remove-bg', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const respText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(respText);
+        } catch (parseErr) {
+          if (respText.includes('<!DOCTYPE') || respText.includes('<html')) {
+            throw new Error('Server Backend đang chạy phiên bản cũ (chưa nạp endpoint /api/remove-bg). Vui lòng khởi động lại stack bằng lệnh: ./start.sh hoặc docker compose up -d');
+          }
+          throw new Error('Phản hồi từ máy chủ không hợp lệ: ' + respText.slice(0, 80));
+        }
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.detail || data.error || 'Không thể xử lý tách nền ảnh.');
+        }
+
+        // Hide progress
+        if (bgProgressCard) bgProgressCard.classList.add('hidden');
+        if (bgResultCard) bgResultCard.classList.remove('hidden');
+
+        // Set Images for Before/After Slider
+        if (bgCompareBeforeImg && bgSourceDataUrl) {
+          bgCompareBeforeImg.src = bgSourceDataUrl;
+        }
+
+        const resultImgSrc = data.preview_base64 || data.download_url;
+        if (bgCompareAfterImg) {
+          bgCompareAfterImg.src = resultImgSrc;
+        }
+
+        // Reset Slider to 50%
+        if (bgComparisonSlider) bgComparisonSlider.value = 50;
+        updateComparisonSlider(50);
+
+        // Stats
+        const timingMs = data.processing_time_ms || (data.metadata?.timing_ms?.total || '800');
+        const modelName = data.metadata?.model_display || 'BRIA AI RMBG-1.4';
+        const dims = data.metadata?.output_dimensions ? `${data.metadata.output_dimensions[0]}x${data.metadata.output_dimensions[1]}` : '';
+        const sizeStr = data.result_size_bytes ? ` • ${(data.result_size_bytes / 1024).toFixed(1)} KB` : '';
+
+        if (bgResultStats) {
+          bgResultStats.textContent = `Model: ${modelName} • Xử lý: ${timingMs}ms ${dims ? '• ' + dims : ''}${sizeStr}`;
+        }
+
+        // Download Button
+        if (bgDownloadBtn) {
+          bgDownloadBtn.href = data.download_url;
+          bgDownloadBtn.setAttribute('download', data.filename || 'removed_bg.png');
+        }
+
+        if (bgResultCard) bgResultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        btnStartRemoveBg.disabled = false;
+        btnStartRemoveBg.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+          <span>Tách Lại Ảnh Này</span>
+        `;
+      } catch (err) {
+        if (bgProgressCard) bgProgressCard.classList.add('hidden');
+        btnStartRemoveBg.disabled = false;
+        btnStartRemoveBg.innerHTML = `
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+          <span>Thử Lại</span>
+        `;
+        showBgError(err.message || 'Lỗi khi gửi yêu cầu tách nền ảnh.');
+      }
+    });
+  }
 });
+

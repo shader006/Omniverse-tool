@@ -18,7 +18,7 @@
     .btn-arrow { width: 18px; height: 18px; }
     .hidden { display: none !important; }
   </style>
-  <link rel="stylesheet" href="/static/style.css?v=4.0.0">
+  <link rel="stylesheet" href="/static/style.css?v=5.1.0">
 </head>
 <body>
   <div class="bg-glow bg-glow-1"></div>
@@ -40,14 +40,14 @@
     <!-- Mode Switcher Navigation (3 Nút chọn chế độ) -->
     <div class="mode-switcher-wrapper">
       <div class="mode-switcher">
-        <button type="button" class="mode-btn active" id="mode-url-btn" data-mode="url">
+        <button type="button" class="mode-btn active" id="mode-url-btn" data-mode="url" onclick="window.switchMode && window.switchMode('url')">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
           </svg>
           <span>URL to MP3 / MP4</span>
         </button>
-        <button type="button" class="mode-btn" id="mode-file-btn" data-mode="file">
+        <button type="button" class="mode-btn" id="mode-file-btn" data-mode="file" onclick="window.switchMode && window.switchMode('file')">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
@@ -57,7 +57,7 @@
           </svg>
           <span>File Conver</span>
         </button>
-        <button type="button" class="mode-btn" id="mode-transcribe-btn" data-mode="transcribe">
+        <button type="button" class="mode-btn" id="mode-transcribe-btn" data-mode="transcribe" onclick="window.switchMode && window.switchMode('transcribe')">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -65,6 +65,12 @@
             <line x1="8" y1="23" x2="16" y2="23"></line>
           </svg>
           <span>Extract Text (Whisper)</span>
+        </button>
+        <button type="button" class="mode-btn" id="mode-bg-btn" data-mode="bg" onclick="window.switchMode && window.switchMode('bg')">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+          </svg>
+          <span>Remove BG (AI)</span>
         </button>
       </div>
     </div>
@@ -553,6 +559,185 @@
       </div>
     </section>
 
+    <!-- ==================== SECTION 4: REMOVE BACKGROUND (BRIA RMBG-1.4 & ONNX) ==================== -->
+    <section id="section-bg-mode" class="mode-section hidden">
+      <div class="hero-section">
+        <h1 class="hero-title">Tách Nền Ảnh Bằng AI <span class="gradient-text">BRIA RMBG-1.4</span></h1>
+        <p class="hero-subtitle">Tách nền tự động chất lượng cao với mô hình State-of-the-Art BRIA RMBG-1.4 và ONNX Runtime CPU Turbo. Sắc nét đến từng sợi tóc!</p>
+      </div>
+
+      <div class="card search-card file-conver-card">
+        <!-- Dropzone Upload Area -->
+        <div id="bg-dropzone" class="file-dropzone">
+          <input type="file" id="bg-file-input" class="file-input-hidden" accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp">
+          
+          <div id="bg-dropzone-prompt" class="dropzone-prompt">
+            <div class="dropzone-icon">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+            </div>
+            <h3 class="dropzone-title">Kéo & thả ảnh vào đây, hoặc <span class="highlight-text">chọn từ máy</span></h3>
+            <p class="dropzone-subtitle">Hỗ trợ PNG, JPG, JPEG, WEBP, BMP (Tối đa 50MB) — Có thể nhấn <kbd style="background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 4px; font-family: monospace;">Ctrl+V</kbd> để dán ảnh trực tiếp</p>
+          </div>
+
+          <!-- File Info Preview when file is selected -->
+          <div id="bg-file-info" class="file-info-preview hidden">
+            <div class="file-preview-left">
+              <img id="bg-source-thumb" class="bg-source-preview-thumb" src="" alt="Source Preview">
+              <div class="file-details">
+                <div id="bg-file-name" class="selected-file-name">image.png</div>
+                <div id="bg-file-meta" class="selected-file-meta">PNG • 1.2 MB</div>
+              </div>
+            </div>
+            <button type="button" id="btn-remove-bg-file" class="btn-remove-file" title="Xóa ảnh và chọn lại">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Options Panel for Background Removal -->
+        <div id="bg-options-panel" class="file-options-panel hidden">
+          <div class="options-grid">
+            <div class="option-item">
+              <label for="bg-model-select" class="option-label">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                <span>Mô hình AI:</span>
+              </label>
+              <select id="bg-model-select" class="form-select">
+                <option value="bria-rmbg" selected>⭐ BRIA AI RMBG-1.4 (Sắc nét HD 1024px, Chuẩn Studio)</option>
+              </select>
+            </div>
+
+            <div class="option-item">
+              <label for="bg-color-select" class="option-label">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor"></path></svg>
+                <span>Màu nền thay thế:</span>
+              </label>
+              <div class="bg-color-picker-wrapper">
+                <select id="bg-color-select" class="form-select">
+                  <option value="transparent" selected>🏁 Nền Trong Suốt (PNG Transparent)</option>
+                  <option value="#ffffff">⚪ Nền Trắng (#FFFFFF)</option>
+                  <option value="#000000">⚫ Nền Đen (#000000)</option>
+                  <option value="#1e293b">🔵 Nền Xanh Navy (#1E293B)</option>
+                  <option value="custom">🎨 Tùy chọn màu...</option>
+                </select>
+                <input type="color" id="bg-custom-color-input" class="bg-custom-color-input hidden" value="#ffffff" title="Chọn màu tùy ý">
+              </div>
+            </div>
+          </div>
+
+          <div class="option-checkbox-row">
+            <label class="custom-checkbox">
+              <input type="checkbox" id="bg-alpha-matting">
+              <span class="checkbox-box"></span>
+              <span class="checkbox-label">Bật Alpha Matting (Tinh chỉnh viền chi tiết cực mịn cho tóc & lông thú)</span>
+            </label>
+          </div>
+
+          <!-- Action Button -->
+          <div class="convert-action-wrapper">
+            <button type="button" id="btn-start-remove-bg" class="btn-convert btn-start-convert">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+              </svg>
+              <span>Tách Nền Ngay (Remove BG)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Processing / Progress Card -->
+        <div id="bg-progress-card" class="active-progress-card hidden">
+          <div class="progress-header">
+            <div class="progress-title-row">
+              <div class="spinner-small"></div>
+              <span id="bg-progress-text" class="progress-status-text">Đang chạy mô hình AI tách nền trên CPU ONNX Turbo...</span>
+            </div>
+          </div>
+          <div class="progress-bar-track">
+            <div id="bg-progress-bar" class="progress-bar-fill progress-bar-indeterminate"></div>
+          </div>
+        </div>
+
+        <!-- Error Box -->
+        <div id="bg-error-box" class="error-box hidden">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span id="bg-error-message">Đã có lỗi xảy ra khi tách nền.</span>
+        </div>
+
+        <!-- Interactive Result Comparison Card -->
+        <div id="bg-result-card" class="file-result-card hidden">
+          <div class="result-header">
+            <div class="result-icon-badge">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#10b981" stroke-width="2.5">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+            </div>
+            <div class="result-meta">
+              <h3 class="result-title">Tách Nền Hoàn Tất!</h3>
+              <p id="bg-result-stats" class="result-subtitle">Thời gian xử lý: 850ms • Kích thước: 1920x1080 (PNG Trong suốt)</p>
+            </div>
+          </div>
+
+          <!-- Interactive Before / After Comparison Slider -->
+          <div class="comparison-container" id="bg-comparison-container">
+            <div class="comparison-before">
+              <img id="bg-compare-before-img" src="" alt="Original Image">
+              <span class="comparison-tag tag-before">GỐC</span>
+            </div>
+            <div class="comparison-after" id="bg-compare-after-wrapper">
+              <img id="bg-compare-after-img" src="" alt="Background Removed">
+              <span class="comparison-tag tag-after">ĐÃ TÁCH NỀN</span>
+            </div>
+            <input type="range" min="0" max="100" value="50" class="comparison-slider" id="bg-comparison-slider" aria-label="So sánh Trước và Sau">
+            <div class="comparison-handle" id="bg-comparison-handle">
+              <div class="handle-line"></div>
+              <div class="handle-button">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-actions">
+            <a id="bg-download-btn" href="#" download="removed_bg.png" class="btn-download-pdf">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span id="bg-download-btn-text">Tải Ảnh Đã Tách Nền (PNG)</span>
+            </a>
+            <button type="button" id="btn-remove-bg-another" class="btn-another">Tách ảnh khác</button>
+          </div>
+        </div>
+
+        <!-- Badges Supported Formats -->
+        <div class="supported-formats-row">
+          <span class="format-badge"><span class="badge-dot dot-word"></span> PNG Transparent</span>
+          <span class="format-badge"><span class="badge-dot dot-excel"></span> JPG / JPEG</span>
+          <span class="format-badge"><span class="badge-dot dot-ppt"></span> WEBP</span>
+          <span class="format-badge"><span class="badge-dot dot-md"></span> BMP Image</span>
+          <span class="format-badge"><span class="badge-dot dot-html"></span> BRIA RMBG-1.4 HD</span>
+          <span class="format-badge"><span class="badge-dot dot-txt"></span> ONNX CPU Turbo</span>
+        </div>
+      </div>
+    </section>
+
     <!-- Supported Platforms Grid -->
     <section class="features-grid">
       <div class="feature-card">
@@ -577,6 +762,6 @@
     <p>© 2026 MediaFlow Engine. Tích hợp Gotenberg & Docker Swarm.</p>
   </footer>
 
-  <script src="/static/app.js?v=4.0.0"></script>
+  <script src="/static/app.js?v=5.1.0"></script>
 </body>
 </html>

@@ -1402,3 +1402,178 @@ body {
   .result-actions { width: 100%; }
   .btn-download-result, .btn-another { width: 100%; justify-content: center; }
 }
+
+/* ==========================================================================
+   REMOVE BACKGROUND & BEFORE/AFTER COMPARISON SLIDER STYLES
+   ========================================================================== */
+.bg-source-preview-thumb {
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: #0f172a;
+}
+
+.bg-color-picker-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bg-custom-color-input {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Before / After Interactive Slider Container */
+.comparison-container {
+  position: relative;
+  width: 100%;
+  max-width: 680px;
+  height: 420px;
+  margin: 20px auto;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  user-select: none;
+  background: #0b0f19;
+}
+
+/* Checkerboard Pattern for Transparent Transparency */
+.comparison-after {
+  background-image: 
+    linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+    linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+    linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  background-color: #0f172a;
+}
+
+.comparison-before,
+.comparison-after {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.comparison-before img,
+.comparison-after img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.comparison-after {
+  width: 50%;
+  border-right: 2px solid rgba(255, 255, 255, 0.9);
+  z-index: 2;
+  box-shadow: 4px 0 15px rgba(0, 0, 0, 0.3);
+}
+
+.comparison-after img {
+  width: 680px; /* Match max-width */
+  max-width: none;
+}
+
+/* Floating Tags (GỐC / ĐÃ TÁCH NỀN) */
+.comparison-tag {
+  position: absolute;
+  top: 14px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(8px);
+  z-index: 5;
+}
+
+.tag-before {
+  right: 14px;
+  background: rgba(15, 23, 42, 0.75);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.tag-after {
+  left: 14px;
+  background: rgba(16, 185, 129, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+}
+
+/* Hidden Native Range Input Overlaid for Seamless Touch/Drag */
+.comparison-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: ew-resize;
+  z-index: 10;
+  margin: 0;
+}
+
+/* Custom Visible Handle Line & Center Circle */
+.comparison-handle {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 100%;
+  width: 0;
+  pointer-events: none;
+  z-index: 6;
+  transform: translateX(-50%);
+}
+
+.handle-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+}
+
+.handle-button {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.6), 0 0 10px rgba(255, 255, 255, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  border: 2px solid #6366f1;
+}
+
+@media (max-width: 768px) {
+  .comparison-container {
+    height: 320px;
+  }
+}
