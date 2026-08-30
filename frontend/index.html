@@ -74,7 +74,7 @@
       <!-- Hero Section -->
       <div class="hero-section">
         <h1 class="hero-title">Trình Chuyển Đổi <span class="gradient-text">MP3 & MP4</span> Trực Tuyến</h1>
-        <p class="hero-subtitle">Dán liên kết YouTube, TikTok, Facebook để bóc tách thông tin và tải về với chất lượng tùy chọn.</p>
+        <p class="hero-subtitle">Dán liên kết YouTube, TikTok, Facebook (Thời lượng tối đa 3 giờ) để bóc tách thông tin và tải về với chất lượng tùy chọn.</p>
       </div>
 
       <!-- Search / Convert Bar Card -->
@@ -333,7 +333,7 @@
       <!-- Hero Section -->
       <div class="hero-section">
         <h1 class="hero-title">Trích Xuất Văn Bản <span class="gradient-text">Từ MP3 & MP4</span></h1>
-        <p class="hero-subtitle">Nhận diện giọng nói siêu nhanh với faster-whisper AI CPU, xuất file văn bản hoặc phụ đề (.txt, .srt, .vtt).</p>
+        <p class="hero-subtitle">Nhận diện giọng nói siêu nhanh với Whisper AI (Thời lượng tối đa 10 phút/file), xuất file văn bản hoặc phụ đề (.txt, .srt, .vtt, .json).</p>
       </div>
 
       <div class="card file-converter-card">
@@ -351,7 +351,7 @@
             </div>
             <h3 class="dropzone-title">Kéo & thả file Audio/Video vào đây</h3>
             <p class="dropzone-subtitle">hoặc <span class="browse-link">Chọn file từ máy tính</span></p>
-            <div class="dropzone-hint">Hỗ trợ MP3, MP4, WAV, M4A, WEBM, FLAC, OGG (Tối đa 250MB)</div>
+            <div class="dropzone-hint">Hỗ trợ MP3, MP4, WAV, M4A, WEBM, FLAC, OGG (Thời lượng tối đa 10 phút • Tối đa 100MB)</div>
           </div>
 
           <!-- File Selected Info -->
@@ -365,6 +365,16 @@
               <button type="button" class="btn-remove-file" id="btn-remove-transcribe-file" title="Xóa file">✕</button>
             </div>
           </div>
+        </div>
+
+        <!-- Error Box for Transcribe -->
+        <div id="transcribe-error-box" class="error-box hidden" style="margin-top: 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span id="transcribe-error-message">Đã có lỗi xảy ra. Vui lòng kiểm tra lại file.</span>
         </div>
 
         <!-- Transcribe Options Form -->

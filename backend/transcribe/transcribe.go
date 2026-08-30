@@ -3,6 +3,7 @@ package transcribe
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,10 +108,27 @@ func fileExists(p string) bool {
 	return err == nil && !fi.IsDir() && fi.Size() > 0
 }
 
+// MaxTranscribeDurationSeconds giới hạn thời lượng tối đa cho phép là 10 phút (600 giây)
+const MaxTranscribeDurationSeconds = 600.0
+
 // TranscribeMedia transcribes audio/video using whisper.cpp native engine in Go
 func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*TranscribeResult, error) {
 	if _, err := os.Stat(inputPath); err != nil {
 		return nil, fmt.Errorf("không tìm thấy file: %s", inputPath)
+	}
+
+	// Kiểm tra thời lượng file trước khi xử lý AI
+	realAudioDur := getMediaDuration(inputPath)
+	if realAudioDur > MaxTranscribeDurationSeconds {
+		mins := int(realAudioDur / 60.0)
+		secs := int(math.Mod(realAudioDur, 60.0))
+		var durStr string
+		if mins > 0 {
+			durStr = fmt.Sprintf("%d phút %02d giây", mins, secs)
+		} else {
+			durStr = fmt.Sprintf("%.0f giây", realAudioDur)
+		}
+		return nil, fmt.Errorf("Thời lượng file (%s) vượt quá giới hạn tối đa cho phép là 10 phút. Vui lòng chọn file ngắn hơn.", durStr)
 	}
 
 	startTime := time.Now()
@@ -239,27 +257,38 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 	targetFilename := fmt.Sprintf("%s_transcript.%s", baseName, outFormat)
 	targetFilePath := filepath.Join(downloadDir, targetFilename)
 
-	// Đảm bảo file định dạng mong muốn tồn tại
+	// Đảm bảo file định dạng mong muốn tồn tại và xóa các file tạm thừa
 	switch outFormat {
 	case "srt":
 		if fileExists(srtFilePath) && srtFilePath != targetFilePath {
 			_ = os.Rename(srtFilePath, targetFilePath)
 		}
+		_ = os.Remove(txtFilePath)
+		_ = os.Remove(vttFilePath)
+		_ = os.Remove(jsonFilePath)
 	case "vtt":
 		if fileExists(vttFilePath) && vttFilePath != targetFilePath {
 			_ = os.Rename(vttFilePath, targetFilePath)
 		}
+		_ = os.Remove(txtFilePath)
+		_ = os.Remove(srtFilePath)
+		_ = os.Remove(jsonFilePath)
 	case "json":
 		if fileExists(jsonFilePath) && jsonFilePath != targetFilePath {
 			_ = os.Rename(jsonFilePath, targetFilePath)
 		}
+		_ = os.Remove(txtFilePath)
+		_ = os.Remove(srtFilePath)
+		_ = os.Remove(vttFilePath)
 	default: // txt
 		if fileExists(txtFilePath) && txtFilePath != targetFilePath {
 			_ = os.Rename(txtFilePath, targetFilePath)
 		}
+		_ = os.Remove(srtFilePath)
+		_ = os.Remove(vttFilePath)
+		_ = os.Remove(jsonFilePath)
 	}
 
-	realAudioDur := getMediaDuration(inputPath)
 	if realAudioDur == 0 && len(segments) > 0 {
 		realAudioDur = mathRound(segments[len(segments)-1].End, 2)
 	}

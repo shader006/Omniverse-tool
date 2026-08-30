@@ -15,10 +15,16 @@ def main():
     parser.add_argument("--file-conver", action="store_true", help="Chỉ chạy các bài test liên quan đến File Conver (Gotenberg)")
     parser.add_argument("--transcribe", action="store_true", help="Chỉ chạy các bài test liên quan đến Extract Text (whisper.cpp)")
     parser.add_argument("--autoscaler", action="store_true", help="Chỉ chạy các bài test liên quan đến Docker Swarm Autoscaler")
+    parser.add_argument("--benchmark-limits", action="store_true", help="Chạy benchmark đo lường giới hạn thời lượng xử lý audio/video")
     args = parser.parse_args()
 
     tests_dir = os.path.dirname(os.path.abspath(__file__))
     loader = unittest.TestLoader()
+
+    if args.benchmark_limits:
+        import subprocess
+        bench_script = os.path.join(tests_dir, "benchmark_media_limits.py")
+        sys.exit(subprocess.call([sys.executable, bench_script]))
 
     if args.url:
         target_dir = os.path.join(tests_dir, "test_url")

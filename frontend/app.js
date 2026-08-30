@@ -653,11 +653,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const tagLang = document.getElementById('tag-lang');
   const tagDuration = document.getElementById('tag-duration');
   const tagTime = document.getElementById('tag-time');
+  const transcribeErrorBox = document.getElementById('transcribe-error-box');
+  const transcribeErrorMessage = document.getElementById('transcribe-error-message');
 
   let selectedTranscribeFile = null;
 
+  function showTranscribeError(msg) {
+    if (transcribeErrorMessage) transcribeErrorMessage.textContent = msg;
+    if (transcribeErrorBox) {
+      transcribeErrorBox.classList.remove('hidden');
+      transcribeErrorBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function hideTranscribeError() {
+    if (transcribeErrorBox) transcribeErrorBox.classList.add('hidden');
+  }
+
   function resetTranscribeSelection() {
     selectedTranscribeFile = null;
+    hideTranscribeError();
     if (transcribeFileInput) transcribeFileInput.value = '';
     if (transcribePrompt) transcribePrompt.classList.remove('hidden');
     if (transcribeFileInfo) transcribeFileInfo.classList.add('hidden');
@@ -675,6 +690,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleTranscribeFileSelect(file) {
     if (!file) return;
+    hideTranscribeError();
     selectedTranscribeFile = file;
 
     if (transcribeFileName) transcribeFileName.textContent = file.name;
@@ -682,8 +698,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const ext = file.name.split('.').pop().toUpperCase();
       transcribeFileMeta.textContent = `${formatFileBytes(file.size)} • ${ext} Media`;
     }
+    const isVideo = /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name);
     if (transcribeFileIcon) {
-      const isVideo = /\.(mp4|webm|mov|avi|mkv)$/i.test(file.name);
       transcribeFileIcon.textContent = isVideo ? '🎬' : '🎵';
     }
 
@@ -692,6 +708,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (transcribeOptionsPanel) transcribeOptionsPanel.classList.remove('hidden');
     if (transcribeResultCard) transcribeResultCard.classList.add('hidden');
     if (transcribeProgressCard) transcribeProgressCard.classList.add('hidden');
+
+    // Kiểm tra nhanh thời lượng file ở Client-side (HTML5 Media API)
+    const mediaElem = document.createElement(isVideo ? 'video' : 'audio');
+    const objectUrl = URL.createObjectURL(file);
+    mediaElem.preload = 'metadata';
+    mediaElem.onloadedmetadata = () => {
+      URL.revokeObjectURL(objectUrl);
+      const dur = mediaElem.duration;
+      if (dur && dur > 600) { // 10 phút = 600 giây
+        const m = Math.floor(dur / 60);
+        const s = Math.floor(dur % 60);
+        const timeStr = m > 0 ? `${m} phút ${s > 0 ? s + ' giây' : ''}` : `${dur.toFixed(0)} giây`;
+        showTranscribeError(`⚠️ File "${file.name}" dài ${timeStr}, vượt quá giới hạn tối đa cho phép là 10 phút. Vui lòng chọn file ngắn hơn.`);
+        if (btnStartTranscribe) btnStartTranscribe.disabled = true;
+      } else {
+        if (btnStartTranscribe) btnStartTranscribe.disabled = false;
+      }
+    };
+    mediaElem.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+    mediaElem.src = objectUrl;
   }
 
   if (transcribeFileInput) {
@@ -762,10 +800,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnStartTranscribe) {
     btnStartTranscribe.addEventListener('click', async () => {
       if (!selectedTranscribeFile) {
-        alert('Vui lòng chọn hoặc kéo thả file âm thanh / video trước!');
+        showTranscribeError('Vui lòng chọn hoặc kéo thả file âm thanh / video trước!');
         return;
       }
 
+      hideTranscribeError();
       btnStartTranscribe.disabled = true;
       btnStartTranscribe.innerHTML = `
         <div class="spinner" style="width:16px;height:16px;border-width:2px;"></div>
@@ -832,7 +871,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           <span>Thử Lại</span>
         `;
-        alert(err.message || 'Lỗi khi gửi yêu cầu trích xuất văn bản.');
+        showTranscribeError(err.message || 'Lỗi khi gửi yêu cầu trích xuất văn bản.');
       }
     });
   }

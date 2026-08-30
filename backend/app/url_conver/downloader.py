@@ -88,6 +88,17 @@ def run_download_task(
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # 1. Trích xuất metadata trước để kiểm tra thời lượng < 3 giờ
+            pre_info = ydl.extract_info(cleaned_url, download=False)
+            if pre_info:
+                if 'entries' in pre_info and pre_info['entries']:
+                    pre_info = pre_info['entries'][0]
+                dur = pre_info.get('duration', 0) or 0
+                if dur > 3 * 3600:
+                    if progress_callback:
+                        progress_callback(0.0, "Lỗi: Thời lượng video/audio vượt quá giới hạn tối đa 3 giờ.")
+                    return None
+
             info = ydl.extract_info(cleaned_url, download=True)
             if not info:
                 return None

@@ -138,6 +138,28 @@ class TestTranscribeAPI(unittest.TestCase):
 
         print(f"  [PASS] test_05_transcribe_export_vtt_subtitles: VTT Filename={data['filename']}, Header=WEBVTT OK")
 
+    def test_06_transcribe_duration_limit_exceeded(self):
+        """Kiểm tra hệ thống từ chối và báo lỗi rõ ràng khi file vượt quá 10 phút (600s)"""
+        # Tạo file WAV có header khai báo 650 giây (~10.8 phút)
+        sample_rate = 8000
+        n_samples = int(650 * sample_rate)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            # Ghi một số mẫu cơ bản
+            wav_file.writeframes(b"\x00\x00" * n_samples)
+        
+        buf.seek(0)
+        files = {"file": ("long_speech.wav", buf.read(), "audio/wav")}
+        res = requests.post(f"{BASE_URL}/api/transcribe", files=files, timeout=60)
+        self.assertEqual(res.status_code, 400)
+        data = res.json()
+        self.assertFalse(data.get("success", True))
+        self.assertIn("vượt quá giới hạn tối đa", data.get("detail", ""))
+        print(f"  [PASS] test_06_transcribe_duration_limit_exceeded: Bắt lỗi và từ chối đúng file > 10 phút ({data.get('detail')})")
+
 
 if __name__ == "__main__":
     unittest.main()

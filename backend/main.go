@@ -557,6 +557,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	defer os.Remove(tempFilePath)
 
 	// Dùng mediaLimiter để tránh nghẽn CPU khi nhiều user cùng transcribe
 	s.mediaLimiter <- struct{}{}
@@ -569,7 +570,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"detail":  "Lỗi xử lý nhận diện giọng nói: " + err.Error(),
+			"detail":  err.Error(),
 		})
 		return
 	}

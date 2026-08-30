@@ -13,6 +13,8 @@ FAST_INFO_OPTS = {
 }
 
 
+MAX_URL_DURATION_SECS = 3 * 3600  # 3 giờ tối đa (10800 giây)
+
 def parse_friendly_error(err_str: str, url: str) -> str:
     """Chuyển đổi các thông báo lỗi kỹ thuật của yt-dlp/Facebook/YouTube thành lỗi tiếng Việt chính xác và dễ hiểu"""
     err_lower = err_str.lower()
@@ -48,7 +50,7 @@ def parse_friendly_error(err_str: str, url: str) -> str:
 
 
 def get_media_info_with_error(url: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Trích xuất Metadata kèm thông báo lỗi chi tiết"""
+    """Trích xuất Metadata kèm thông báo lỗi chi tiết và kiểm tra giới hạn thời lượng"""
     cleaned_url = clean_url_key(url)
     try:
         with yt_dlp.YoutubeDL(FAST_INFO_OPTS) as ydl:
@@ -61,11 +63,20 @@ def get_media_info_with_error(url: str) -> Tuple[Optional[Dict[str, Any]], Optio
 
             duration_secs = info.get('duration', 0) or 0
             try:
-                minutes = int(duration_secs) // 60
-                seconds = int(duration_secs) % 60
-                duration_str = f"{minutes}:{seconds:02d}"
+                dur_int = int(duration_secs)
+                hours = dur_int // 3600
+                minutes = (dur_int % 3600) // 60
+                seconds = dur_int % 60
+                if hours > 0:
+                    duration_str = f"{hours}:{minutes:02d}:{seconds:02d}"
+                else:
+                    duration_str = f"{minutes}:{seconds:02d}"
             except Exception:
                 duration_str = "N/A"
+
+            # Kiểm tra giới hạn thời lượng 3 giờ
+            if duration_secs > MAX_URL_DURATION_SECS:
+                return None, f"Thời lượng video/audio ({duration_str}) vượt quá giới hạn tối đa cho phép là 3 giờ. Vui lòng chọn liên kết ngắn hơn."
 
             thumbnail = info.get('thumbnail') or ""
             if not thumbnail and isinstance(info.get('thumbnails'), (list, tuple)) and len(info['thumbnails']) > 0:
