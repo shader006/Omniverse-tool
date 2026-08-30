@@ -15,9 +15,11 @@ def main():
     parser.add_argument("--file-conver", action="store_true", help="Chỉ chạy các bài test liên quan đến File Conver (Gotenberg)")
     parser.add_argument("--transcribe", action="store_true", help="Chỉ chạy các bài test liên quan đến Extract Text (whisper.cpp)")
     parser.add_argument("--autoscaler", action="store_true", help="Chỉ chạy các bài test liên quan đến Docker Swarm Autoscaler")
+    parser.add_argument("--rmbg", action="store_true", help="Chỉ chạy các bài test liên quan đến Remove Background (BRIA RMBG-1.4 & ONNX)")
     parser.add_argument("--benchmark-limits", action="store_true", help="Chạy benchmark đo lường giới hạn thời lượng xử lý audio/video")
     parser.add_argument("--benchmark-model", action="store_true", help="Chạy benchmark so sánh hiệu năng giữa ggml-base.bin và ggml-small.bin")
     parser.add_argument("--benchmark-stage1", action="store_true", help="Chạy benchmark so sánh hiệu năng tối ưu Giai đoạn 1 cho Whisper Small")
+    parser.add_argument("--benchmark-rmbg", action="store_true", help="Chạy benchmark hiệu năng tách nền ảnh BRIA RMBG-1.4 vs U2Net trên CPU")
     args = parser.parse_args()
 
     tests_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,6 +40,11 @@ def main():
         bench_script = os.path.join(tests_dir, "benchmark_stage1_optimization.py")
         sys.exit(subprocess.call([sys.executable, bench_script]))
 
+    if args.benchmark_rmbg:
+        import subprocess
+        bench_script = os.path.join(tests_dir, "benchmark_rmbg.py")
+        sys.exit(subprocess.call([sys.executable, bench_script]))
+
     if args.url:
         target_dir = os.path.join(tests_dir, "test_url")
         print("=" * 65)
@@ -54,6 +61,12 @@ def main():
         target_dir = os.path.join(tests_dir, "test_transcribe")
         print("=" * 65)
         print("   BẮT ĐẦU CHẠY BỘ TEST: EXTRACT TEXT (WHISPER.CPP CPU)")
+        print("=" * 65)
+        suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
+    elif args.rmbg:
+        target_dir = os.path.join(tests_dir, "test_rmbg")
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY BỘ TEST: REMOVE BACKGROUND (BRIA RMBG-1.4 & ONNX)")
         print("=" * 65)
         suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
     elif args.autoscaler:
