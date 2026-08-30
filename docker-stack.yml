@@ -58,6 +58,18 @@ services:
     networks:
       - omniverse_net
 
+  lightpanda:
+    image: lightpanda/browser:nightly
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 256M
+    networks:
+      - omniverse_net
+
   pingora:
     image: omniversetool-pingora:latest
     deploy:
