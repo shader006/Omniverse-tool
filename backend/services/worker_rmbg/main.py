@@ -25,12 +25,6 @@ def _warmup_worker():
     try:
         session = get_rembg_session("bria-rmbg")
         if session:
-            from PIL import Image
-            import io
-            dummy_img = Image.new("RGB", (64, 64), color="blue")
-            dummy_bio = io.BytesIO()
-            dummy_img.save(dummy_bio, format="PNG")
-            remove_background(dummy_bio.getvalue(), model_name="bria-rmbg")
             _IS_WARMED_UP = True
             logger.info("✅ [WARM-UP] BRIA RMBG-1.4 đã nạp sẵn vào RAM hoàn tất! Sẵn sàng phục vụ tức thì.")
     except Exception as e:
