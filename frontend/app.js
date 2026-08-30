@@ -647,6 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const transcribeResultCard = document.getElementById('transcribe-result-card');
   const transcribeResultText = document.getElementById('transcribe-result-text');
   const btnCopyTranscribe = document.getElementById('btn-copy-transcribe');
+  const btnCopyTranscribeRaw = document.getElementById('btn-copy-transcribe-raw');
   const copyBtnLabel = document.getElementById('copy-btn-label');
   const transcribeDownloadBtn = document.getElementById('transcribe-download-btn');
   const btnTranscribeAnother = document.getElementById('btn-transcribe-another');
@@ -656,7 +657,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const transcribeErrorBox = document.getElementById('transcribe-error-box');
   const transcribeErrorMessage = document.getElementById('transcribe-error-message');
 
+  // Elements for Video/Audio Player & Synced Lyrics
+  const transcribeMediaPlayer = document.getElementById('transcribe-media-player');
+  const transcribeAudioVisual = document.getElementById('transcribe-audio-visual');
+  const playerMediaTitle = document.getElementById('player-media-title');
+  const audioEqualizer = document.getElementById('audio-equalizer');
+  const transcribeLyricsContainer = document.getElementById('transcribe-lyrics-container');
+  const tabLyricsLive = document.getElementById('tab-lyrics-live');
+  const tabLyricsRaw = document.getElementById('tab-lyrics-raw');
+  const lyricsSyncView = document.getElementById('lyrics-sync-view');
+  const lyricsRawView = document.getElementById('lyrics-raw-view');
+
   let selectedTranscribeFile = null;
+  let currentMediaBlobUrl = null;
+  let activeLyricSegments = [];
+  let isUserScrollingLyrics = false;
+  let userScrollTimeout = null;
 
   function showTranscribeError(msg) {
     if (transcribeErrorMessage) transcribeErrorMessage.textContent = msg;
@@ -672,6 +688,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function resetTranscribeSelection() {
     selectedTranscribeFile = null;
+    if (currentMediaBlobUrl) {
+      URL.revokeObjectURL(currentMediaBlobUrl);
+      currentMediaBlobUrl = null;
+    }
+    if (transcribeMediaPlayer) {
+      transcribeMediaPlayer.pause();
+      transcribeMediaPlayer.src = '';
+      transcribeMediaPlayer.load();
+    }
+    activeLyricSegments = [];
     hideTranscribeError();
     if (transcribeFileInput) transcribeFileInput.value = '';
     if (transcribePrompt) transcribePrompt.classList.remove('hidden');
@@ -686,6 +712,158 @@ document.addEventListener('DOMContentLoaded', () => {
         <span>Trích Xuất Văn Bản</span>
       `;
     }
+  }
+
+  function formatTimeCode(seconds) {
+    if (isNaN(seconds) || seconds === null) return '00:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
+
+  // Switch between Live Synced Lyrics and Raw Text
+  function switchLyricsView(view) {
+    if (view === 'live') {
+      if (tabLyricsLive) tabLyricsLive.classList.add('active');
+      if (tabLyricsRaw) tabLyricsRaw.classList.remove('active');
+      if (lyricsSyncView) lyricsSyncView.classList.remove('hidden');
+      if (lyricsRawView) lyricsRawView.classList.add('hidden');
+    } else {
+      if (tabLyricsLive) tabLyricsLive.classList.remove('active');
+      if (tabLyricsRaw) tabLyricsRaw.classList.add('active');
+      if (lyricsSyncView) lyricsSyncView.classList.add('hidden');
+      if (lyricsRawView) lyricsRawView.classList.remove('hidden');
+    }
+  }
+
+  if (tabLyricsLive) tabLyricsLive.addEventListener('click', () => switchLyricsView('live'));
+  if (tabLyricsRaw) tabLyricsRaw.addEventListener('click', () => switchLyricsView('raw'));
+
+  // Detect user scroll on lyrics container to pause auto-scrolling temporarily
+  if (transcribeLyricsContainer) {
+    transcribeLyricsContainer.addEventListener('wheel', () => {
+      isUserScrollingLyrics = true;
+      clearTimeout(userScrollTimeout);
+      userScrollTimeout = setTimeout(() => {
+        isUserScrollingLyrics = false;
+      }, 2500);
+    }, { passive: true });
+  }
+
+  // Render Spotify-style synced lyrics
+  function renderSyncedLyrics(segments, fullText) {
+    if (!transcribeLyricsContainer) return;
+    transcribeLyricsContainer.innerHTML = '';
+
+    if (!segments || segments.length === 0) {
+      if (fullText) {
+        // Fallback: render paragraphs or sentences
+        const parts = fullText.split(/(?<=[.?!])\s+/).filter(Boolean);
+        parts.forEach((p, idx) => {
+          const div = document.createElement('div');
+          div.className = 'lyric-line';
+          div.innerHTML = `
+            <span class="lyric-time">#${idx + 1}</span>
+            <span class="lyric-text">${p}</span>
+          `;
+          transcribeLyricsContainer.appendChild(div);
+        });
+      } else {
+        transcribeLyricsContainer.innerHTML = `<div class="lyrics-empty-state">Không có dữ liệu mốc thời gian lời thoại.</div>`;
+      }
+      return;
+    }
+
+    activeLyricSegments = segments;
+
+    segments.forEach((seg, idx) => {
+      const lineDiv = document.createElement('div');
+      lineDiv.className = 'lyric-line';
+      lineDiv.dataset.index = idx;
+      lineDiv.dataset.start = seg.start;
+      lineDiv.dataset.end = seg.end;
+      lineDiv.id = `lyric-seg-${idx}`;
+
+      lineDiv.innerHTML = `
+        <span class="lyric-time">${formatTimeCode(seg.start)}</span>
+        <span class="lyric-text">${seg.text}</span>
+      `;
+
+      // Click to seek media player to this segment timestamp
+      lineDiv.addEventListener('click', () => {
+        if (transcribeMediaPlayer) {
+          transcribeMediaPlayer.currentTime = Math.max(0, seg.start);
+          transcribeMediaPlayer.play().catch(() => {});
+          highlightActiveLyric(idx, true);
+        }
+      });
+
+      transcribeLyricsContainer.appendChild(lineDiv);
+    });
+  }
+
+  // Highlight the current lyric matching playback time
+  function highlightActiveLyric(activeIndex, forceScroll = false) {
+    if (!transcribeLyricsContainer) return;
+    const lines = transcribeLyricsContainer.querySelectorAll('.lyric-line');
+    
+    lines.forEach((line, idx) => {
+      if (idx === activeIndex) {
+        line.classList.add('active-lyric');
+        line.classList.remove('past-lyric');
+        if (!isUserScrollingLyrics || forceScroll) {
+          line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else if (idx < activeIndex) {
+        line.classList.remove('active-lyric');
+        line.classList.add('past-lyric');
+      } else {
+        line.classList.remove('active-lyric', 'past-lyric');
+      }
+    });
+  }
+
+  // Hook MediaPlayer timeupdate for real-time lyrics syncing
+  if (transcribeMediaPlayer) {
+    transcribeMediaPlayer.addEventListener('timeupdate', () => {
+      const currentTime = transcribeMediaPlayer.currentTime;
+      if (!activeLyricSegments || activeLyricSegments.length === 0) return;
+
+      // Find current active segment
+      let foundIdx = -1;
+      for (let i = 0; i < activeLyricSegments.length; i++) {
+        const seg = activeLyricSegments[i];
+        const nextSeg = activeLyricSegments[i + 1];
+        const segEnd = nextSeg ? nextSeg.start : (seg.end || seg.start + 5.0);
+
+        if (currentTime >= seg.start && currentTime < segEnd) {
+          foundIdx = i;
+          break;
+        }
+      }
+
+      // If at end or beyond last segment
+      if (foundIdx === -1 && activeLyricSegments.length > 0) {
+        if (currentTime >= activeLyricSegments[activeLyricSegments.length - 1].start) {
+          foundIdx = activeLyricSegments.length - 1;
+        }
+      }
+
+      if (foundIdx !== -1) {
+        highlightActiveLyric(foundIdx);
+      }
+    });
+
+    // Equalizer animation handling for audio playing state
+    transcribeMediaPlayer.addEventListener('play', () => {
+      if (audioEqualizer) audioEqualizer.classList.add('playing');
+    });
+    transcribeMediaPlayer.addEventListener('pause', () => {
+      if (audioEqualizer) audioEqualizer.classList.remove('playing');
+    });
+    transcribeMediaPlayer.addEventListener('ended', () => {
+      if (audioEqualizer) audioEqualizer.classList.remove('playing');
+    });
   }
 
   function handleTranscribeFileSelect(file) {
@@ -778,22 +956,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (btnCopyTranscribe && transcribeResultText) {
-    btnCopyTranscribe.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(transcribeResultText.value);
-        if (copyBtnLabel) copyBtnLabel.textContent = 'Đã chép!';
-        setTimeout(() => {
-          if (copyBtnLabel) copyBtnLabel.textContent = 'Sao chép';
-        }, 2000);
-      } catch (err) {
-        transcribeResultText.select();
-        document.execCommand('copy');
-        if (copyBtnLabel) copyBtnLabel.textContent = 'Đã chép!';
-        setTimeout(() => {
-          if (copyBtnLabel) copyBtnLabel.textContent = 'Sao chép';
-        }, 2000);
-      }
+  // Copy buttons
+  function copyTextHelper(textToCopy, btnElement, labelElement) {
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      if (labelElement) labelElement.textContent = 'Đã chép!';
+      setTimeout(() => {
+        if (labelElement) labelElement.textContent = 'Sao chép';
+      }, 2000);
+    }).catch(() => {
+      if (labelElement) labelElement.textContent = 'Đã chép!';
+    });
+  }
+
+  if (btnCopyTranscribe) {
+    btnCopyTranscribe.addEventListener('click', () => {
+      const fullText = (activeLyricSegments && activeLyricSegments.length > 0)
+        ? activeLyricSegments.map(s => s.text).join('\n')
+        : (transcribeResultText ? transcribeResultText.value : '');
+      copyTextHelper(fullText, btnCopyTranscribe, copyBtnLabel);
+    });
+  }
+
+  if (btnCopyTranscribeRaw && transcribeResultText) {
+    btnCopyTranscribeRaw.addEventListener('click', () => {
+      copyTextHelper(transcribeResultText.value, btnCopyTranscribeRaw, null);
     });
   }
 
@@ -838,6 +1025,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (transcribeProgressCard) transcribeProgressCard.classList.add('hidden');
         if (transcribeResultCard) transcribeResultCard.classList.remove('hidden');
 
+        // Setup Media Player với file local Blob URL
+        if (currentMediaBlobUrl) {
+          URL.revokeObjectURL(currentMediaBlobUrl);
+        }
+        currentMediaBlobUrl = URL.createObjectURL(selectedTranscribeFile);
+        
+        const isVideo = /\.(mp4|webm|mov|avi|mkv)$/i.test(selectedTranscribeFile.name);
+        if (transcribeMediaPlayer) {
+          transcribeMediaPlayer.src = currentMediaBlobUrl;
+          if (isVideo) {
+            transcribeMediaPlayer.style.display = 'block';
+            if (transcribeAudioVisual) transcribeAudioVisual.classList.add('hidden');
+          } else {
+            transcribeMediaPlayer.style.display = 'block';
+            if (transcribeAudioVisual) transcribeAudioVisual.classList.remove('hidden');
+            if (playerMediaTitle) playerMediaTitle.textContent = selectedTranscribeFile.name;
+          }
+        }
+
+        // Render Live Synced Lyrics (Ảnh 2 Spotify Style)
+        renderSyncedLyrics(data.segments || [], data.text || '');
+
         if (transcribeResultText) transcribeResultText.value = data.text || '';
 
         const formatDuration = (sec) => {
@@ -856,6 +1065,9 @@ document.addEventListener('DOMContentLoaded', () => {
           transcribeDownloadBtn.href = data.download_url;
           transcribeDownloadBtn.setAttribute('download', data.filename || 'transcript.txt');
         }
+
+        // Mặc định mở tab Live Synced Lyrics
+        switchLyricsView('live');
 
         if (transcribeResultCard) transcribeResultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 

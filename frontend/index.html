@@ -442,35 +442,87 @@
 
         <!-- Result Card -->
         <div class="file-result-card hidden" id="transcribe-result-card" style="margin-top: 24px;">
-          <div class="result-header" style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-            <div class="result-success-icon" style="background: #10b981; color: #fff; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px;">✓</div>
-            <div class="result-header-text">
-              <h4 style="margin: 0; font-size: 1.05rem;">Trích xuất văn bản thành công!</h4>
-              <div class="transcribe-meta-tags" id="transcribe-meta-tags">
-                <span class="meta-tag" id="tag-lang">Ngôn ngữ: Tiếng Việt</span>
-                <span class="meta-tag" id="tag-duration">Thời lượng: 0s</span>
-                <span class="meta-tag" id="tag-time">Xử lý: 0s</span>
+          <div class="result-header-row">
+            <div class="result-header-info">
+              <div class="result-success-icon">✓</div>
+              <div class="result-header-text">
+                <h4 style="margin: 0; font-size: 1.1rem; color: #fff;">Trích xuất văn bản thành công!</h4>
+                <div class="transcribe-meta-tags" id="transcribe-meta-tags">
+                  <span class="meta-tag" id="tag-lang">Ngôn ngữ: Tiếng Việt</span>
+                  <span class="meta-tag" id="tag-duration">Thời lượng: 0s</span>
+                  <span class="meta-tag" id="tag-time">Xử lý: 0s</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Switcher Tabs (Live Synced Lyrics vs Raw Text) -->
+            <div class="lyrics-view-tabs">
+              <button type="button" class="lyrics-tab-btn active" id="tab-lyrics-live" data-view="live">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                <span>Live Synced Lyrics</span>
+              </button>
+              <button type="button" class="lyrics-tab-btn" id="tab-lyrics-raw" data-view="raw">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <span>Văn bản thuần</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Video / Audio Player -->
+          <div class="transcribe-player-wrapper" id="transcribe-player-wrapper">
+            <video id="transcribe-media-player" class="transcribe-media-player" controls playsinline preload="auto"></video>
+            <div id="transcribe-audio-visual" class="audio-visual-banner hidden">
+              <div class="audio-disc-icon">🎵</div>
+              <div class="audio-visual-info">
+                <span id="player-media-title" class="player-title">Audio Track</span>
+                <span class="player-subtitle">Bấm vào bất kỳ dòng phụ đề/lời thoại để nhảy tới vị trí phát</span>
+              </div>
+              <div class="equalizer-bars" id="audio-equalizer">
+                <span class="bar bar-1"></span><span class="bar bar-2"></span><span class="bar bar-3"></span><span class="bar bar-4"></span>
               </div>
             </div>
           </div>
 
-          <!-- Live Textarea Preview -->
-          <div class="transcribe-preview-box">
+          <!-- Live Synced Lyrics (Spotify Style) -->
+          <div id="lyrics-sync-view" class="lyrics-sync-card">
+            <div class="lyrics-card-header">
+              <div class="lyrics-header-left">
+                <div class="lyrics-pulse-dot"></div>
+                <span class="lyrics-header-title">Lời Thoại & Phụ Đề Đồng Bộ</span>
+                <span class="lyrics-hint-badge">Click dòng để phát từ vị trí đó</span>
+              </div>
+              <div class="lyrics-header-actions">
+                <button type="button" id="btn-copy-transcribe" class="btn-copy-text" title="Sao chép toàn bộ nội dung">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span id="copy-btn-label">Sao chép</span>
+                </button>
+              </div>
+            </div>
+            <div class="lyrics-scroll-container" id="transcribe-lyrics-container">
+              <!-- Dynamically populated lyrics segments -->
+            </div>
+          </div>
+
+          <!-- Raw Text Preview (Alternative View) -->
+          <div id="lyrics-raw-view" class="transcribe-preview-box hidden">
             <div class="preview-box-header">
-              <span>Nội dung trích xuất:</span>
-              <button type="button" id="btn-copy-transcribe" class="btn-copy-text" title="Sao chép nội dung">
+              <span>Toàn bộ văn bản nhận diện:</span>
+              <button type="button" id="btn-copy-transcribe-raw" class="btn-copy-text" title="Sao chép">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
-                <span id="copy-btn-label">Sao chép</span>
+                <span>Sao chép</span>
               </button>
             </div>
             <textarea id="transcribe-result-text" class="transcribe-textarea" readonly rows="8" placeholder="Văn bản nhận diện sẽ hiển thị ở đây..."></textarea>
           </div>
 
           <!-- Download Action Buttons -->
-          <div class="result-actions">
+          <div class="result-actions" style="margin-top: 18px;">
             <a href="#" id="transcribe-download-btn" class="btn-download-result" download style="background: #10b981;">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
