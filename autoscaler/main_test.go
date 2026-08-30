@@ -1,20 +1,24 @@
 package main
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"testing"
 	"time"
 )
 
-// 1. Kiểm tra Max CPU / P95 vs Avg CPU (Tránh bẫy nghẽn 1 container đơn lẻ)
+// 1. Kiểm tra Max CPU / Effective CPU (Tránh bẫy nghẽn 1 container đơn lẻ)
 func TestEvaluateScalingMetrics_MaxVsAvg_PreventsBottleneck(t *testing.T) {
 	cfg := ServiceScaleConfig{
-		ServiceName:  "omniverse_app",
-		MinReplicas:  1,
-		MaxReplicas:  5,
-		CPUScaleUp:   65.0,
-		CPUScaleDown: 20.0,
-		IntervalSec:  8,
+		ServiceName:     "omniverse_app",
+		MinReplicas:     1,
+		MaxReplicas:     5,
+		CPUScaleUp:      65.0,
+		CPUScaleDown:    20.0,
+		IntervalSec:     8,
+		ScaleUpStreak:   2,
+		ScaleDownStreak: 4,
 	}
 
 	// Tình huống: 1 container bị nghẽn 90%, 2 container khác 10%
@@ -39,12 +43,14 @@ func TestEvaluateScalingMetrics_MaxVsAvg_PreventsBottleneck(t *testing.T) {
 // 2. Kiểm tra ScaleDown An Toàn (Chỉ hạ khi TẤT CẢ container đều rảnh rỗi)
 func TestEvaluateScalingMetrics_SafeScaleDown(t *testing.T) {
 	cfg := ServiceScaleConfig{
-		ServiceName:  "omniverse_app",
-		MinReplicas:  1,
-		MaxReplicas:  5,
-		CPUScaleUp:   65.0,
-		CPUScaleDown: 20.0,
-		IntervalSec:  8,
+		ServiceName:     "omniverse_app",
+		MinReplicas:     1,
+		MaxReplicas:     5,
+		CPUScaleUp:      65.0,
+		CPUScaleDown:    20.0,
+		IntervalSec:     8,
+		ScaleUpStreak:   2,
+		ScaleDownStreak: 4,
 	}
 
 	// Trường hợp 1: Avg = 15% (thấp), nhưng Max = 35% (> 20%) ➔ KHÔNG được Scale Down!
@@ -64,40 +70,85 @@ func TestEvaluateScalingMetrics_SafeScaleDown(t *testing.T) {
 	}
 }
 
-// 3. Kiểm tra tính toán CPU với first sample hoặc precpu = 0
-func TestCalculateCPUPercent_ZeroSampleEdgeCase(t *testing.T) {
-	// Case 1: PreCPU = 0 (lần query đầu tiên của Docker stream=false)
-	statsInvalid := &DockerCPUStats{}
-	statsInvalid.CPUStats.CPUUsage.TotalUsage = 1000000
-	statsInvalid.CPUStats.SystemCPUUsage = 50000000
-	statsInvalid.PreCPUStats.SystemCPUUsage = 0 // Chưa có dữ liệu trước
+// 3. Kiểm tra tính toán CPU: Monotonic delta check (Chấp nhận PreCPU.TotalUsage = 0 khi systemDelta hợp lệ)
+func TestCalculateCPUPercent_MonotonicDelta(t *testing.T) {
+	// Case 1: PreCPU.TotalUsage = 0 nhưng TotalUsage hiện tại = 500, systemDelta = 1000 ➔ Hợp lệ!
+	statsJustStarted := &DockerCPUStats{}
+	statsJustStarted.CPUStats.CPUUsage.TotalUsage = 500000
+	statsJustStarted.PreCPUStats.CPUUsage.TotalUsage = 0
+	statsJustStarted.CPUStats.SystemCPUUsage = 10000000
+	statsJustStarted.PreCPUStats.SystemCPUUsage = 5000000
+	statsJustStarted.CPUStats.OnlineCPUs = 1
 
-	_, valid := calculateCPUPercent(statsInvalid)
-	if valid {
-		t.Fatalf("calculateCPUPercent phải trả về valid=false khi precpu_stats rỗng/zero")
+	percent, valid := calculateCPUPercent(statsJustStarted)
+	if !valid {
+		t.Fatalf("calculateCPUPercent PHẢI hợp lệ khi PreCPU.TotalUsage = 0 nhưng delta dương!")
+	}
+	if percent < 9.9 || percent > 10.1 {
+		t.Fatalf("Mong đợi ~10%% CPU, nhận được: %v", percent)
 	}
 
-	// Case 2: Dữ liệu hợp lệ
-	statsValid := &DockerCPUStats{}
-	statsValid.CPUStats.CPUUsage.TotalUsage = 2000000
-	statsValid.PreCPUStats.CPUUsage.TotalUsage = 1000000
-	statsValid.CPUStats.SystemCPUUsage = 60000000
-	statsValid.PreCPUStats.SystemCPUUsage = 50000000
-	statsValid.CPUStats.OnlineCPUs = 2
-
-	percent, valid2 := calculateCPUPercent(statsValid)
-	if !valid2 {
-		t.Fatalf("calculateCPUPercent phải trả về valid=true cho dữ liệu chuẩn")
+	// Case 2: SystemDelta <= 0 (Không hợp lệ)
+	statsZeroSys := &DockerCPUStats{}
+	statsZeroSys.CPUStats.SystemCPUUsage = 1000
+	statsZeroSys.PreCPUStats.SystemCPUUsage = 1000
+	_, valid2 := calculateCPUPercent(statsZeroSys)
+	if valid2 {
+		t.Fatalf("calculateCPUPercent không được hợp lệ khi systemDelta <= 0")
 	}
-	// cpuDelta = 1M, sysDelta = 10M, CPUs = 2 ➔ (1/10)*2*100 = 20%
-	if percent < 19.9 || percent > 20.1 {
-		t.Fatalf("CPU%% tính toán sai, mong đợi ~20%%, nhận được: %v", percent)
+
+	// Case 3: cpuUsage giảm (bất thường)
+	statsDecrease := &DockerCPUStats{}
+	statsDecrease.CPUStats.CPUUsage.TotalUsage = 500
+	statsDecrease.PreCPUStats.CPUUsage.TotalUsage = 1000
+	statsDecrease.CPUStats.SystemCPUUsage = 2000
+	statsDecrease.PreCPUStats.SystemCPUUsage = 1000
+	_, valid3 := calculateCPUPercent(statsDecrease)
+	if valid3 {
+		t.Fatalf("calculateCPUPercent không được hợp lệ khi cpuUsage giảm")
 	}
 }
 
-// 4. Kiểm tra Deduplication cấu hình Services (Chống 2 goroutines tranh chấp 1 service)
+// 4. Kiểm tra So Khớp Tên Service An Toàn (Chống match nhầm crapp -> app)
+func TestMatchesServiceName(t *testing.T) {
+	testCases := []struct {
+		actual   string
+		target   string
+		expected bool
+	}{
+		{"omniverse_app", "omniverse_app", true},       // Khớp chính xác
+		{"mystack_omniverse_app", "omniverse_app", true}, // Khớp với prefix stack
+		{"myomniverse_app", "omniverse_app", false},     // Không có gạch dưới ngăn cách -> KHÔNG khớp!
+		{"crapp", "app", false},                         // Tránh bug suffix bừa bãi
+		{"omniverse_worker-rmbg", "worker-rmbg", true},   // Khớp prefix stack
+	}
+
+	for _, tc := range testCases {
+		res := matchesServiceName(tc.actual, tc.target)
+		if res != tc.expected {
+			t.Errorf("matchesServiceName(%q, %q) = %v; mong đợi %v", tc.actual, tc.target, res, tc.expected)
+		}
+	}
+}
+
+// 5. Kiểm tra Service Global Mode Không Bị Panic Nil Pointer
+func TestScaleService_GlobalMode_NoPanic(t *testing.T) {
+	globalService := &SwarmService{
+		ID: "global_123",
+		Spec: ServiceSpec{
+			Name: "global_agent",
+			Mode: ServiceMode{
+				Replicated: nil, // Chế độ Global không có Replicated
+			},
+		},
+	}
+
+	// Không được panic
+	scaleServiceWithRetry(context.Background(), http.DefaultClient, globalService, 3, 0)
+}
+
+// 6. Kiểm tra Deduplication cấu hình Services
 func TestParseServicesConfig_Deduplication(t *testing.T) {
-	// Cố tình truyền trùng tên service
 	os.Setenv("SERVICES_CONFIG", "omniverse_app:1:5:65:20:8,omniverse_gotenberg:1:4:70:25:8,omniverse_app:1:5:65:20:8")
 	defer os.Unsetenv("SERVICES_CONFIG")
 
@@ -117,18 +168,16 @@ func TestParseServicesConfig_Deduplication(t *testing.T) {
 	}
 }
 
-// 5. Kiểm tra Cooldown Non-blocking
+// 7. Kiểm tra Cooldown Non-blocking
 func TestCooldownNonBlocking(t *testing.T) {
 	lastScaleTime := time.Now()
 	cooldown := 20 * time.Second
 
-	// Ngay sau khi scale 1 giây ➔ Đang trong cooldown
 	timeInCooldown := lastScaleTime.Add(1 * time.Second)
 	if timeInCooldown.Sub(lastScaleTime) >= cooldown {
 		t.Fatalf("Phải trong trạng thái cooldown")
 	}
 
-	// Sau 25 giây ➔ Hết cooldown, cho phép scale tiếp
 	timeAfterCooldown := lastScaleTime.Add(25 * time.Second)
 	if timeAfterCooldown.Sub(lastScaleTime) < cooldown {
 		t.Fatalf("Phải hết trạng thái cooldown")
