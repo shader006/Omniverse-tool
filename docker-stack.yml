@@ -21,6 +21,7 @@ services:
       - POGOCACHE_ADDR=pogocache:9401
       - MAX_MEDIA_CONCURRENT_JOBS=2
       - PYTHONUNBUFFERED=1
+      - WHISPER_MODEL_PATH=/app/models/whisper/ggml-small.bin
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro

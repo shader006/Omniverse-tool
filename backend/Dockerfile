@@ -21,9 +21,10 @@ RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git . \
     && cmake -B build -DGGML_AVX2=ON -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
     && cmake --build build --config Release -j$(nproc)
 
-# Tải trước model GGML Base vào thư mục
+# Tải trước model GGML Base và Small vào thư mục
 RUN mkdir -p /models && \
-    curl -L -o /models/ggml-base.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+    curl -L -o /models/ggml-base.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin && \
+    curl -L -o /models/ggml-small.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
 
 # ── Stage 3: Runtime Image (Python 3.12 + FFmpeg + Deno + yt-dlp + Go whisper.cpp) ──
 FROM python:3.12-slim
@@ -49,12 +50,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy Golang compiled server binary
 COPY --from=go-builder /build/server /app/server
 
-# Copy whisper.cpp binary & preloaded model
+# Copy whisper.cpp binary & preloaded models
 RUN mkdir -p /app/models/whisper
 COPY --from=whisper-builder /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper-builder /whisper/build/ /whisper-build/
 RUN find /whisper-build -name "*.so*" -exec cp {} /usr/local/lib/ \; 2>/dev/null || true && ldconfig && rm -rf /whisper-build
 COPY --from=whisper-builder /models/ggml-base.bin /app/models/whisper/ggml-base.bin
+COPY --from=whisper-builder /models/ggml-small.bin /app/models/whisper/ggml-small.bin
 
 # Copy mã nguồn Python url_conver
 COPY app/ ./app/
@@ -69,6 +71,6 @@ ENV DOWNLOAD_DIR=/app/downloads
 ENV FRONTEND_DIR=/frontend
 ENV PYTHONPATH=/app
 ENV WHISPER_BIN=/usr/local/bin/whisper-cli
-ENV WHISPER_MODEL_PATH=/app/models/whisper/ggml-base.bin
+ENV WHISPER_MODEL_PATH=/app/models/whisper/ggml-small.bin
 
 CMD ["/app/server"]

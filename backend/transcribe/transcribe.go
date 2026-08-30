@@ -3,10 +3,12 @@ package transcribe
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -29,6 +31,7 @@ type TranscribeResult struct {
 	LanguageProbability float64             `json:"language_probability"`
 	AudioDuration       float64             `json:"audio_duration"`
 	ProcessingTime      float64             `json:"processing_time"`
+	ModelUsed           string              `json:"model_used"`
 	Segments            []TranscribeSegment `json:"segments"`
 	Filename            string              `json:"filename,omitempty"`
 	FilePath            string              `json:"file_path,omitempty"`
@@ -86,11 +89,11 @@ func FindWhisperModel() string {
 	}
 
 	candidates := []string{
-		"/app/models/whisper/ggml-base.bin",
 		"/app/models/whisper/ggml-small.bin",
-		"/app/models/ggml-base.bin",
+		"/app/models/whisper/ggml-base.bin",
+		"models/whisper/ggml-small.bin",
 		"models/whisper/ggml-base.bin",
-		"models/ggml-base.bin",
+		"/tmp/models/ggml-small.bin",
 		"/tmp/models/ggml-base.bin",
 	}
 
@@ -100,7 +103,7 @@ func FindWhisperModel() string {
 		}
 	}
 
-	return "/app/models/whisper/ggml-base.bin"
+	return "/app/models/whisper/ggml-small.bin"
 }
 
 func fileExists(p string) bool {
@@ -149,6 +152,7 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 	}
 
 	modelPath := FindWhisperModel()
+	log.Printf("🎙️ [WHISPER TRANSCRIBE] Processing %s (%.2fs) using model: %s", inputPath, realAudioDur, modelPath)
 
 	baseName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
 	outFormat := strings.ToLower(strings.TrimPrefix(format, "."))
@@ -249,9 +253,21 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		}
 	}
 
-	if fullText == "" && fileExists(txtFilePath) {
-		rawTxt, _ := os.ReadFile(txtFilePath)
-		fullText = strings.TrimSpace(string(rawTxt))
+	if len(segments) == 0 && fileExists(srtFilePath) {
+		segments = parseSRTFile(srtFilePath)
+	}
+
+	if fullText == "" {
+		if len(segments) > 0 {
+			var textParts []string
+			for _, s := range segments {
+				textParts = append(textParts, s.Text)
+			}
+			fullText = strings.Join(textParts, " ")
+		} else if fileExists(txtFilePath) {
+			rawTxt, _ := os.ReadFile(txtFilePath)
+			fullText = strings.TrimSpace(string(rawTxt))
+		}
 	}
 
 	targetFilename := fmt.Sprintf("%s_transcript.%s", baseName, outFormat)
@@ -300,6 +316,7 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		LanguageProbability: 0.95,
 		AudioDuration:       realAudioDur,
 		ProcessingTime:      mathRound(processingDuration, 2),
+		ModelUsed:           filepath.Base(modelPath),
 		Segments:            segments,
 		Filename:            targetFilename,
 		FilePath:            targetFilePath,
@@ -327,3 +344,68 @@ func mathRound(val float64, precision int) float64 {
 	}
 	return float64(int(val*p+0.5)) / p
 }
+
+func parseSRTFile(srtPath string) []TranscribeSegment {
+	content, err := os.ReadFile(srtPath)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(string(content), "\n")
+	var segments []TranscribeSegment
+	var currentSeg *TranscribeSegment
+
+	timeRegex := regexp.MustCompile(`(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})`)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			if currentSeg != nil && currentSeg.Text != "" {
+				segments = append(segments, *currentSeg)
+				currentSeg = nil
+			}
+			continue
+		}
+
+		matches := timeRegex.FindStringSubmatch(line)
+		if len(matches) == 9 {
+			h1, _ := strconv.ParseFloat(matches[1], 64)
+			m1, _ := strconv.ParseFloat(matches[2], 64)
+			s1, _ := strconv.ParseFloat(matches[3], 64)
+			ms1, _ := strconv.ParseFloat(matches[4], 64)
+			start := h1*3600 + m1*60 + s1 + ms1/1000.0
+
+			h2, _ := strconv.ParseFloat(matches[5], 64)
+			m2, _ := strconv.ParseFloat(matches[6], 64)
+			s2, _ := strconv.ParseFloat(matches[7], 64)
+			ms2, _ := strconv.ParseFloat(matches[8], 64)
+			end := h2*3600 + m2*60 + s2 + ms2/1000.0
+
+			currentSeg = &TranscribeSegment{
+				ID:    len(segments) + 1,
+				Start: mathRound(start, 2),
+				End:   mathRound(end, 2),
+				Text:  "",
+			}
+			continue
+		}
+
+		if _, numErr := strconv.Atoi(line); numErr == nil && currentSeg == nil {
+			continue
+		}
+
+		if currentSeg != nil {
+			if currentSeg.Text == "" {
+				currentSeg.Text = line
+			} else {
+				currentSeg.Text += " " + line
+			}
+		}
+	}
+
+	if currentSeg != nil && currentSeg.Text != "" {
+		segments = append(segments, *currentSeg)
+	}
+
+	return segments
+}
+

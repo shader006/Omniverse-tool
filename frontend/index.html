@@ -18,7 +18,7 @@
     .btn-arrow { width: 18px; height: 18px; }
     .hidden { display: none !important; }
   </style>
-  <link rel="stylesheet" href="/static/style.css?v=3.3.1">
+  <link rel="stylesheet" href="/static/style.css?v=4.0.0">
 </head>
 <body>
   <div class="bg-glow bg-glow-1"></div>
@@ -442,12 +442,14 @@
 
         <!-- Result Card -->
         <div class="file-result-card hidden" id="transcribe-result-card" style="margin-top: 24px;">
+          <!-- Result Meta Bar -->
           <div class="result-header-row">
             <div class="result-header-info">
               <div class="result-success-icon">✓</div>
               <div class="result-header-text">
                 <h4 style="margin: 0; font-size: 1.1rem; color: #fff;">Trích xuất văn bản thành công!</h4>
                 <div class="transcribe-meta-tags" id="transcribe-meta-tags">
+                  <span class="meta-tag" id="tag-model" style="background: rgba(147, 51, 234, 0.2); border-color: rgba(147, 51, 234, 0.4); color: #c084fc; font-weight: 700;">AI: SMALL</span>
                   <span class="meta-tag" id="tag-lang">Ngôn ngữ: Tiếng Việt</span>
                   <span class="meta-tag" id="tag-duration">Thời lượng: 0s</span>
                   <span class="meta-tag" id="tag-time">Xử lý: 0s</span>
@@ -455,7 +457,7 @@
               </div>
             </div>
 
-            <!-- Switcher Tabs (Live Synced Lyrics vs Raw Text) -->
+            <!-- View Switcher Tabs -->
             <div class="lyrics-view-tabs">
               <button type="button" class="lyrics-tab-btn active" id="tab-lyrics-live" data-view="live">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
@@ -468,41 +470,45 @@
             </div>
           </div>
 
-          <!-- Video / Audio Player -->
-          <div class="transcribe-player-wrapper" id="transcribe-player-wrapper">
-            <video id="transcribe-media-player" class="transcribe-media-player" controls playsinline preload="auto"></video>
-            <div id="transcribe-audio-visual" class="audio-visual-banner hidden">
-              <div class="audio-disc-icon">🎵</div>
-              <div class="audio-visual-info">
-                <span id="player-media-title" class="player-title">Audio Track</span>
-                <span class="player-subtitle">Bấm vào bất kỳ dòng phụ đề/lời thoại để nhảy tới vị trí phát</span>
+          <!-- Video Player (Chỉ hiển thị khi file là Video) -->
+          <div class="transcribe-video-wrapper hidden" id="transcribe-video-wrapper">
+            <video id="transcribe-video-player" class="transcribe-video-player" controls playsinline preload="auto"></video>
+          </div>
+
+          <!-- Audio Player Card (Hiển thị khi file là Audio) -->
+          <div class="transcribe-audio-card hidden" id="transcribe-audio-card">
+            <div class="audio-card-top">
+              <div class="audio-art-icon" id="audio-art-icon">🎵</div>
+              <div class="audio-track-info">
+                <span id="player-media-title" class="audio-track-title">Audio Track</span>
+                <span class="audio-track-sub">Nhấn vào bất kỳ câu nào bên dưới để nghe từ đoạn đó</span>
               </div>
               <div class="equalizer-bars" id="audio-equalizer">
                 <span class="bar bar-1"></span><span class="bar bar-2"></span><span class="bar bar-3"></span><span class="bar bar-4"></span>
               </div>
             </div>
+            <audio id="transcribe-audio-player" class="transcribe-audio-player" controls preload="auto"></audio>
           </div>
 
-          <!-- Live Synced Lyrics (Spotify Style) -->
-          <div id="lyrics-sync-view" class="lyrics-sync-card">
-            <div class="lyrics-card-header">
-              <div class="lyrics-header-left">
-                <div class="lyrics-pulse-dot"></div>
-                <span class="lyrics-header-title">Lời Thoại & Phụ Đề Đồng Bộ</span>
-                <span class="lyrics-hint-badge">Click dòng để phát từ vị trí đó</span>
+          <!-- Live Synced Lyrics (Spotify Style Card - Ảnh 2) -->
+          <div id="lyrics-sync-view" class="spotify-lyrics-card">
+            <div class="spotify-lyrics-header">
+              <div class="spotify-header-title">
+                <span class="spotify-title-text">Lyrics</span>
+                <span class="spotify-hint-pill">Đồng bộ theo thời gian thực</span>
               </div>
-              <div class="lyrics-header-actions">
-                <button type="button" id="btn-copy-transcribe" class="btn-copy-text" title="Sao chép toàn bộ nội dung">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                  <span id="copy-btn-label">Sao chép</span>
-                </button>
-              </div>
+              <button type="button" id="btn-copy-transcribe" class="btn-copy-spotify" title="Sao chép toàn bộ lời bài hát">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span id="copy-btn-label">Sao chép</span>
+              </button>
             </div>
-            <div class="lyrics-scroll-container" id="transcribe-lyrics-container">
-              <!-- Dynamically populated lyrics segments -->
+            
+            <!-- Danh sách từng dòng lời bài hát -->
+            <div class="spotify-lyrics-body" id="transcribe-lyrics-container">
+              <!-- Dynamically populated lyrics -->
             </div>
           </div>
 
@@ -571,6 +577,6 @@
     <p>© 2026 MediaFlow Engine. Tích hợp Gotenberg & Docker Swarm.</p>
   </footer>
 
-  <script src="/static/app.js?v=3.3.2"></script>
+  <script src="/static/app.js?v=4.0.0"></script>
 </body>
 </html>
