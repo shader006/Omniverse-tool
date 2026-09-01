@@ -1342,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const formData = new FormData();
       formData.append('file', selectedBgFile);
-      formData.append('model', bgModelSelect ? bgModelSelect.value : 'bria-rmbg');
+      formData.append('model', bgModelSelect ? bgModelSelect.value : 'birefnet-lite');
       formData.append('bg_color', selectedColor);
       formData.append('alpha_matting', bgAlphaMatting && bgAlphaMatting.checked ? 'true' : 'false');
 
@@ -1386,8 +1386,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateComparisonSlider(50);
 
         // Stats
-        const timingMs = data.processing_time_ms || (data.metadata?.timing_ms?.total || '800');
-        const modelName = data.metadata?.model_display || 'BRIA AI RMBG-1.4';
+        const timingMs = data.processing_time_ms || (data.metadata?.timing_ms?.total || '300');
+        const modelName = data.metadata?.model_display || 'BiRefNet-Lite (OpenVINO)';
         const dims = data.metadata?.output_dimensions ? `${data.metadata.output_dimensions[0]}x${data.metadata.output_dimensions[1]}` : '';
         const sizeStr = data.result_size_bytes ? ` • ${(data.result_size_bytes / 1024).toFixed(1)} KB` : '';
 

@@ -59,11 +59,12 @@ services:
     restart: unless-stopped
     volumes:
       - ./downloads:/app/downloads
-      - ./models/rembg:/root/.rembg
+      - ./models/birefnet:/root/.cache/birefnet
       - ./backend/app:/app/app
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
+      - BIREFNET_CACHE_DIR=/root/.cache/birefnet
 
   pogocache:
     image: pogocache/pogocache:latest

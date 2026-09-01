@@ -153,10 +153,20 @@ class TestRMBGRemover(unittest.TestCase):
         self.assertTrue(data.get("success", False))
         self.assertTrue(os.path.exists(temp_output))
 
-        if os.path.exists(temp_input):
-            os.remove(temp_input)
-        if os.path.exists(temp_output):
-            os.remove(temp_output)
+    def test_09_remove_background_birefnet_default(self):
+        """Kiểm tra tách nền với model mặc định (BiRefNet-Lite / OpenVINO / Fallback)"""
+        img_bytes = create_sample_image(width=120, height=120)
+        out_img, metadata = remove_background(
+            image_input=img_bytes,
+            model_name="birefnet-lite",
+            bg_color=None,
+        )
+
+        self.assertIsInstance(out_img, Image.Image)
+        self.assertEqual(out_img.mode, "RGBA")
+        self.assertEqual(out_img.size, (120, 120))
+        self.assertIn("model", metadata)
+        self.assertIn("backend", metadata)
 
 
 if __name__ == "__main__":

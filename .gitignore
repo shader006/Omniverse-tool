@@ -47,6 +47,9 @@ models/
 .env.local
 .env.*.local
 
+# Sub-projects & external repos
+hiai-observe/
+
 # IDE & System
 .vscode/
 .idea/

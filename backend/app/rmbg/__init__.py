@@ -1,7 +1,7 @@
 """
-RMBG Background Removal Package with BRIA AI RMBG-1.4 & U2Net ONNX Engine.
+RMBG Background Removal Package with BiRefNet-Lite & Intel OpenVINO.
 """
 
-from .remover import remove_background, get_rembg_session, get_optimal_cpu_threads
+from .remover import remove_background, get_birefnet_engine, get_optimal_cpu_threads
 
-__all__ = ["remove_background", "get_rembg_session", "get_optimal_cpu_threads"]
+__all__ = ["remove_background", "get_birefnet_engine", "get_optimal_cpu_threads"]

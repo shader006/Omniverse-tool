@@ -1,5 +1,6 @@
 """
-Background Removal Engine using BRIA AI RMBG-1.4 & ONNX Runtime CPU Optimization.
+Dedicated High-Performance Background Removal Engine powered by BiRefNet-Lite & Intel OpenVINO.
+Optimized for ultra-low memory footprint and fast inference.
 """
 
 import io
@@ -12,83 +13,31 @@ import asyncio
 from typing import Optional, Union, Tuple, Dict, Any
 
 from PIL import Image, ImageOps
+import numpy as np
 
 logger = logging.getLogger("rmbg_engine")
 
-# Global Thread-Safe Session Cache
-_SESSION_CACHE: Dict[str, Any] = {}
-_SESSION_LOCK = threading.Lock()
+# Global Thread-Safe Singleton Engine
+_BIREFNET_ENGINE: Optional[Any] = None
+_BIREFNET_LOCK = threading.Lock()
 
-# Global Memory Trimming Controller (Debounced / Batch-based)
-_REQUEST_COUNT = 0
-_LAST_TRIM_TIME = 0.0
-_TRIM_LOCK = threading.Lock()
+# Safety Limits: 2560px (~2.5K) cân bằng hoàn hảo giữa độ nét studio cực cao và chống tràn RAM
+MAX_IMAGE_SIZE = 2560
+TARGET_INFERENCE_SIZE = (1024, 1024)
 
-# Safety Limits
-MAX_IMAGE_SIZE = 4096  # Giới hạn kích thước tối đa 4K để tránh tràn RAM
+# ImageNet normalization constants
+IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape((1, 3, 1, 1))
+IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape((1, 3, 1, 1))
 
 
 def get_optimal_cpu_threads() -> int:
-    """Xác định số luồng CPU tối ưu cho ONNX Runtime Inference (4 threads cân bằng tối đa tốc độ & RAM)."""
+    """Xác định số luồng CPU tối ưu cho OpenVINO."""
     cpu_count = os.cpu_count() or 4
     return min(cpu_count, 4)
 
 
-def get_rembg_session(model_name: str = "bria-rmbg", num_threads: Optional[int] = None):
-    """
-    Khởi tạo hoặc tái sử dụng Session ONNX Runtime của rembg với cơ chế Thread-Safe Lock.
-    """
-    global _SESSION_CACHE
-
-    normalized_model = "bria-rmbg" if "bria" in model_name.lower() or "1.4" in model_name.lower() else "u2net"
-
-    # Double-checked locking pattern
-    if normalized_model in _SESSION_CACHE:
-        return _SESSION_CACHE[normalized_model]
-
-    with _SESSION_LOCK:
-        if normalized_model in _SESSION_CACHE:
-            return _SESSION_CACHE[normalized_model]
-
-        try:
-            import onnxruntime as ort
-            from rembg import new_session
-
-            threads = num_threads if (num_threads is not None and num_threads > 0) else get_optimal_cpu_threads()
-
-            # Đọc cấu hình arena từ biến môi trường (mặc định False cho container tiết kiệm RAM)
-            enable_arena = os.getenv("ORT_ENABLE_CPU_ARENA", "false").lower() in ("true", "1", "yes")
-            enable_mem_pattern = os.getenv("ORT_ENABLE_MEM_PATTERN", "false").lower() in ("true", "1", "yes")
-
-            opts = ort.SessionOptions()
-            opts.intra_op_num_threads = threads
-            opts.inter_op_num_threads = 1
-            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
-            opts.enable_cpu_mem_arena = enable_arena
-            opts.enable_mem_pattern = enable_mem_pattern
-
-            logger.info(
-                f"Initializing ONNX Session for model={normalized_model} with {threads} CPU threads "
-                f"(arena={enable_arena}, mem_pattern={enable_mem_pattern})..."
-            )
-            session = new_session(
-                model_name=normalized_model,
-                providers=["CPUExecutionProvider"],
-                sess_opts=opts,
-            )
-            _SESSION_CACHE[normalized_model] = session
-            return session
-        except ImportError as e:
-            logger.error(f"Thư viện rembg/onnxruntime chưa được cài đặt: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Lỗi khi khởi tạo ONNX session cho {normalized_model}: {e}")
-            return None
-
-
 def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
-    """Chuyển mã màu hex dạng #RRGGBB hoặc #RGB sang tuple (R, G, B), có bắt lỗi an toàn."""
+    """Chuyển mã màu hex sang RGB tuple."""
     try:
         if not isinstance(hex_str, str):
             return (255, 255, 255)
@@ -103,55 +52,222 @@ def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
 
 
 def free_system_memory():
-    """Giải phóng toàn bộ bộ nhớ heap C/C++ (glibc malloc_trim) và Python GC về cho OS."""
+    """Giải phóng bộ nhớ heap C/C++ (jemalloc/mimalloc/glibc) và Python GC về cho OS."""
     import gc
     gc.collect()
+    if not sys.platform.startswith("linux"):
+        return
+
+    import ctypes
+    # 1. jemalloc arenas.purge (nếu đang chạy jemalloc qua LD_PRELOAD)
     try:
-        if sys.platform.startswith("linux"):
-            import ctypes
+        cur_proc = ctypes.CDLL(None)
+        if hasattr(cur_proc, "mallctl"):
+            cur_proc.mallctl(b"arenas.purge", None, None, None, 0)
+            return
+    except Exception:
+        pass
+
+    # 2. mimalloc purge
+    try:
+        cur_proc = ctypes.CDLL(None)
+        if hasattr(cur_proc, "mi_collect"):
+            cur_proc.mi_collect(ctypes.c_bool(True))
+            return
+    except Exception:
+        pass
+
+    # 3. glibc malloc_trim (chỉ chạy khi KHÔNG dùng custom allocator để tránh heap corruption)
+    try:
+        if not os.getenv("LD_PRELOAD"):
             libc = ctypes.CDLL("libc.so.6")
-            libc.malloc_trim(0)
+            if hasattr(libc, "malloc_trim"):
+                libc.malloc_trim(0)
     except Exception:
         pass
 
 
-def maybe_trim_memory(force: bool = False, interval_seconds: float = 300.0, request_batch: int = 30):
-    """
-    Dọn dẹp bộ nhớ định kỳ hoặc theo batch request để tránh overhead gọi malloc_trim liên tục.
-    """
-    global _REQUEST_COUNT, _LAST_TRIM_TIME
-    with _TRIM_LOCK:
-        _REQUEST_COUNT += 1
-        now = time.time()
-        if force or _REQUEST_COUNT >= request_batch or (now - _LAST_TRIM_TIME > interval_seconds):
-            free_system_memory()
-            _REQUEST_COUNT = 0
-            _LAST_TRIM_TIME = now
+
+def get_birefnet_model_path() -> str:
+    """Xác định file mô hình BiRefNet-Lite ONNX / OpenVINO."""
+    custom_path = os.getenv("BIREFNET_MODEL_PATH")
+    if custom_path and os.path.exists(custom_path):
+        return custom_path
+
+    cache_dir = os.path.expanduser(os.getenv("BIREFNET_CACHE_DIR", "~/.cache/birefnet"))
+    os.makedirs(cache_dir, exist_ok=True)
+    model_path = os.path.join(cache_dir, "birefnet_lite.onnx")
+
+    if not os.path.exists(model_path):
+        logger.info(f"Downloading BiRefNet-Lite ONNX model to {model_path}...")
+        try:
+            from huggingface_hub import hf_hub_download
+            downloaded = hf_hub_download(
+                repo_id="onnx-community/BiRefNet_lite-ONNX",
+                filename="onnx/model.onnx",
+                local_dir=cache_dir,
+            )
+            if os.path.exists(downloaded) and downloaded != model_path:
+                import shutil
+                shutil.copy2(downloaded, model_path)
+            logger.info("✅ BiRefNet-Lite download completed.")
+        except Exception as e:
+            logger.warning(f"Lỗi tải từ Hugging Face Hub: {e}. Thử tải URL trực tiếp...")
+            try:
+                import urllib.request
+                fallback_url = "https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx"
+                urllib.request.urlretrieve(fallback_url, model_path)
+                logger.info("✅ Tải BiRefNet-Lite qua URL dự phòng thành công.")
+            except Exception as e_url:
+                logger.error(f"Không thể tải BiRefNet-Lite model: {e_url}")
+                if os.path.exists(model_path):
+                    os.remove(model_path)
+                return ""
+    return model_path
+
+
+class BiRefNetOpenVINOEngine:
+    """Engine tách nền BiRefNet-Lite tăng tốc bởi Intel OpenVINO."""
+
+    def __init__(self, model_path: str, num_threads: Optional[int] = None):
+        self.model_path = model_path
+        self.num_threads = num_threads if (num_threads and num_threads > 0) else get_optimal_cpu_threads()
+        self.backend = "unknown"
+        self.compiled_model = None
+        self._init_engine()
+
+    def _init_engine(self):
+        # 1. OpenVINO Runtime
+        try:
+            import openvino as ov
+            core = ov.Core()
+            logger.info(f"Loading BiRefNet-Lite into OpenVINO Core from: {self.model_path}")
+            model = core.read_model(self.model_path)
+
+            config = {
+                "PERFORMANCE_HINT": "LATENCY",
+                "NUM_STREAMS": "1",
+                "INFERENCE_NUM_THREADS": str(self.num_threads),
+                "ENABLE_CPU_PINNING": "NO",
+            }
+            self.compiled_model = core.compile_model(model, "CPU", config)
+            self.backend = "openvino"
+            logger.info(f"🚀 [OpenVINO] BiRefNet-Lite đã nạp thành công với {self.num_threads} CPU threads.")
+            return
+        except Exception as e:
+            logger.warning(f"Lỗi OpenVINO Core: {e}. Thử chuyển sang ONNX Runtime...")
+
+        # 2. Fallback sang ONNX Runtime
+        try:
+            import onnxruntime as ort
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = self.num_threads
+            opts.inter_op_num_threads = 1
+            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            opts.enable_cpu_mem_arena = False
+
+            self.compiled_model = ort.InferenceSession(
+                self.model_path,
+                sess_options=opts,
+                providers=["CPUExecutionProvider"],
+            )
+            self.backend = "onnxruntime"
+            logger.info(f"⚡ [ONNX Runtime] BiRefNet-Lite đã nạp thành công với {self.num_threads} CPU threads.")
+        except Exception as e:
+            logger.error(f"Lỗi khởi tạo ONNX Runtime: {e}")
+            self.compiled_model = None
+            self.backend = "failed"
+
+    def predict_mask(self, pil_img: Image.Image) -> Optional[Image.Image]:
+        """Tạo Alpha Matte mask sắc nét từ ảnh PIL với quản lý bộ nhớ nghiêm ngặt."""
+        if not self.compiled_model:
+            return None
+
+        orig_w, orig_h = pil_img.size
+
+        # Preprocessing: Chuyển RGB -> Resize 1024x1024 (BILINEAR) -> Normalize ImageNet
+        rgb_img = pil_img.convert("RGB")
+        resized = rgb_img.resize(TARGET_INFERENCE_SIZE, Image.Resampling.BILINEAR)
+
+        arr = np.array(resized, dtype=np.float32) / 255.0  # (1024, 1024, 3)
+        arr = np.transpose(arr, (2, 0, 1))  # (3, 1024, 1024)
+        tensor = np.expand_dims(arr, axis=0)  # (1, 3, 1024, 1024)
+        tensor = (tensor - IMAGENET_MEAN) / IMAGENET_STD
+
+        # Dọn dẹp biến tạm tiền xử lý
+        del resized, arr
+        if rgb_img is not pil_img:
+            del rgb_img
+
+        # Inference
+        if self.backend == "openvino":
+            infer_req = self.compiled_model.create_infer_request()
+            results = infer_req.infer({0: tensor})
+            out_tensor = list(results.values())[0]
+            del infer_req, results
+        elif self.backend == "onnxruntime":
+            input_name = self.compiled_model.get_inputs()[0].name
+            results = self.compiled_model.run(None, {input_name: tensor})
+            out_tensor = results[0]
+            del results
+        else:
+            del tensor
+            return None
+
+        del tensor
+
+        # Postprocessing: Squeeze -> Sigmoid (nếu là logits) -> uint8
+        out_mask = np.squeeze(out_tensor)
+        if out_mask.min() < 0.0 or out_mask.max() > 1.0:
+            out_mask = 1.0 / (1.0 + np.exp(-out_mask))
+
+        out_mask = np.clip(out_mask * 255.0, 0, 255).astype(np.uint8)
+        mask_img = Image.fromarray(out_mask, mode="L")
+        del out_mask, out_tensor
+
+        # Resize mask về đúng kích thước ảnh đầu vào (BILINEAR tiết kiệm RAM hơn LANCZOS)
+        if (orig_w, orig_h) != TARGET_INFERENCE_SIZE:
+            mask_img = mask_img.resize((orig_w, orig_h), Image.Resampling.BILINEAR)
+
+        return mask_img
+
+
+def get_birefnet_engine(num_threads: Optional[int] = None) -> Optional[BiRefNetOpenVINOEngine]:
+    """Khởi tạo hoặc tái sử dụng Singleton BiRefNet Engine."""
+    global _BIREFNET_ENGINE
+    if _BIREFNET_ENGINE is not None and _BIREFNET_ENGINE.compiled_model is not None:
+        return _BIREFNET_ENGINE
+
+    with _BIREFNET_LOCK:
+        if _BIREFNET_ENGINE is not None and _BIREFNET_ENGINE.compiled_model is not None:
+            return _BIREFNET_ENGINE
+
+        model_path = get_birefnet_model_path()
+        if not model_path or not os.path.exists(model_path):
+            logger.warning("Không tìm thấy model BiRefNet-Lite.")
+            return None
+
+        engine = BiRefNetOpenVINOEngine(model_path=model_path, num_threads=num_threads)
+        if engine.compiled_model is not None:
+            _BIREFNET_ENGINE = engine
+            return _BIREFNET_ENGINE
+        return None
 
 
 def remove_background(
     image_input: Union[bytes, str, Image.Image],
-    model_name: str = "bria-rmbg",
+    model_name: str = "birefnet-lite",
     bg_color: Optional[Union[str, Tuple[int, int, int]]] = None,
     num_threads: Optional[int] = None,
     alpha_matting: bool = False,
-    alpha_matting_foreground_threshold: int = 240,
-    alpha_matting_background_threshold: int = 10,
-    alpha_matting_erode_size: int = 10,
 ) -> Tuple[Image.Image, Dict[str, Any]]:
     """
-    Tách nền ảnh bằng mô hình AI (mặc định BRIA AI RMBG-1.4).
-
-    :param image_input: Bytes ảnh, đường dẫn file, hoặc đối tượng PIL Image.
-    :param model_name: 'bria-rmbg' (RMBG-1.4) hoặc 'u2net'.
-    :param bg_color: None (nền trong suốt), hoặc mã HEX (#ffffff), hoặc tuple RGB (255, 255, 255).
-    :param num_threads: Số luồng CPU cho ONNX Runtime.
-    :param alpha_matting: Bật/tắt tinh chỉnh viền lông/tóc mịn.
-    :return: (PIL.Image đã tách nền, dict metadata)
+    Tách nền ảnh bằng mô hình BiRefNet-Lite (OpenVINO Engine) với kiểm soát bộ nhớ an toàn.
     """
     start_total = time.perf_counter()
 
-    # 1. Tiền xử lý: Tải ảnh vào PIL Image và sửa góc xoay EXIF nếu có
+    # 1. Tiền xử lý ảnh
     start_load = time.perf_counter()
     if isinstance(image_input, bytes):
         pil_img = Image.open(io.BytesIO(image_input))
@@ -162,43 +278,38 @@ def remove_background(
     else:
         raise ValueError(f"Định dạng input không hợp lệ: {type(image_input)}")
 
-    # Tự động xoay ảnh theo EXIF orientation nếu có
     pil_img = ImageOps.exif_transpose(pil_img)
     orig_width, orig_height = pil_img.size
 
-    # Bảo vệ chống tràn RAM khi ảnh quá lớn (> 4096px)
+    # Thu nhỏ an toàn về tối đa MAX_IMAGE_SIZE (2560px) bằng BILINEAR để tránh peak RAM khi nén PNG
     if pil_img.width > MAX_IMAGE_SIZE or pil_img.height > MAX_IMAGE_SIZE:
-        logger.warning(f"Ảnh quá lớn ({pil_img.size}), tự động thu nhỏ về tối đa {MAX_IMAGE_SIZE}px để bảo vệ RAM.")
-        pil_img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.Resampling.LANCZOS)
+        logger.info(f"Tối ưu ảnh lớn ({pil_img.size}) về tối đa {MAX_IMAGE_SIZE}px để đảm bảo an toàn bộ nhớ.")
+        pil_img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.Resampling.BILINEAR)
 
     load_time_ms = (time.perf_counter() - start_load) * 1000
 
-    # 2. Suy luận AI (ONNX Inference)
+    # 2. Suy luận AI với BiRefNet-Lite
     start_infer = time.perf_counter()
-    normalized_model = "bria-rmbg" if "bria" in model_name.lower() or "1.4" in model_name.lower() else "u2net"
-    session = get_rembg_session(model_name=normalized_model, num_threads=num_threads)
+    engine = get_birefnet_engine(num_threads=num_threads)
+    output_img = None
+    backend_display = "BiRefNet-Lite (Fallback)"
 
-    if session is not None:
-        try:
-            from rembg import remove
-            output_img = remove(
-                pil_img,
-                session=session,
-                alpha_matting=alpha_matting,
-                alpha_matting_foreground_threshold=alpha_matting_foreground_threshold,
-                alpha_matting_background_threshold=alpha_matting_background_threshold,
-                alpha_matting_erode_size=alpha_matting_erode_size,
-            )
-        except Exception as e:
-            logger.error(f"Lỗi trong quá trình inference rembg: {e}. Sử dụng fallback.")
-            output_img = _fallback_remove_bg(pil_img)
-    else:
-        logger.info("Chạy fallback removal (khi không có session rembg)")
+    if engine and engine.compiled_model is not None:
+        mask = engine.predict_mask(pil_img)
+        if mask is not None:
+            rgba = pil_img.convert("RGBA")
+            rgba.putalpha(mask)
+            output_img = rgba
+            backend_display = f"BiRefNet-Lite ({engine.backend.upper()})"
+            del mask
+
+    if output_img is None:
         output_img = _fallback_remove_bg(pil_img)
+        backend_display = "Color-Distance Fallback"
 
     infer_time_ms = (time.perf_counter() - start_infer) * 1000
 
-    # 3. Hậu xử lý: Thêm màu nền nếu người dùng yêu cầu (không phải transparent)
+    # 3. Đổ màu nền nếu được yêu cầu
     start_post = time.perf_counter()
     if bg_color is not None and bg_color != "transparent" and bg_color != "":
         rgb = hex_to_rgb(bg_color) if isinstance(bg_color, str) else bg_color
@@ -210,8 +321,9 @@ def remove_background(
     total_time_ms = (time.perf_counter() - start_total) * 1000
 
     metadata = {
-        "model": normalized_model,
-        "model_display": "BRIA AI RMBG-1.4 (HD)" if normalized_model == "bria-rmbg" else "U2Net (Fast)",
+        "model": "birefnet-lite",
+        "model_display": backend_display,
+        "backend": backend_display,
         "original_dimensions": [orig_width, orig_height],
         "output_dimensions": [output_img.width, output_img.height],
         "timing_ms": {
@@ -223,20 +335,18 @@ def remove_background(
         "bg_color": str(bg_color) if bg_color else "transparent",
     }
 
-    # Dọn dẹp RAM theo chu kỳ/batch (không block synchronous path mọi request)
-    maybe_trim_memory(force=False)
-
+    free_system_memory()
     return output_img, metadata
 
 
 async def remove_background_async(
     image_input: Union[bytes, str, Image.Image],
-    model_name: str = "bria-rmbg",
+    model_name: str = "birefnet-lite",
     bg_color: Optional[Union[str, Tuple[int, int, int]]] = None,
     num_threads: Optional[int] = None,
     alpha_matting: bool = False,
 ) -> Tuple[Image.Image, Dict[str, Any]]:
-    """Hàm bất đồng bộ (async wrapper) để chạy remove_background trong threadpool."""
+    """Hàm bất đồng bộ."""
     return await asyncio.to_thread(
         remove_background,
         image_input,
@@ -248,31 +358,25 @@ async def remove_background_async(
 
 
 def _fallback_remove_bg(pil_img: Image.Image, threshold: int = 30) -> Image.Image:
-    """
-    Fallback tách nền nhanh (dùng NumPy vectorization nếu có hoặc Pillow)
-    dựa trên màu trung bình 4 góc của ảnh.
-    """
+    """Fallback tách nền nhanh dựa trên màu góc ảnh."""
     rgba = pil_img.convert("RGBA")
     w, h = rgba.size
-
     try:
-        import numpy as np
         arr = np.array(rgba)
-        # Lấy màu 4 góc
         c1 = arr[0, 0, :3].astype(np.int32)
         c2 = arr[0, w-1, :3].astype(np.int32)
         c3 = arr[h-1, 0, :3].astype(np.int32)
         c4 = arr[h-1, w-1, :3].astype(np.int32)
         avg_bg = (c1 + c2 + c3 + c4) / 4.0
 
-        # Tính khoảng cách Euclidean màu
         rgb = arr[:, :, :3].astype(np.int32)
         dist = np.sqrt(np.sum((rgb - avg_bg) ** 2, axis=2))
         mask = dist <= threshold
         arr[mask, 3] = 0
-        return Image.fromarray(arr, "RGBA")
-    except ImportError:
-        # Fallback Pillow nếu không có numpy
+        res = Image.fromarray(arr, "RGBA")
+        del arr, dist, mask
+        return res
+    except Exception:
         corner = rgba.getpixel((0, 0))
         datas = rgba.getdata()
         new_data = []

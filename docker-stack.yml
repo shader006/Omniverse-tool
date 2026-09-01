@@ -84,9 +84,10 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
+      - BIREFNET_CACHE_DIR=/root/.cache/birefnet
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
-      - ${WORKSPACE_DIR:-.}/models/rembg:/root/.rembg
+      - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet
     networks:
       - omniverse_net
 
