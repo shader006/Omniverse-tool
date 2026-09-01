@@ -741,8 +741,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function formatTimeCode(seconds) {
-    if (isNaN(seconds) || seconds === null) return '00:00';
+  function parseTimeToSeconds(val) {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (!val) return 0;
+    const clean = String(val).replace(',', '.').trim();
+    const parts = clean.split(':').map(p => parseFloat(p) || 0);
+    if (parts.length === 3) {
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+      return parts[0] * 60 + parts[1];
+    }
+    return parseFloat(clean) || 0;
+  }
+
+  function formatTimeCode(val) {
+    const seconds = parseTimeToSeconds(val);
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
@@ -783,12 +796,21 @@ document.addEventListener('DOMContentLoaded', () => {
     transcribeLyricsContainer.innerHTML = '';
 
     if (segments && segments.length > 0) {
-      activeLyricSegments = segments;
+      activeLyricSegments = segments.map((s, idx) => ({
+        id: s.id || idx + 1,
+        start_sec: parseTimeToSeconds(s.start),
+        end_sec: parseTimeToSeconds(s.end || (s.start_sec ? s.start_sec + 4.0 : 4.0)),
+        start: s.start,
+        end: s.end,
+        text: s.text || ''
+      }));
     } else if (fullText) {
       // Fallback: split text by newlines or sentences so every line is displayed
       const lines = fullText.split(/\r?\n+/).map(l => l.trim()).filter(Boolean);
       activeLyricSegments = lines.map((line, idx) => ({
         id: idx + 1,
+        start_sec: idx * 4.0,
+        end_sec: (idx + 1) * 4.0,
         start: idx * 4.0,
         end: (idx + 1) * 4.0,
         text: line
@@ -806,11 +828,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const lineDiv = document.createElement('div');
       lineDiv.className = 'spotify-lyric-item';
       lineDiv.dataset.index = idx;
-      lineDiv.dataset.start = seg.start;
+      lineDiv.dataset.start = seg.start_sec;
       lineDiv.id = `lyric-seg-${idx}`;
 
       lineDiv.innerHTML = `
-        <span class="spotify-lyric-time">${formatTimeCode(seg.start)}</span>
+        <span class="spotify-lyric-time">${formatTimeCode(seg.start_sec)}</span>
         <span class="spotify-lyric-text">${seg.text}</span>
       `;
 
@@ -819,7 +841,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isVideo = selectedTranscribeFile && /\.(mp4|webm|mov|avi|mkv)$/i.test(selectedTranscribeFile.name);
         const player = isVideo ? transcribeVideoPlayer : transcribeAudioPlayer;
         if (player) {
-          player.currentTime = Math.max(0, seg.start);
+          player.currentTime = Math.max(0, seg.start_sec);
           player.play().catch(() => {});
           highlightActiveLyric(idx, true);
         }
@@ -836,10 +858,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     lines.forEach((line, idx) => {
       if (idx === activeIndex) {
-        line.classList.add('active-lyric');
-        line.classList.remove('past-lyric');
-        if (!isUserScrollingLyrics || forceScroll) {
-          line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (!line.classList.contains('active-lyric')) {
+          line.classList.add('active-lyric');
+          line.classList.remove('past-lyric');
+          if (!isUserScrollingLyrics || forceScroll) {
+            line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
         }
       } else if (idx < activeIndex) {
         line.classList.remove('active-lyric');
@@ -858,16 +882,16 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < activeLyricSegments.length; i++) {
       const seg = activeLyricSegments[i];
       const nextSeg = activeLyricSegments[i + 1];
-      const segEnd = nextSeg ? nextSeg.start : (seg.end || seg.start + 5.0);
+      const segEnd = nextSeg ? nextSeg.start_sec : (seg.end_sec || seg.start_sec + 4.0);
 
-      if (currentTime >= seg.start && currentTime < segEnd) {
+      if (currentTime >= seg.start_sec && currentTime < segEnd) {
         foundIdx = i;
         break;
       }
     }
 
     if (foundIdx === -1 && activeLyricSegments.length > 0) {
-      if (currentTime >= activeLyricSegments[activeLyricSegments.length - 1].start) {
+      if (currentTime >= activeLyricSegments[activeLyricSegments.length - 1].start_sec) {
         foundIdx = activeLyricSegments.length - 1;
       }
     }

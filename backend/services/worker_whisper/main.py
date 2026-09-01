@@ -172,12 +172,16 @@ async def transcribe_media(
             pass
 
         # 2. Chạy whisper-cli
+        # 2. Chạy whisper-cli tối ưu tốc độ và bóc tách timestamps chuẩn
         out_base = os.path.join(DOWNLOAD_DIR, f"transcript_{temp_id}")
         cmd_whisper = [
             WHISPER_BIN,
             "-m", WHISPER_MODEL_PATH,
             "-f", wav_path,
-            "-t", str(min(os.cpu_count() or 4, 8)),
+            "-t", str(min(os.cpu_count() or 8, 8)),
+            "-bs", "1",
+            "-bo", "1",
+            "-nf",
             "--output-json",
             "-of", out_base
         ]
@@ -199,11 +203,22 @@ async def transcribe_media(
                 wh_data = json.load(jf)
                 # Parse whisper output json
                 transcription = wh_data.get("transcription", [])
-                for seg in transcription:
+                for idx, seg in enumerate(transcription):
+                    # Lấy start/end dạng số giây (float) để Frontend đồng bộ highlight
+                    from_ms = seg.get("offsets", {}).get("from", 0)
+                    to_ms = seg.get("offsets", {}).get("to", 0)
+                    start_sec = round(float(from_ms) / 1000.0, 2)
+                    end_sec = round(float(to_ms) / 1000.0, 2)
+
+                    ts_from = seg.get("timestamps", {}).get("from", "00:00:00,000")
+                    ts_to = seg.get("timestamps", {}).get("to", "00:00:00,000")
+
                     segments.append({
-                        "id": seg.get("id", 0),
-                        "start": seg.get("timestamps", {}).get("from", "00:00:00"),
-                        "end": seg.get("timestamps", {}).get("to", "00:00:00"),
+                        "id": idx + 1,
+                        "start": start_sec,
+                        "end": end_sec,
+                        "timestamp_from": ts_from,
+                        "timestamp_to": ts_to,
                         "text": seg.get("text", "").strip()
                     })
                 text_content = wh_data.get("text", "") or "\n".join(s["text"] for s in segments)
@@ -216,7 +231,7 @@ async def transcribe_media(
         with open(final_filepath, "w", encoding="utf-8") as out_f:
             if format == "srt":
                 for i, seg in enumerate(segments, 1):
-                    out_f.write(f"{i}\n{seg['start']} --> {seg['end']}\n{seg['text']}\n\n")
+                    out_f.write(f"{i}\n{seg['timestamp_from']} --> {seg['timestamp_to']}\n{seg['text']}\n\n")
             else:
                 out_f.write(text_content)
 
