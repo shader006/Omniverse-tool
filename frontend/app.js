@@ -1049,7 +1049,17 @@ document.addEventListener('DOMContentLoaded', () => {
           body: formData
         });
 
-        const data = await res.json();
+        const respText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(respText);
+        } catch (parseErr) {
+          if (respText.includes('<!DOCTYPE') || respText.includes('<html')) {
+            throw new Error(`Máy chủ đang bận hoặc đang khởi động lại (HTTP ${res.status}). Vui lòng thử lại sau giây lát.`);
+          }
+          throw new Error('Phản hồi từ máy chủ không hợp lệ: ' + respText.slice(0, 80));
+        }
+
         if (!res.ok || !data.success) {
           throw new Error(data.detail || data.error || 'Quá trình trích xuất văn bản thất bại.');
         }
