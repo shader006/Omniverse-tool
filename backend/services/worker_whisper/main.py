@@ -172,16 +172,18 @@ async def transcribe_media(
             pass
 
         # 2. Chạy whisper-cli
-        # 2. Chạy whisper-cli tối ưu tốc độ và bóc tách timestamps chuẩn
+        # 2. Chạy whisper-cli tối ưu tốc độ, phân bổ 12 core và chống nuốt lời khi nhạc to
         out_base = os.path.join(DOWNLOAD_DIR, f"transcript_{temp_id}")
         cmd_whisper = [
             WHISPER_BIN,
             "-m", WHISPER_MODEL_PATH,
             "-f", wav_path,
-            "-t", str(min(os.cpu_count() or 8, 8)),
+            "-t", str(min(os.cpu_count() or 12, 12)),
             "-bs", "1",
             "-bo", "1",
             "-nf",
+            "-sns",
+            "-nth", "0.35",
             "--output-json",
             "-of", out_base
         ]
