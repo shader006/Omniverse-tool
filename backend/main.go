@@ -430,6 +430,78 @@ func sendGatewayOTLPTrace(item *otlpSpanItem) {
 	}
 }
 
+func sendCustomOTLPTrace(serviceName, name string, durationMs float64, attributes map[string]string, isError bool) {
+	go func() {
+		traceID := generateHexID(16)
+		spanID := generateHexID(8)
+		now := time.Now()
+		endNano := now.UnixNano()
+		startNano := now.Add(-time.Duration(durationMs * float64(time.Millisecond))).UnixNano()
+
+		attrsList := []map[string]interface{}{
+			{"key": "service.name", "value": map[string]interface{}{"stringValue": serviceName}},
+			{"key": "deployment.environment", "value": map[string]interface{}{"stringValue": "production"}},
+		}
+		for k, v := range attributes {
+			attrsList = append(attrsList, map[string]interface{}{
+				"key":   k,
+				"value": map[string]interface{}{"stringValue": v},
+			})
+		}
+
+		payload := map[string]interface{}{
+			"resourceSpans": []map[string]interface{}{
+				{
+					"resource": map[string]interface{}{
+						"attributes": attrsList[:2],
+					},
+					"scopeSpans": []map[string]interface{}{
+						{
+							"scope": map[string]interface{}{"name": serviceName + "-tracer", "version": "1.0.0"},
+							"spans": []map[string]interface{}{
+								{
+									"traceId":           traceID,
+									"spanId":            spanID,
+									"name":              name,
+									"kind":              1,
+									"startTimeUnixNano": strconv.FormatInt(startNano, 10),
+									"endTimeUnixNano":   strconv.FormatInt(endNano, 10),
+									"attributes":        attrsList,
+									"status": map[string]interface{}{
+										"code": func() int {
+											if isError {
+												return 2
+											}
+											return 1
+										}(),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+
+		req, err := http.NewRequest("POST", hiaiObserveURL+"/v1/traces", bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+hiaiObserveKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := traceHTTPClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+}
+
 type statusResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -613,8 +685,24 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
 
 	client := &http.Client{Timeout: 120 * time.Second}
+	startGotenberg := time.Now()
 	resp, err := client.Do(req)
+	gotenbergDurMs := float64(time.Since(startGotenberg).Microseconds()) / 1000.0
 	finish(err)
+
+	sendCustomOTLPTrace(
+		"gotenberg",
+		"POST "+endpointSubpath,
+		gotenbergDurMs,
+		map[string]string{
+			"http.route":  endpointSubpath,
+			"http.method": "POST",
+			"file.name":   originalFilename,
+			"file.ext":    ext,
+		},
+		err != nil || (resp != nil && resp.StatusCode != http.StatusOK),
+	)
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
