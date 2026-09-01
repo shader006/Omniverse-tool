@@ -12,6 +12,9 @@ import uvicorn
 from contextlib import asynccontextmanager
 import threading
 
+import threading
+import time
+
 # Thêm app vào sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from app.rmbg.remover import remove_background, get_birefnet_engine, free_system_memory
@@ -21,6 +24,12 @@ logger = logging.getLogger("worker_rmbg")
 
 _IS_WARMED_UP = False
 _ACTIVE_BACKEND = "None"
+_LAST_REQUEST_TIME = time.time()
+_ACTIVE_REQUESTS = 0
+_PROCESSED_COUNT = 0
+_STATE_LOCK = threading.Lock()
+
+IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "120"))  # Mặc định 2 phút rảnh là tự giải phóng RAM
 
 def _warmup_worker():
     global _IS_WARMED_UP, _ACTIVE_BACKEND
@@ -34,9 +43,27 @@ def _warmup_worker():
     except Exception as e:
         logger.warning(f"⚠️ [WARM-UP] Lỗi warm-up BiRefNet-Lite: {e}")
 
+def _idle_monitor():
+    """Tự động recycle worker sau khi nhàn rỗi (idle) IDLE_RECYCLE_SECONDS để trả 4GB RAM về cho OS."""
+    if IDLE_RECYCLE_SECONDS <= 0:
+        logger.info("ℹ️ [IDLE MONITOR] Cơ chế tự động giải phóng RAM đang tắt (IDLE_RECYCLE_SECONDS <= 0).")
+        return
+
+    logger.info(f"🛡️ [IDLE MONITOR] Đã kích hoạt: Tự động hoàn trả RAM khi rảnh rỗi sau {IDLE_RECYCLE_SECONDS}s.")
+    while True:
+        time.sleep(5)
+        with _STATE_LOCK:
+            if _ACTIVE_REQUESTS == 0 and _PROCESSED_COUNT > 0:
+                idle_duration = time.time() - _LAST_REQUEST_TIME
+                if idle_duration >= IDLE_RECYCLE_SECONDS:
+                    logger.info(f"⏰ [IDLE RECYCLE] Đã nhàn rỗi {int(idle_duration)}s (>= {IDLE_RECYCLE_SECONDS}s). Tự động tái khởi động tiến trình để giải phóng 4GB RAM về hệ điều hành...")
+                    # Thoát tiến trình sạch để Docker Swarm / Compose tự động nạp container tươi mới
+                    os._exit(0)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     threading.Thread(target=_warmup_worker, daemon=True).start()
+    threading.Thread(target=_idle_monitor, daemon=True).start()
     yield
 
 app = FastAPI(title="BiRefNet-Lite OpenVINO Worker", version="2.0.0", lifespan=lifespan)
@@ -73,6 +100,10 @@ async def remove_bg(
     base_name = os.path.splitext(file.filename)[0]
     out_filename = f"{temp_id}_{base_name}_nobg.png"
     out_filepath = os.path.join(DOWNLOAD_DIR, out_filename)
+
+    global _ACTIVE_REQUESTS, _PROCESSED_COUNT, _LAST_REQUEST_TIME
+    with _STATE_LOCK:
+        _ACTIVE_REQUESTS += 1
 
     try:
         content = await file.read()
@@ -117,6 +148,11 @@ async def remove_bg(
         logger.error(f"Lỗi khi tách nền: {e}")
         free_system_memory()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        with _STATE_LOCK:
+            _ACTIVE_REQUESTS -= 1
+            _PROCESSED_COUNT += 1
+            _LAST_REQUEST_TIME = time.time()
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8003"))

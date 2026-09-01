@@ -77,7 +77,8 @@ services:
       replicas: 1
       endpoint_mode: dnsrr
       restart_policy:
-        condition: on-failure
+        condition: any
+        delay: 1s
       resources:
         limits:
           memory: 4096M
@@ -85,6 +86,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
+      - IDLE_RECYCLE_SECONDS=120
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet

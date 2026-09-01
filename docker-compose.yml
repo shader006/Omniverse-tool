@@ -65,6 +65,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
+      - IDLE_RECYCLE_SECONDS=120
 
   pogocache:
     image: pogocache/pogocache:latest
