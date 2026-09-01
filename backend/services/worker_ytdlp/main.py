@@ -153,11 +153,11 @@ def start_download(req: DownloadRequest, background_tasks: BackgroundTasks):
     # Chạy download task trong background
     background_tasks.add_task(
         run_download_task,
-        job_id=req.job_id,
         url=req.url,
         media_format=req.format,
         quality=req.quality,
-        download_dir=out_dir
+        output_dir=out_dir,
+        job_id=req.job_id
     )
     return {"success": True, "job_id": req.job_id, "status": "queued"}
 
