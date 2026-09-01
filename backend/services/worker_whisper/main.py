@@ -5,7 +5,8 @@ import uuid
 import shutil
 import logging
 import subprocess
-import json
+import urllib.request
+import threading
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import uvicorn
@@ -18,6 +19,67 @@ app = FastAPI(title="Worker Whisper Microservice", version="1.0.0")
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
 WHISPER_BIN = os.getenv("WHISPER_BIN", "/usr/local/bin/whisper-cli")
 WHISPER_MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "/app/models/whisper/ggml-small.bin")
+HIAI_OBSERVE_URL = os.getenv("HIAI_OBSERVE_URL", "http://172.17.0.1:8001")
+HIAI_OBSERVE_API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779")
+
+def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
+    """Gửi trace telemetry về HiAi Observe theo chuẩn OTLP/HTTP."""
+    def _send():
+        try:
+            now_ns = int(time.time() * 1e9)
+            start_ns = now_ns - int(duration_ms * 1e6)
+            trace_id = uuid.uuid4().hex
+            span_id = uuid.uuid4().hex[:16]
+
+            attrs_list = [
+                {"key": "service.name", "value": {"stringValue": "worker-whisper"}},
+                {"key": "deployment.environment", "value": {"stringValue": "production"}},
+            ]
+            for k, v in attributes.items():
+                if isinstance(v, (int, float)):
+                    attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
+                else:
+                    attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
+
+            payload = {
+                "resourceSpans": [
+                    {
+                        "resource": {"attributes": attrs_list[:2]},
+                        "scopeSpans": [
+                            {
+                                "scope": {"name": "whisper-tracer", "version": "1.0.0"},
+                                "spans": [
+                                    {
+                                        "traceId": trace_id,
+                                        "spanId": span_id,
+                                        "name": name,
+                                        "kind": 1,
+                                        "startTimeUnixNano": str(start_ns),
+                                        "endTimeUnixNano": str(now_ns),
+                                        "attributes": attrs_list,
+                                        "status": {"code": 2 if is_error else 1}
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+            req = urllib.request.Request(
+                f"{HIAI_OBSERVE_URL}/v1/traces",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {HIAI_OBSERVE_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
 
 @app.get("/health")
 def health_check():
@@ -121,6 +183,20 @@ async def transcribe_media(
             else:
                 out_f.write(text_content)
 
+        send_otlp_trace(
+            name="POST /api/transcribe",
+            duration_ms=proc_time * 1000.0,
+            attributes={
+                "http.route": "/api/transcribe",
+                "http.method": "POST",
+                "http.status_code": 200,
+                "ai.model": "Whisper (GGML C++ Engine)",
+                "ai.audio_duration_sec": duration_sec,
+                "ai.detected_language": language,
+                "ai.output_format": format,
+            }
+        )
+
         return {
             "success": True,
             "filename": final_filename,
@@ -132,6 +208,14 @@ async def transcribe_media(
             "detected_language": language,
             "model_used": os.path.basename(WHISPER_MODEL_PATH)
         }
+    except Exception as e:
+        send_otlp_trace(
+            name="POST /api/transcribe",
+            duration_ms=50.0,
+            attributes={"error": str(e), "http.status_code": 500},
+            is_error=True
+        )
+        raise e
     finally:
         # Dọn dẹp file tạm
         if os.path.exists(temp_in_path):
