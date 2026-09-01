@@ -8,6 +8,9 @@ import logging
 import subprocess
 import urllib.request
 import threading
+import wave
+import struct
+from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 import uvicorn
@@ -15,13 +18,46 @@ import uvicorn
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("worker_whisper")
 
-app = FastAPI(title="Worker Whisper Microservice", version="1.0.0")
-
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
 WHISPER_BIN = os.getenv("WHISPER_BIN", "/usr/local/bin/whisper-cli")
 WHISPER_MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "/app/models/whisper/ggml-small.bin")
 HIAI_OBSERVE_URL = os.getenv("HIAI_OBSERVE_URL", "http://172.17.0.1:8001")
 HIAI_OBSERVE_API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779")
+
+def _warmup_whisper():
+    """Nạp sẵn mô hình Whisper GGML (465MB) vào RAM và kích hoạt sẵn C++ inference pipeline."""
+    logger.info("🚀 [WARM-UP] Nạp sẵn mô hình Whisper GGML vào RAM...")
+    try:
+        if os.path.exists(WHISPER_MODEL_PATH):
+            # 1. Đọc toàn bộ file nhị phân vào RAM để lock vào OS Page Cache
+            with open(WHISPER_MODEL_PATH, "rb") as f:
+                _ = f.read()
+            
+            # 2. Chạy 1 inference giả lập 0.1s để khởi tạo sẵn CPU AVX2 Thread Pools
+            dummy_wav = "/tmp/warmup_sine.wav"
+            with wave.open(dummy_wav, "w") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(struct.pack('<1600h', *([0] * 1600)))
+            
+            if os.path.exists(WHISPER_BIN):
+                subprocess.run(
+                    [WHISPER_BIN, "-m", WHISPER_MODEL_PATH, "-f", dummy_wav, "-t", "4", "--output-txt", "-of", "/tmp/warmup_out"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10
+                )
+            logger.info("✅ [WARM-UP] Whisper GGML C++ Engine đã được nạp sẵn vào RAM và sẵn sàng xử lý tức thì.")
+    except Exception as e:
+        logger.warning(f"⚠️ [WARM-UP] Whisper warm-up warning: {e}")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=_warmup_whisper, daemon=True).start()
+    yield
+
+app = FastAPI(title="Worker Whisper Microservice", version="1.0.0", lifespan=lifespan)
 
 def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
     """Gửi trace telemetry về HiAi Observe theo chuẩn OTLP/HTTP."""

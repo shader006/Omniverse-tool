@@ -29,7 +29,7 @@ _ACTIVE_REQUESTS = 0
 _PROCESSED_COUNT = 0
 _STATE_LOCK = threading.Lock()
 
-IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "120"))  # Mặc định 2 phút rảnh là tự giải phóng RAM
+IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "0"))  # 0 = Giữ thường trực trong RAM vĩnh viễn không giải phóng
 
 def _warmup_worker():
     global _IS_WARMED_UP, _ACTIVE_BACKEND
