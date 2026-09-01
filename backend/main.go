@@ -61,6 +61,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", server.handleHealth)
+	mux.HandleFunc("/api/health", server.handleHealth)
 	mux.HandleFunc("/api/info", server.handleInfo)
 	mux.HandleFunc("/api/download", server.handleDownload)
 	mux.HandleFunc("/api/convert/file", server.handleConvertFile)
