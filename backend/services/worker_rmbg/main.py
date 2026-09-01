@@ -10,8 +10,8 @@ from PIL import Image
 import uvicorn
 
 from contextlib import asynccontextmanager
-import threading
-
+import json
+import urllib.request
 import threading
 import time
 
@@ -42,6 +42,68 @@ def _warmup_worker():
             logger.info(f"✅ [WARM-UP] BiRefNet-Lite ({engine.backend.upper()}) sẵn sàng phục vụ.")
     except Exception as e:
         logger.warning(f"⚠️ [WARM-UP] Lỗi warm-up BiRefNet-Lite: {e}")
+
+HIAI_OBSERVE_URL = os.environ.get("HIAI_OBSERVE_URL", "http://172.17.0.1:8001")
+HIAI_OBSERVE_API_KEY = os.environ.get("HIAI_OBSERVE_API_KEY", "ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779")
+
+def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
+    """Gửi trace telemetry về HiAi Observe theo chuẩn OTLP/HTTP hoàn toàn không tốn RAM."""
+    def _send():
+        try:
+            now_ns = int(time.time() * 1e9)
+            start_ns = now_ns - int(duration_ms * 1e6)
+            trace_id = uuid.uuid4().hex
+            span_id = uuid.uuid4().hex[:16]
+
+            attrs_list = [
+                {"key": "service.name", "value": {"stringValue": "worker-rmbg"}},
+                {"key": "deployment.environment", "value": {"stringValue": "production"}},
+            ]
+            for k, v in attributes.items():
+                if isinstance(v, (int, float)):
+                    attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
+                else:
+                    attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
+
+            payload = {
+                "resourceSpans": [
+                    {
+                        "resource": {"attributes": attrs_list[:2]},
+                        "scopeSpans": [
+                            {
+                                "scope": {"name": "birefnet-tracer", "version": "1.0.0"},
+                                "spans": [
+                                    {
+                                        "traceId": trace_id,
+                                        "spanId": span_id,
+                                        "name": name,
+                                        "kind": 1,
+                                        "startTimeUnixNano": str(start_ns),
+                                        "endTimeUnixNano": str(now_ns),
+                                        "attributes": attrs_list,
+                                        "status": {"code": 2 if is_error else 1}
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+            req = urllib.request.Request(
+                f"{HIAI_OBSERVE_URL}/v1/traces",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {HIAI_OBSERVE_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                pass
+        except Exception:
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
 
 def _idle_monitor():
     """Tự động recycle worker sau khi nhàn rỗi (idle) IDLE_RECYCLE_SECONDS để trả 4GB RAM về cho OS."""
@@ -134,12 +196,29 @@ async def remove_bg(
         del preview_img, preview_buf, content
         free_system_memory()
 
+        total_ms = metadata.get("timing_ms", {}).get("total", 0)
+        send_otlp_trace(
+            name="POST /api/remove-bg",
+            duration_ms=total_ms,
+            attributes={
+                "http.route": "/api/remove-bg",
+                "http.method": "POST",
+                "http.status_code": 200,
+                "ai.model": "BiRefNet-Lite (Intel OpenVINO)",
+                "ai.inference_ms": metadata.get("timing_ms", {}).get("inference", 0),
+                "ai.preprocess_ms": metadata.get("timing_ms", {}).get("preprocess", 0),
+                "ai.postprocess_ms": metadata.get("timing_ms", {}).get("postprocess", 0),
+                "image.width": metadata.get("input_size", {}).get("width", 0),
+                "image.height": metadata.get("input_size", {}).get("height", 0),
+            }
+        )
+
         return {
             "success": True,
             "filename": out_filename,
             "download_url": f"/api/file/{out_filename}",
             "original_filename": file.filename,
-            "processing_time_ms": metadata.get("timing_ms", {}).get("total", 0),
+            "processing_time_ms": total_ms,
             "result_size_bytes": file_size,
             "preview_base64": b64_preview,
             "metadata": metadata
@@ -147,6 +226,12 @@ async def remove_bg(
     except Exception as e:
         logger.error(f"Lỗi khi tách nền: {e}")
         free_system_memory()
+        send_otlp_trace(
+            name="POST /api/remove-bg",
+            duration_ms=100.0,
+            attributes={"error": str(e), "http.status_code": 500},
+            is_error=True
+        )
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         with _STATE_LOCK:
