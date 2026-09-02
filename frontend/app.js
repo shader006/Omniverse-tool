@@ -218,7 +218,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const info = data.data;
         if (mediaTitle) mediaTitle.textContent = info.title;
         if (mediaDuration) mediaDuration.textContent = info.duration_str;
-        if (mediaThumb) mediaThumb.src = info.thumbnail || '';
+        if (mediaThumb) {
+          mediaThumb.src = info.thumbnail || '';
+          mediaThumb.alt = info.title ? `Hình thu nhỏ xem trước: ${info.title}` : 'Hình thu nhỏ xem trước video';
+        }
         
         if (infoLoading) infoLoading.classList.add('hidden');
         if (mediaResultCard) mediaResultCard.classList.remove('hidden');
@@ -1251,8 +1254,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const reader = new FileReader();
     reader.onload = (e) => {
       bgSourceDataUrl = e.target.result;
-      if (bgSourceThumb) bgSourceThumb.src = bgSourceDataUrl;
-      if (bgCompareBeforeImg) bgCompareBeforeImg.src = bgSourceDataUrl;
+      if (bgSourceThumb) {
+        bgSourceThumb.src = bgSourceDataUrl;
+        bgSourceThumb.alt = `Xem trước hình ảnh gốc: ${file.name}`;
+      }
+      if (bgCompareBeforeImg) {
+        bgCompareBeforeImg.src = bgSourceDataUrl;
+        bgCompareBeforeImg.alt = `Hình ảnh gốc: ${file.name}`;
+      }
     };
     reader.readAsDataURL(file);
 
@@ -1413,6 +1422,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resultImgSrc = data.preview_base64 || data.download_url;
         if (bgCompareAfterImg) {
           bgCompareAfterImg.src = resultImgSrc;
+          bgCompareAfterImg.alt = selectedBgFile ? `Hình ảnh sau khi tách nền: ${selectedBgFile.name}` : 'Hình ảnh sau khi đã tách nền trong suốt';
         }
 
         // Reset Slider to 50%

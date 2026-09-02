@@ -1,0 +1,16 @@
+# Omniverse Tool - MediaFlow Multi-Tool
+
+> MediaFlow (Omniverse Tool) là bộ công cụ trực tuyến miễn phí cung cấp các tính năng: chuyển đổi video YouTube/TikTok sang MP3/MP4 320kbps, chuyển đổi tài liệu Office sang PDF với Gotenberg Engine, tách âm thanh thành văn bản qua OpenAI Whisper AI, và xóa phông ảnh thông minh với BiRefNet SOTA.
+
+## Tính Năng Chính
+
+- [URL to MP3 / MP4](https://www.omniversetool.online/): Tải và chuyển đổi video từ YouTube, TikTok, Facebook sang định dạng MP3 (320kbps) và MP4 (1080p Full HD).
+- [File to PDF Converter](https://www.omniversetool.online/): Chuyển đổi tài liệu Word (DOCX/DOC), Excel (XLSX/XLS), PowerPoint (PPTX/PPT), Markdown (.md), HTML sang định dạng PDF chuẩn in ấn qua Gotenberg v8.
+- [Whisper AI Transcribe](https://www.omniversetool.online/): Tự động nhận diện và chuyển đổi giọng nói trong video/audio thành phụ đề văn bản (SRT, VTT, TXT).
+- [AI Background Remover](https://www.omniversetool.online/): Xóa nền ảnh chân dung và sản phẩm với mô hình BiRefNet SOTA (OpenVINO), xuất ra file PNG nền trong suốt chất lượng cao.
+
+## Thông Tin Bổ Sung
+
+- [Trang Chủ](https://www.omniversetool.online/): Giao diện web chính thức.
+- [Sitemap](https://www.omniversetool.online/sitemap.xml): Sơ đồ trang web chính thức.
+- [Robots](https://www.omniversetool.online/robots.txt): Quy tắc chỉ mục dành cho các công cụ tìm kiếm và AI bot.

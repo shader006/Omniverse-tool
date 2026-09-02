@@ -76,6 +76,7 @@ func main() {
 		relPath := strings.TrimPrefix(r.URL.Path, "/static/")
 		filePath := filepath.Join(frontendDir, relPath)
 		if _, err := os.Stat(filePath); err == nil {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
 			http.ServeFile(w, r, filePath)
 			return
 		}
