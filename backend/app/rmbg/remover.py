@@ -52,39 +52,9 @@ def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
 
 
 def free_system_memory():
-    """Giải phóng bộ nhớ heap C/C++ (jemalloc/mimalloc/glibc) và Python GC về cho OS."""
+    """Giải phóng rác Python GC về bộ nhớ."""
     import gc
     gc.collect()
-    if not sys.platform.startswith("linux"):
-        return
-
-    import ctypes
-    # 1. jemalloc arenas.purge (nếu đang chạy jemalloc qua LD_PRELOAD)
-    try:
-        cur_proc = ctypes.CDLL(None)
-        if hasattr(cur_proc, "mallctl"):
-            cur_proc.mallctl(b"arenas.purge", None, None, None, 0)
-            return
-    except Exception:
-        pass
-
-    # 2. mimalloc purge
-    try:
-        cur_proc = ctypes.CDLL(None)
-        if hasattr(cur_proc, "mi_collect"):
-            cur_proc.mi_collect(ctypes.c_bool(True))
-            return
-    except Exception:
-        pass
-
-    # 3. glibc malloc_trim (chỉ chạy khi KHÔNG dùng custom allocator để tránh heap corruption)
-    try:
-        if not os.getenv("LD_PRELOAD"):
-            libc = ctypes.CDLL("libc.so.6")
-            if hasattr(libc, "malloc_trim"):
-                libc.malloc_trim(0)
-    except Exception:
-        pass
 
 
 
@@ -186,9 +156,9 @@ class BiRefNetOpenVINOEngine:
 
         orig_w, orig_h = pil_img.size
 
-        # Preprocessing: Chuyển RGB -> Resize 1024x1024 (BILINEAR) -> Normalize ImageNet
+        # Preprocessing: Chuyển RGB -> Resize 1024x1024 (BOX / Area Sampling chống mất tóc) -> Normalize ImageNet
         rgb_img = pil_img.convert("RGB")
-        resized = rgb_img.resize(TARGET_INFERENCE_SIZE, Image.Resampling.BILINEAR)
+        resized = rgb_img.resize(TARGET_INFERENCE_SIZE, Image.Resampling.BOX)
 
         arr = np.array(resized, dtype=np.float32) / 255.0  # (1024, 1024, 3)
         arr = np.transpose(arr, (2, 0, 1))  # (3, 1024, 1024)
@@ -226,9 +196,9 @@ class BiRefNetOpenVINOEngine:
         mask_img = Image.fromarray(out_mask, mode="L")
         del out_mask, out_tensor
 
-        # Resize mask về đúng kích thước ảnh đầu vào (BILINEAR tiết kiệm RAM hơn LANCZOS)
+        # Resize mask về đúng kích thước ảnh đầu vào (BICUBIC mượt viền cong, chống răng cưa)
         if (orig_w, orig_h) != TARGET_INFERENCE_SIZE:
-            mask_img = mask_img.resize((orig_w, orig_h), Image.Resampling.BILINEAR)
+            mask_img = mask_img.resize((orig_w, orig_h), Image.Resampling.BICUBIC)
 
         return mask_img
 

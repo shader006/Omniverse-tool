@@ -26,10 +26,6 @@ ENV DOWNLOAD_DIR=/app/downloads
 ENV PYTHONPATH=/app
 ENV BIREFNET_CACHE_DIR=/root/.cache/birefnet
 
-ENV MALLOC_ARENA_MAX=2
-ENV MALLOC_MMAP_THRESHOLD_=131072
-ENV MALLOC_TRIM_THRESHOLD_=131072
-
 EXPOSE 8003
 
 CMD ["python3", "-m", "services.worker_rmbg.main"]

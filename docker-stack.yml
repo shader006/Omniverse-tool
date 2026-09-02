@@ -86,7 +86,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
-      - IDLE_RECYCLE_SECONDS=0
+      - IDLE_RECYCLE_SECONDS=60
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet
