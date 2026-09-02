@@ -34,12 +34,15 @@ echo -e "\n${YELLOW}📦 [4/5] Đang dọn dẹp Containers tạm và Networks t
 docker container prune -f || true
 docker network prune -f || true
 
-# 5. Dọn dẹp file tạm trong thư mục downloads (quá 2 giờ)
-echo -e "\n${YELLOW}📁 [5/5] Đang dọn dẹp file tải về cũ (> 2 giờ) trong downloads/...${NC}"
+# 5. Dọn dẹp file tạm trong thư mục downloads (quá 2 giờ) và __pycache__
+echo -e "\n${YELLOW}📁 [5/5] Đang dọn dẹp file tải về cũ (> 2 giờ) và mã tạm Python __pycache__...${NC}"
 if [ -d "downloads" ]; then
     find downloads/ -type f -mmin +120 -delete 2>/dev/null || true
     echo -e "   ${GREEN}✓ Đã quét và làm sạch thư mục downloads!${NC}"
 fi
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+echo -e "   ${GREEN}✓ Đã dọn dẹp toàn bộ __pycache__ & .pytest_cache thừa!${NC}"
 
 # 6. Thu hồi RAM hệ thống (Linux Page Cache & Free Buffer nếu cần)
 echo -e "\n${YELLOW}🧠 [Bổ sung] Đồng bộ và làm tươi bộ nhớ RAM cache...${NC}"
