@@ -391,8 +391,9 @@ func monitorAndScaleService(ctx context.Context, client *http.Client, cfg Servic
 	lowCPUStreak := 0
 
 	var lastScaleTime time.Time
-	const scaleUpCooldown = 20 * time.Second
-	const scaleDownCooldown = 40 * time.Second
+	scaleUpCooldown := 10 * time.Second
+	scaleDownCooldownSec := getEnvInt("SCALE_DOWN_COOLDOWN_SEC", 15)
+	scaleDownCooldown := time.Duration(scaleDownCooldownSec) * time.Second
 
 	for {
 		select {
