@@ -19,7 +19,7 @@ def main():
     proc_parser = subparsers.add_parser("process", help="Tách nền ảnh")
     proc_parser.add_argument("--input", required=True, help="Đường dẫn file ảnh đầu vào")
     proc_parser.add_argument("--output", required=True, help="Đường dẫn lưu file ảnh kết quả (.png)")
-    proc_parser.add_argument("--model", default="birefnet-lite", choices=["birefnet-lite"], help="Mô hình AI sử dụng")
+    proc_parser.add_argument("--model", default="birefnet-lite", choices=["birefnet-lite", "bria-rmbg", "isnet-general-use", "u2net"], help="Mô hình AI sử dụng")
     proc_parser.add_argument("--bg-color", default=None, help="Màu nền: hex (#ffffff) hoặc 'transparent'")
     proc_parser.add_argument("--threads", type=int, default=None, help="Số luồng CPU")
 

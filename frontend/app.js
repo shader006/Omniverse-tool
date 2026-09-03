@@ -1177,6 +1177,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRemoveBgFile = document.getElementById('btn-remove-bg-file');
 
   const bgOptionsPanel = document.getElementById('bg-options-panel');
+  const bgEngineSelect = document.getElementById('bg-engine-select');
+  const bgModelSelectWrapper = document.getElementById('bg-model-select-wrapper');
   const bgModelSelect = document.getElementById('bg-model-select');
   const bgColorSelect = document.getElementById('bg-color-select');
   const bgCustomColorInput = document.getElementById('bg-custom-color-input');
@@ -1185,6 +1187,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const bgProgressCard = document.getElementById('bg-progress-card');
   const bgProgressText = document.getElementById('bg-progress-text');
+  const bgProgressBar = document.getElementById('bg-progress-bar');
   const bgErrorBox = document.getElementById('bg-error-box');
   const bgErrorMessage = document.getElementById('bg-error-message');
 
@@ -1200,6 +1203,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let selectedBgFile = null;
   let bgSourceDataUrl = '';
+  let lastTransparentBlob = null;
+  let currentResultDownloadUrl = '';
 
   function showBgError(msg) {
     if (bgErrorMessage) bgErrorMessage.textContent = msg;
@@ -1333,7 +1338,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Toggle custom color input
+  // Cập nhật trạng thái hiển thị của Engine AI
+  if (bgEngineSelect) {
+    const updateEngineUI = () => {
+      const isClient = bgEngineSelect.value === 'client';
+      if (bgModelSelectWrapper) {
+        bgModelSelectWrapper.style.opacity = isClient ? '0.5' : '1';
+        bgModelSelectWrapper.title = isClient ? 'Mô hình máy chủ chỉ áp dụng khi chọn chế độ Máy chủ hoặc khi Fallback' : '';
+      }
+      if (bgAlphaMatting) {
+        bgAlphaMatting.disabled = isClient;
+        const label = bgAlphaMatting.closest('label');
+        if (label) label.style.opacity = isClient ? '0.5' : '1';
+      }
+    };
+    bgEngineSelect.addEventListener('change', updateEngineUI);
+    updateEngineUI();
+  }
+
+  // Toggle custom color input & đổi màu trực tiếp trên Canvas nếu đã tách nền
+  async function applyColorChangeToExistingResult() {
+    let selectedColor = bgColorSelect ? bgColorSelect.value : 'transparent';
+    if (selectedColor === 'custom' && bgCustomColorInput) {
+      selectedColor = bgCustomColorInput.value;
+    }
+
+    if (lastTransparentBlob && window.RmbgClient) {
+      try {
+        const recolored = await window.RmbgClient.changeExistingBackgroundColor(lastTransparentBlob, selectedColor);
+        if (recolored) {
+          if (bgCompareAfterImg) {
+            bgCompareAfterImg.src = recolored.dataUrl;
+          }
+          if (bgDownloadBtn) {
+            bgDownloadBtn.href = recolored.downloadUrl;
+          }
+          if (bgResultStats) {
+            const currentText = bgResultStats.textContent.split(' • [')[0];
+            bgResultStats.textContent = `${currentText} • [Đổi màu nền Canvas: 5ms]`;
+          }
+        }
+      } catch (err) {
+        console.warn('[RMBG] Lỗi đổi màu nền Canvas tức thì:', err);
+      }
+    }
+  }
+
   if (bgColorSelect && bgCustomColorInput) {
     bgColorSelect.addEventListener('change', () => {
       if (bgColorSelect.value === 'custom') {
@@ -1341,6 +1391,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         bgCustomColorInput.classList.add('hidden');
       }
+      applyColorChangeToExistingResult();
+    });
+
+    bgCustomColorInput.addEventListener('input', () => {
+      applyColorChangeToExistingResult();
     });
   }
 
@@ -1360,7 +1415,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Start Remove Background API Call
+  // Reset selection
+  const originalResetBgSelection = resetBgSelection;
+  resetBgSelection = function() {
+    originalResetBgSelection();
+    lastTransparentBlob = null;
+    currentResultDownloadUrl = '';
+  };
+
+  // Start Remove Background (Hybrid Client-First + Server Fallback)
   if (btnStartRemoveBg) {
     btnStartRemoveBg.addEventListener('click', async () => {
       if (!selectedBgFile) {
@@ -1371,6 +1434,11 @@ document.addEventListener('DOMContentLoaded', () => {
       hideBgError();
       if (bgResultCard) bgResultCard.classList.add('hidden');
       if (bgProgressCard) bgProgressCard.classList.remove('hidden');
+
+      if (bgProgressBar) {
+        bgProgressBar.classList.add('progress-bar-indeterminate');
+        bgProgressBar.style.width = '100%';
+      }
 
       btnStartRemoveBg.disabled = true;
       btnStartRemoveBg.innerHTML = `
@@ -1383,66 +1451,88 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedColor = bgCustomColorInput.value;
       }
 
-      const formData = new FormData();
-      formData.append('file', selectedBgFile);
-      formData.append('model', bgModelSelect ? bgModelSelect.value : 'birefnet-lite');
-      formData.append('bg_color', selectedColor);
-      formData.append('alpha_matting', bgAlphaMatting && bgAlphaMatting.checked ? 'true' : 'false');
+      const selectedEngine = bgEngineSelect ? bgEngineSelect.value : 'client';
+      const selectedModel = bgModelSelect ? bgModelSelect.value : 'birefnet-lite';
+      const useAlphaMatting = bgAlphaMatting && bgAlphaMatting.checked;
+
+      const progressCallback = (statusText, percent) => {
+        if (bgProgressText) bgProgressText.textContent = statusText;
+        if (bgProgressBar && typeof percent === 'number') {
+          bgProgressBar.classList.remove('progress-bar-indeterminate');
+          bgProgressBar.style.width = `${percent}%`;
+        }
+      };
 
       try {
-        const response = await fetch('/api/remove-bg', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const respText = await response.text();
-        let data;
-        try {
-          data = JSON.parse(respText);
-        } catch (parseErr) {
-          if (respText.includes('<!DOCTYPE') || respText.includes('<html')) {
-            throw new Error('Server Backend đang chạy phiên bản cũ (chưa nạp endpoint /api/remove-bg). Vui lòng khởi động lại stack bằng lệnh: ./start.sh hoặc docker compose up -d');
-          }
-          throw new Error('Phản hồi từ máy chủ không hợp lệ: ' + respText.slice(0, 80));
+        let result;
+        if (window.RmbgClient) {
+          result = await window.RmbgClient.removeBackgroundHybrid(
+            selectedBgFile,
+            {
+              engine: selectedEngine,
+              model: selectedModel,
+              bgColor: selectedColor,
+              alphaMatting: useAlphaMatting
+            },
+            progressCallback
+          );
+        } else {
+          // Fallback trực tiếp nếu chưa tải được file rmbg-client.js
+          const formData = new FormData();
+          formData.append('file', selectedBgFile);
+          formData.append('model', selectedModel);
+          formData.append('bg_color', selectedColor);
+          formData.append('alpha_matting', useAlphaMatting ? 'true' : 'false');
+          const resp = await fetch('/api/remove-bg', { method: 'POST', body: formData });
+          result = await resp.json();
+          if (!result.success) throw new Error(result.detail || 'Lỗi server');
         }
 
-        if (!response.ok || !data.success) {
-          throw new Error(data.detail || data.error || 'Không thể xử lý tách nền ảnh.');
+        if (!result || !result.success) {
+          throw new Error(result?.detail || result?.error || 'Không thể xử lý tách nền ảnh.');
         }
 
-        // Hide progress
+        // Lưu transparent blob để đổi màu tức thì bằng Canvas
+        lastTransparentBlob = result.transparentBlob || null;
+        currentResultDownloadUrl = result.downloadUrl;
+
+        // Ẩn tiến trình, hiện kết quả
         if (bgProgressCard) bgProgressCard.classList.add('hidden');
         if (bgResultCard) bgResultCard.classList.remove('hidden');
 
-        // Set Images for Before/After Slider
+        // Set Images cho Before/After Slider
         if (bgCompareBeforeImg && bgSourceDataUrl) {
           bgCompareBeforeImg.src = bgSourceDataUrl;
         }
 
-        const resultImgSrc = data.preview_base64 || data.download_url;
+        const resultImgSrc = result.previewBase64 || result.downloadUrl;
         if (bgCompareAfterImg) {
           bgCompareAfterImg.src = resultImgSrc;
           bgCompareAfterImg.alt = selectedBgFile ? `Hình ảnh sau khi tách nền: ${selectedBgFile.name}` : 'Hình ảnh sau khi đã tách nền trong suốt';
         }
 
-        // Reset Slider to 50%
+        // Reset Slider về 50%
         if (bgComparisonSlider) bgComparisonSlider.value = 50;
         updateComparisonSlider(50);
 
-        // Stats
-        const timingMs = data.processing_time_ms || (data.metadata?.timing_ms?.total || '300');
-        const modelName = data.metadata?.model_display || 'BiRefNet-Lite (OpenVINO)';
-        const dims = data.metadata?.output_dimensions ? `${data.metadata.output_dimensions[0]}x${data.metadata.output_dimensions[1]}` : '';
-        const sizeStr = data.result_size_bytes ? ` • ${(data.result_size_bytes / 1024).toFixed(1)} KB` : '';
+        // Hiển thị thông số & Nơi xử lý (Client hay Server)
+        const timingMs = result.processingTimeMs || result.metadata?.timing_ms?.total || 350;
+        const sizeStr = result.resultSizeBytes ? ` • ${(result.resultSizeBytes / 1024).toFixed(1)} KB` : '';
+        const isClient = result.engine === 'client-wasm';
+        const engineBadge = isClient ? '⚡ Trình duyệt (Client WebAssembly • 0 tải Server)' : '☁️ Máy chủ (Server OpenVINO)';
 
         if (bgResultStats) {
-          bgResultStats.textContent = `Model: ${modelName} • Xử lý: ${timingMs}ms ${dims ? '• ' + dims : ''}${sizeStr}`;
+          let statsHtml = `Xử lý: ${engineBadge} • Thời gian: ${timingMs}ms${sizeStr}`;
+          if (result.fallbackNotice) {
+            statsHtml += ` <span style="display:block; color:#f59e0b; font-size:12px; margin-top:4px;">⚠️ ${result.fallbackNotice}</span>`;
+          }
+          bgResultStats.innerHTML = statsHtml;
         }
 
         // Download Button
         if (bgDownloadBtn) {
-          bgDownloadBtn.href = data.download_url;
-          bgDownloadBtn.setAttribute('download', data.filename || 'removed_bg.png');
+          bgDownloadBtn.href = result.downloadUrl;
+          bgDownloadBtn.setAttribute('download', result.filename || 'removed_bg.png');
         }
 
         if (bgResultCard) bgResultCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1459,7 +1549,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
           <span>Thử Lại</span>
         `;
-        showBgError(err.message || 'Lỗi khi gửi yêu cầu tách nền ảnh.');
+        showBgError(err.message || 'Lỗi khi xử lý tách nền ảnh.');
       }
     });
   }

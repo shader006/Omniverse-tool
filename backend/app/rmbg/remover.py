@@ -225,6 +225,14 @@ def get_birefnet_engine(num_threads: Optional[int] = None) -> Optional[BiRefNetO
         return None
 
 
+# Backward compatibility aliases for unit tests & benchmarks
+def get_rembg_session(model_name: Optional[str] = None) -> Optional[BiRefNetOpenVINOEngine]:
+    return get_birefnet_engine()
+
+def maybe_trim_memory():
+    free_system_memory()
+
+
 def remove_background(
     image_input: Union[bytes, str, Image.Image],
     model_name: str = "birefnet-lite",
