@@ -213,34 +213,55 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 1. Nếu có Worker RMBG Microservice -> Forward qua HTTP
+	// 1. Nếu có Worker RMBG Microservice -> Forward qua HTTP với retry 3 lần
 	if s.workerRmbgURL != "" {
 		alphaStr := "false"
 		if alphaMatting {
 			alphaStr = "true"
 		}
-		respBody, statusCode, callErr := s.forwardMultipartToWorker(
-			s.workerRmbgURL,
-			"/api/remove-bg",
-			fileBytes,
-			originalFilename,
-			"file",
-			map[string]string{
-				"model":         model,
-				"bg_color":      bgColor,
-				"alpha_matting": alphaStr,
-			},
-		)
-		if callErr == nil && statusCode == http.StatusOK {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(respBody)
-			return
+
+		var respBody []byte
+		var statusCode int
+		var callErr error
+
+		// Retry tối đa 3 lần đề phòng Worker đang khởi động lại hoặc nạp lại OpenVINO
+		for attempt := 1; attempt <= 3; attempt++ {
+			respBody, statusCode, callErr = s.forwardMultipartToWorker(
+				s.workerRmbgURL,
+				"/api/remove-bg",
+				fileBytes,
+				originalFilename,
+				"file",
+				map[string]string{
+					"model":         model,
+					"bg_color":      bgColor,
+					"alpha_matting": alphaStr,
+				},
+			)
+			if callErr == nil && statusCode == http.StatusOK {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(respBody)
+				return
+			}
+			if attempt < 3 {
+				time.Sleep(time.Duration(attempt) * 600 * time.Millisecond)
+			}
 		}
-		log.Printf("⚠️ [WORKER RMBG] Gọi worker thất bại (%v), fallback sang CLI cục bộ...", callErr)
+		log.Printf("⚠️ [WORKER RMBG] Gọi worker thất bại sau 3 lần thử (%v), statusCode=%d", callErr, statusCode)
 	}
 
-	// 2. Fallback sang CLI cục bộ
+	// 2. Fallback sang CLI cục bộ (nếu có python3 trên máy chủ)
+	if _, err := exec.LookPath("python3"); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Dịch vụ AI BiRefNet-Lite trên máy chủ đang bận xử lý hoặc đang khởi động. Vui lòng bấm thử lại sau 2 giây.",
+		})
+		return
+	}
+
 	id := randomID()
 	tempInputName := fmt.Sprintf("in_%s%s", id, ext)
 	tempInputPath := filepath.Join(s.downloadDir, tempInputName)

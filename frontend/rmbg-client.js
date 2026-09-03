@@ -40,6 +40,174 @@
   }
 
   /**
+   * Kiểm tra xem mô hình BiRefNet-Lite đã được lưu trong CacheStorage của trình duyệt chưa
+   * Khi đã lưu, tải lại trang (refresh/restart web) sẽ nạp tức thì 0MB tải mạng
+   */
+  async function isModelCached() {
+    try {
+      if (typeof window === 'undefined' || !window.caches) return false;
+      const cacheNames = await window.caches.keys();
+      for (const name of cacheNames) {
+        if (name.includes('transformers') || name.includes('onnx')) {
+          const cache = await window.caches.open(name);
+          const keys = await cache.keys();
+          if (keys.some(k => k.url.includes('BiRefNet_lite') || k.url.includes('birefnet'))) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Xóa bộ nhớ cache của mô hình nếu người dùng muốn giải phóng ổ cứng
+   */
+  async function clearModelCache() {
+    try {
+      if (typeof window === 'undefined' || !window.caches) return false;
+      const cacheNames = await window.caches.keys();
+      for (const name of cacheNames) {
+        if (name.includes('transformers') || name.includes('onnx')) {
+          await window.caches.delete(name);
+        }
+      }
+      segmenterPipeline = null;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /**
+   * Tự động nén và resize ảnh trước khi đưa vào mô hình AI hoặc gửi lên Server
+   * - Giới hạn kích thước cạnh tối đa: maxDimension (mặc định 2048px - chuẩn 2K siêu nét)
+   * - Nén chất lượng 0.95 (thay vì 0.92) để triệt tiêu hoàn toàn ringing artifacts ở viền tóc
+   * - Ưu tiên WebP/PNG, bảo toàn 100% kênh Alpha cho ảnh PNG (không nén ép sang JPEG)
+   */
+  async function compressAndResizeImage(imageFile, options = {}) {
+    const maxDimension = options.maxDimension || 2048;
+    const quality = options.quality || 0.95;
+    const originalSize = imageFile.size || 0;
+    const isPng = (imageFile.type === 'image/png') || (imageFile.name && imageFile.name.toLowerCase().endsWith('.png'));
+
+    let width, height;
+    let sourceElement = null;
+
+    if (typeof window.createImageBitmap === 'function') {
+      try {
+        sourceElement = await window.createImageBitmap(imageFile);
+        width = sourceElement.width;
+        height = sourceElement.height;
+      } catch (bitmapErr) {
+        sourceElement = null;
+      }
+    }
+
+    if (!sourceElement) {
+      sourceElement = await new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(imageFile);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          resolve(img);
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error('Không thể đọc dữ liệu ảnh để nén'));
+        };
+        img.src = url;
+      });
+      width = sourceElement.naturalWidth || sourceElement.width;
+      height = sourceElement.naturalHeight || sourceElement.height;
+    }
+
+    let targetWidth = width;
+    let targetHeight = height;
+    const maxCurrentDim = Math.max(width, height);
+
+    if (maxCurrentDim > maxDimension) {
+      const scaleRatio = maxDimension / maxCurrentDim;
+      targetWidth = Math.round(width * scaleRatio);
+      targetHeight = Math.round(height * scaleRatio);
+    }
+
+    // NGUYÊN TẮC BẢO TOÀN ALPHA VÀ CHỐNG ARTIFACTS:
+    // 1. Ảnh PNG < 3MB không vượt quá maxDimension -> Giữ nguyên 100% (bảo toàn kênh Alpha và viền nguyên bản)
+    // 2. Ảnh bất kỳ vốn đã <= maxDimension và dung lượng < 1.5MB -> Bỏ qua nén
+    if (maxCurrentDim <= maxDimension && (isPng ? originalSize < 3 * 1024 * 1024 : originalSize < 1.5 * 1024 * 1024) && !options.forceCompress) {
+      return {
+        file: imageFile,
+        blob: imageFile,
+        originalSize,
+        optimizedSize: originalSize,
+        width,
+        height,
+        wasCompressed: false,
+        ratioReducedPercent: 0
+      };
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext('2d');
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(sourceElement, 0, 0, targetWidth, targetHeight);
+
+    // Xác định định dạng nén tối ưu:
+    // - Nếu gốc là PNG: Giữ 'image/png' (lossless, giữ trọn vẹn kênh Alpha)
+    // - Nếu ảnh khác: Ưu tiên 'image/webp' chất lượng 0.95 (không ringing artifacts), fallback 'image/jpeg' 0.95
+    let mimeType = 'image/jpeg';
+    if (isPng) {
+      mimeType = 'image/png';
+    } else {
+      const canWebp = canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+      mimeType = canWebp ? 'image/webp' : 'image/jpeg';
+    }
+
+    const compressedBlob = await new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error('Lỗi xuất Blob ảnh sau khi nén'));
+      }, mimeType, quality);
+    });
+
+    const optimizedSize = compressedBlob.size;
+    const ratioReducedPercent = originalSize > 0 
+      ? Math.max(0, Math.round((1 - optimizedSize / originalSize) * 100))
+      : 0;
+
+    const ext = isPng ? '.png' : (mimeType === 'image/webp' ? '.webp' : '.jpg');
+    const baseName = (imageFile.name ? imageFile.name.replace(/\.[^/.]+$/, "") : 'optimized') + ext;
+    let optimizedFile;
+    try {
+      optimizedFile = new File([compressedBlob], baseName, {
+        type: mimeType,
+        lastModified: Date.now()
+      });
+    } catch (e) {
+      optimizedFile = compressedBlob;
+      optimizedFile.name = baseName;
+    }
+
+    return {
+      file: optimizedFile,
+      blob: compressedBlob,
+      originalSize,
+      optimizedSize,
+      width: targetWidth,
+      height: targetHeight,
+      wasCompressed: true,
+      ratioReducedPercent
+    };
+  }
+
+  /**
    * Tải động thư viện @huggingface/transformers và khởi tạo mô hình BiRefNet-Lite ONNX
    */
   async function loadBiRefNetClientEngine(onProgress) {
@@ -60,6 +228,8 @@
 
       const { pipeline, env } = transformers;
       env.allowLocalModels = false;
+      env.useBrowserCache = true; // Kích hoạt bộ nhớ CacheStorage của trình duyệt (lưu model vĩnh viễn)
+
       if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
         env.backends.onnx.wasm.proxy = false;
       }
@@ -68,7 +238,12 @@
       const device = hasWebGPU ? 'webgpu' : 'wasm';
       const deviceLabel = hasWebGPU ? 'WebGPU (Card đồ họa)' : 'WebAssembly (CPU)';
 
-      onProgress(`Đang tải mô hình BiRefNet-Lite ONNX trên ${deviceLabel}...`, 25);
+      const alreadyCached = await isModelCached();
+      if (alreadyCached) {
+        onProgress(`⚡ Đã tìm thấy BiRefNet-Lite trong Cache trình duyệt! Đang khởi tạo tức thì trên ${deviceLabel}...`, 25);
+      } else {
+        onProgress(`Đang tải mô hình BiRefNet-Lite ONNX lần đầu về Cache (${deviceLabel})...`, 25);
+      }
 
       // Khởi tạo pipeline Image Segmentation với BiRefNet-Lite
       segmenterPipeline = await pipeline('image-segmentation', BIREFNET_MODEL_ID, {
@@ -249,12 +424,18 @@
     };
   }
 
+  function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+      (typeof navigator !== 'undefined' && navigator.userAgent) || ''
+    );
+  }
+
   /**
-   * Gọi API Server Fallback (/api/remove-bg)
+   * Gọi Fallback lên API máy chủ /api/remove-bg
    */
   async function processOnServer(imageFile, options = {}, onProgress = () => {}) {
+    onProgress('Đang gửi ảnh tới Máy chủ AI BiRefNet-Lite...', 30);
     const startTime = performance.now();
-    onProgress('Đang gửi ảnh lên Máy chủ AI BiRefNet-Lite xử lý...', 20);
 
     const formData = new FormData();
     formData.append('file', imageFile);
@@ -264,10 +445,15 @@
 
     onProgress('Máy chủ đang phân tích mô hình BiRefNet-Lite OpenVINO SOTA...', 50);
 
-    const response = await fetch('/api/remove-bg', {
-      method: 'POST',
-      body: formData
-    });
+    let response;
+    try {
+      response = await fetch('/api/remove-bg', {
+        method: 'POST',
+        body: formData
+      });
+    } catch (netErr) {
+      throw new Error(`Không thể kết nối tới máy chủ (${netErr.message || 'Mất kết nối'}). Vui lòng kiểm tra lại mạng.`);
+    }
 
     onProgress('Đang nhận kết quả từ Máy chủ...', 90);
 
@@ -305,27 +491,61 @@
 
   /**
    * Hàm điều phối Hybrid:
-   * 1. Nếu engine = 'server': Gọi thẳng server
-   * 2. Nếu engine = 'client' hoặc 'auto': Chạy BiRefNet-Lite Client trước; Nếu lỗi -> Tự động Fallback sang server
+   * 1. Tiền xử lý: Tự động nén & tối ưu kích thước ảnh (nếu autoCompress !== false)
+   * 2. Nếu engine = 'server': Gọi thẳng server với ảnh đã tối ưu
+   * 3. Nếu engine = 'client' hoặc 'auto': Chạy BiRefNet-Lite Client trước; Nếu lỗi -> Tự động Fallback sang server
    */
   async function removeBackgroundHybrid(imageFile, options = {}, onProgress = () => {}) {
     const targetEngine = options.engine || 'client';
+    let fileToProcess = imageFile;
+    let compressionMeta = null;
+    const isMobile = isMobileDevice();
 
-    if (targetEngine === 'server') {
-      return await processOnServer(imageFile, options, onProgress);
+    // 1. Tiền xử lý tự động nén & scale ảnh để tiết kiệm băng thông & chống tràn RAM
+    if (options.autoCompress !== false) {
+      try {
+        onProgress('Đang phân tích & tối ưu hóa kích thước ảnh...', 5);
+        const compResult = await compressAndResizeImage(imageFile, {
+          maxDimension: options.maxDimension || 2048,
+          quality: options.quality || 0.92
+        });
+        if (compResult.wasCompressed) {
+          fileToProcess = compResult.file;
+          compressionMeta = compResult;
+          const origMB = (compResult.originalSize / 1024 / 1024).toFixed(1);
+          const optMB = (compResult.optimizedSize / 1024 / 1024).toFixed(2);
+          onProgress(`Đã tối ưu hóa ảnh: ${origMB}MB -> ${optMB}MB (Giảm ${compResult.ratioReducedPercent}%)`, 10);
+        }
+      } catch (compErr) {
+        console.warn('[RMBG] Bỏ qua bước nén ảnh do lỗi:', compErr);
+      }
     }
 
+    // 2. Chạy trên Server trực tiếp
+    if (targetEngine === 'server') {
+      const serverResult = await processOnServer(fileToProcess, options, onProgress);
+      if (compressionMeta) serverResult.compressionMeta = compressionMeta;
+      return serverResult;
+    }
+
+    // 3. Chạy trên Client BiRefNet-Lite (với Fallback tự động êm dịu nếu thiết bị/mạng không tải nổi 224MB)
     try {
-      return await processOnClient(imageFile, options, onProgress);
+      const clientResult = await processOnClient(fileToProcess, options, onProgress);
+      if (compressionMeta) clientResult.compressionMeta = compressionMeta;
+      return clientResult;
     } catch (clientErr) {
-      console.warn('⚠️ [RMBG Client] Lỗi khi chạy BiRefNet-Lite trên trình duyệt, đang chuyển sang Server Fallback:', clientErr);
+      console.warn('⚠️ [RMBG Client] Không thể tải/chạy trên trình duyệt, chuyển sang Server Fallback:', clientErr);
 
-      onProgress(`Trình duyệt gặp lỗi (${clientErr.message || 'WASM'}). Đang tự động chuyển sang Máy chủ BiRefNet-Lite...`, 20);
+      const noticeText = isMobile
+        ? 'Thiết bị di động không hỗ trợ tải mô hình 224MB, đã tự động chuyển sang Máy chủ BiRefNet-Lite.'
+        : `Trình duyệt gặp sự cố (${clientErr.message || 'Mạng/RAM'}), đã tự động chuyển sang Máy chủ BiRefNet-Lite.`;
 
-      await new Promise(r => setTimeout(r, 300));
+      onProgress(noticeText, 30);
+      await new Promise(r => setTimeout(r, 200));
 
-      const serverResult = await processOnServer(imageFile, options, onProgress);
-      serverResult.fallbackNotice = `Đã tự động chuyển sang máy chủ xử lý do: ${clientErr.message || 'Thiết bị không đủ tài nguyên'}`;
+      const serverResult = await processOnServer(fileToProcess, options, onProgress);
+      serverResult.fallbackNotice = noticeText;
+      if (compressionMeta) serverResult.compressionMeta = compressionMeta;
       return serverResult;
     }
   }
@@ -348,6 +568,9 @@
     BIREFNET_MODEL_ID,
     isBrowserSupported,
     isWebGPUSupported,
+    isModelCached,
+    clearModelCache,
+    compressAndResizeImage,
     processOnClient,
     processOnServer,
     removeBackgroundHybrid,

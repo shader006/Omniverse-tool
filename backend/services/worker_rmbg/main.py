@@ -182,15 +182,23 @@ async def remove_bg(
         out_img.save(out_filepath, "PNG", optimize=False)
         file_size = os.path.getsize(out_filepath)
 
-        # Tạo thumbnail nhẹ cho Base64 preview (tối đa 1200px) để không làm phình RAM JSON response
+        # Tạo thumbnail siêu nhẹ (tối đa 320px, WebP ~12KB) để client preview nhanh, tránh phình 33% RAM JSON
         preview_img = out_img.copy()
-        if preview_img.width > 1200 or preview_img.height > 1200:
-            preview_img.thumbnail((1200, 1200), Image.Resampling.BILINEAR)
+        if preview_img.width > 320 or preview_img.height > 320:
+            preview_img.thumbnail((320, 320), Image.Resampling.BILINEAR)
 
         preview_buf = io.BytesIO()
-        preview_img.save(preview_buf, format="PNG", optimize=False)
+        try:
+            preview_img.save(preview_buf, format="WEBP", quality=80)
+            b64_mime = "image/webp"
+        except Exception:
+            preview_buf.seek(0)
+            preview_buf.truncate(0)
+            preview_img.save(preview_buf, format="PNG", optimize=True)
+            b64_mime = "image/png"
+
         b64_str = base64.b64encode(preview_buf.getvalue()).decode("utf-8")
-        b64_preview = f"data:image/png;base64,{b64_str}"
+        b64_preview = f"data:{b64_mime};base64,{b64_str}"
 
         # Giải phóng biến tạm
         del preview_img, preview_buf, content

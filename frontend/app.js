@@ -1180,6 +1180,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const bgEngineSelect = document.getElementById('bg-engine-select');
   const bgModelSelectWrapper = document.getElementById('bg-model-select-wrapper');
   const bgModelSelect = document.getElementById('bg-model-select');
+  const bgAutoCompress = document.getElementById('bg-auto-compress');
   const bgColorSelect = document.getElementById('bg-color-select');
   const bgCustomColorInput = document.getElementById('bg-custom-color-input');
   const bgAlphaMatting = document.getElementById('bg-alpha-matting');
@@ -1216,6 +1217,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function hideBgError() {
     if (bgErrorBox) bgErrorBox.classList.add('hidden');
+  }
+
+  // Tự động phát hiện thiết bị di động để chọn engine tối ưu (tránh tải mô hình 224MB làm tràn RAM / lỗi mạng 4G)
+  const isMobileClient = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+  if (isMobileClient && bgEngineSelect) {
+    bgEngineSelect.value = 'server';
+    const clientOpt = bgEngineSelect.querySelector('option[value="client"]');
+    const serverOpt = bgEngineSelect.querySelector('option[value="server"]');
+    if (clientOpt) clientOpt.textContent = '⚡ Trình duyệt (Tải AI 224MB • Cần máy mạnh/Wifi)';
+    if (serverOpt) serverOpt.textContent = '☁️ Máy chủ AI (Tối ưu cho Điện thoại • Nhanh 1s, 0 tốn 4G)';
   }
 
   function resetBgSelection() {
@@ -1367,8 +1378,14 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const recolored = await window.RmbgClient.changeExistingBackgroundColor(lastTransparentBlob, selectedColor);
         if (recolored) {
+          // Thu hồi URL cũ để tránh rò rỉ bộ nhớ (Memory Leak)
+          if (currentResultDownloadUrl && currentResultDownloadUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(currentResultDownloadUrl);
+          }
+          currentResultDownloadUrl = recolored.downloadUrl;
+
           if (bgCompareAfterImg) {
-            bgCompareAfterImg.src = recolored.dataUrl;
+            bgCompareAfterImg.src = recolored.downloadUrl || recolored.dataUrl;
           }
           if (bgDownloadBtn) {
             bgDownloadBtn.href = recolored.downloadUrl;
@@ -1419,6 +1436,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const originalResetBgSelection = resetBgSelection;
   resetBgSelection = function() {
     originalResetBgSelection();
+    // Giải phóng bộ nhớ Blob cũ (chống rò rỉ RAM trên điện thoại)
+    if (currentResultDownloadUrl && currentResultDownloadUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(currentResultDownloadUrl);
+    }
     lastTransparentBlob = null;
     currentResultDownloadUrl = '';
   };
@@ -1454,6 +1475,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedEngine = bgEngineSelect ? bgEngineSelect.value : 'client';
       const selectedModel = bgModelSelect ? bgModelSelect.value : 'birefnet-lite';
       const useAlphaMatting = bgAlphaMatting && bgAlphaMatting.checked;
+      const shouldAutoCompress = bgAutoCompress ? bgAutoCompress.checked : true;
 
       const progressCallback = (statusText, percent) => {
         if (bgProgressText) bgProgressText.textContent = statusText;
@@ -1472,7 +1494,8 @@ document.addEventListener('DOMContentLoaded', () => {
               engine: selectedEngine,
               model: selectedModel,
               bgColor: selectedColor,
-              alphaMatting: useAlphaMatting
+              alphaMatting: useAlphaMatting,
+              autoCompress: shouldAutoCompress
             },
             progressCallback
           );
@@ -1493,6 +1516,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Lưu transparent blob để đổi màu tức thì bằng Canvas
+        if (currentResultDownloadUrl && currentResultDownloadUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(currentResultDownloadUrl);
+        }
         lastTransparentBlob = result.transparentBlob || null;
         currentResultDownloadUrl = result.downloadUrl;
 
@@ -1519,10 +1545,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const timingMs = result.processingTimeMs || result.metadata?.timing_ms?.total || 350;
         const sizeStr = result.resultSizeBytes ? ` • ${(result.resultSizeBytes / 1024).toFixed(1)} KB` : '';
         const isClient = result.engine === 'client-wasm';
-        const engineBadge = isClient ? '⚡ Trình duyệt (Client WebAssembly • 0 tải Server)' : '☁️ Máy chủ (Server OpenVINO)';
+        const engineBadge = isClient ? '⚡ Trình duyệt (BiRefNet-Lite WebGPU • 0 tải Server)' : '☁️ Máy chủ (Server OpenVINO)';
 
         if (bgResultStats) {
           let statsHtml = `Xử lý: ${engineBadge} • Thời gian: ${timingMs}ms${sizeStr}`;
+          if (result.compressionMeta && result.compressionMeta.wasCompressed) {
+            const origMb = (result.compressionMeta.originalSize / 1024 / 1024).toFixed(1);
+            const optMb = (result.compressionMeta.optimizedSize / 1024 / 1024).toFixed(2);
+            statsHtml += ` • <span style="color:#10b981;">⚡ Đã nén: ${origMb}MB ➔ ${optMb}MB (-${result.compressionMeta.ratioReducedPercent}%)</span>`;
+          }
           if (result.fallbackNotice) {
             statsHtml += ` <span style="display:block; color:#f59e0b; font-size:12px; margin-top:4px;">⚠️ ${result.fallbackNotice}</span>`;
           }

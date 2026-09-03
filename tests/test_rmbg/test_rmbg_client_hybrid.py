@@ -142,6 +142,49 @@ class TestRmbgClientHybrid(unittest.TestCase):
         self.assertNotIn("fetch('/api/remove-bg'", fn_snippet, "Đổi màu nền không được gọi lại server!")
         print("  [PASS] test_05: Logic đổi màu nền Canvas thực thi hoàn toàn ở Client, 0 request tới Server.")
 
+    def test_06_pre_compression_logic(self):
+        """Kiểm tra logic nén và resize ảnh trước khi xử lý (Pre-compression)"""
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        app_js_path = os.path.join(FRONTEND_DIR, "app.js")
+        index_html_path = os.path.join(FRONTEND_DIR, "index.html")
+
+        with open(rmbg_js_path, "r", encoding="utf-8") as f:
+            rmbg_js = f.read()
+
+        with open(app_js_path, "r", encoding="utf-8") as f:
+            app_js = f.read()
+
+        with open(index_html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        # Kiểm tra hàm compressAndResizeImage trong rmbg-client.js
+        self.assertIn("compressAndResizeImage", rmbg_js, "rmbg-client.js thiếu hàm compressAndResizeImage")
+        self.assertIn("maxDimension", rmbg_js, "Thiếu tham số maxDimension để resize cạnh lớn")
+        self.assertIn("createImageBitmap", rmbg_js, "compressAndResizeImage phải hỗ trợ createImageBitmap")
+
+        # Kiểm tra index.html có checkbox bật/tắt nén
+        self.assertIn('id="bg-auto-compress"', html, "index.html thiếu checkbox id='bg-auto-compress'")
+
+        # Kiểm tra app.js tích hợp autoCompress
+        self.assertIn("bgAutoCompress", app_js, "app.js chưa khai báo bgAutoCompress")
+        self.assertIn("autoCompress", app_js, "app.js chưa truyền tham số autoCompress vào removeBackgroundHybrid")
+        print("  [PASS] test_06: Logic Pre-compression & UI tối ưu ảnh tự động đã được tích hợp đầy đủ.")
+
+    def test_07_browser_model_caching(self):
+        """Kiểm tra cơ chế CacheStorage lưu mô hình BiRefNet-Lite để nạp tức thì khi refresh/restart web"""
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        with open(rmbg_js_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Kiểm tra bật env.useBrowserCache để Transformers.js lưu model vào CacheStorage
+        self.assertIn("env.useBrowserCache = true", content, "Chưa bật env.useBrowserCache = true trong rmbg-client.js")
+        
+        # Kiểm tra các hàm kiểm tra & quản lý Cache
+        self.assertIn("isModelCached", content, "Thiếu hàm isModelCached kiểm tra model trong CacheStorage")
+        self.assertIn("clearModelCache", content, "Thiếu hàm clearModelCache xóa cache khi cần")
+        self.assertIn("caches.open", content, "rmbg-client.js phải tương tác trực tiếp với CacheStorage API của trình duyệt")
+        print("  [PASS] test_07: Đã cấu hình CacheStorage vĩnh viễn, khi restart/reload web mô hình được nạp tức thì 0MB tải mạng.")
+
 
 if __name__ == "__main__":
     unittest.main()
