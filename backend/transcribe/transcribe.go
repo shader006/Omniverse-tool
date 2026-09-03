@@ -1,6 +1,8 @@
 package transcribe
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -41,14 +44,65 @@ type TranscribeResult struct {
 	Error               string              `json:"error,omitempty"`
 }
 
-// PreprocessAudio applies FFmpeg Bandpass + Noise Reduction + Loudnorm and converts to 16kHz mono WAV
+// Global semaphore để kiểm soát concurrency, tránh oversubscription CPU (Issue 13)
+var (
+	transcribeSem     chan struct{}
+	transcribeSemOnce sync.Once
+)
+
+func getTranscribeSemaphore() chan struct{} {
+	transcribeSemOnce.Do(func() {
+		maxConcurrency := 2
+		if envMax := os.Getenv("MAX_WHISPER_CONCURRENT_JOBS"); envMax != "" {
+			if c, err := strconv.Atoi(envMax); err == nil && c > 0 {
+				maxConcurrency = c
+			}
+		}
+		transcribeSem = make(chan struct{}, maxConcurrency)
+	})
+	return transcribeSem
+}
+
+// Cache kiểm tra whisper-cli có hỗ trợ --flash-attn hay không (Issue 1)
+var (
+	flashAttnSupportedMap = make(map[string]bool)
+	flashAttnLock         sync.Mutex
+)
+
+func supportsFlashAttn(whisperBin string) bool {
+	flashAttnLock.Lock()
+	defer flashAttnLock.Unlock()
+	if val, exists := flashAttnSupportedMap[whisperBin]; exists {
+		return val
+	}
+	cmd := exec.Command(whisperBin, "--help")
+	out, _ := cmd.CombinedOutput()
+	outStr := string(out)
+	supported := strings.Contains(outStr, "--flash-attn") || strings.Contains(outStr, "-fa")
+	flashAttnSupportedMap[whisperBin] = supported
+	return supported
+}
+
+func randomID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// PreprocessAudio applies FFmpeg Bandpass + Balanced Noise Reduction + Fast Speech Normalization and converts to 16kHz mono WAV
+// Giải quyết Issue 3 (không nuốt lỗi), Issue 4 (dọn dẹp tempWav khi lỗi), Issue 5 (thay loudnorm nặng CPU), Issue 6 (giảm afftdn nr=6)
 func PreprocessAudio(inputPath string) (string, bool, error) {
 	if _, err := os.Stat(inputPath); err != nil {
 		return inputPath, false, err
 	}
 
-	tempWav := filepath.Join(os.TempDir(), fmt.Sprintf("prep_%d_%s.wav", time.Now().UnixNano(), filepath.Base(inputPath)))
-	audioFilter := "highpass=f=80,lowpass=f=8000,afftdn=nr=10:nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11"
+	tempWav := filepath.Join(os.TempDir(), fmt.Sprintf("prep_%s_%s.wav", randomID(), filepath.Base(inputPath)))
+
+	// Issue 5 & 6: Dùng speechnorm nhẹ nhàng thay vì loudnorm 2-pass nặng; hạ afftdn xuống nr=6 để bảo toàn phụ âm /s/, /t/, /f/
+	audioFilter := "highpass=f=80,lowpass=f=8000,afftdn=nr=6:nf=-30,speechnorm=e=4:r=0.0001:l=1"
+	if customFilter := os.Getenv("WHISPER_AUDIO_FILTER"); customFilter != "" {
+		audioFilter = customFilter
+	}
 
 	cmd := exec.Command("ffmpeg", "-y", "-i", inputPath,
 		"-vn", "-sn",
@@ -65,7 +119,7 @@ func PreprocessAudio(inputPath string) (string, bool, error) {
 		}
 	}
 
-	// Fallback to basic 16kHz mono if complex filter fails
+	// Fallback sang bộ lọc cơ bản 16kHz mono nếu bộ lọc âm phức tạp lỗi
 	cmdFallback := exec.Command("ffmpeg", "-y", "-i", inputPath,
 		"-vn", "-sn",
 		"-ar", "16000",
@@ -73,13 +127,19 @@ func PreprocessAudio(inputPath string) (string, bool, error) {
 		"-c:a", "pcm_s16le",
 		tempWav,
 	)
-	if err := cmdFallback.Run(); err == nil {
+	if errFallback := cmdFallback.Run(); errFallback == nil {
 		if fi, statErr := os.Stat(tempWav); statErr == nil && fi.Size() > 100 {
 			return tempWav, true, nil
 		}
+	} else {
+		// Issue 4: Thu dọn file rác tempWav nếu cả 2 lần đều lỗi
+		_ = os.Remove(tempWav)
+		// Issue 3: Trả về lỗi chi tiết từ FFmpeg thay vì nuốt lỗi
+		return inputPath, false, fmt.Errorf("ffmpeg preprocessing thất bại: %w", errFallback)
 	}
 
-	return inputPath, false, nil
+	_ = os.Remove(tempWav)
+	return inputPath, false, fmt.Errorf("ffmpeg preprocessing không tạo được dữ liệu âm thanh hợp lệ")
 }
 
 // FindWhisperModel locates the whisper.cpp GGML model file
@@ -121,6 +181,16 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		return nil, fmt.Errorf("không tìm thấy file: %s", inputPath)
 	}
 
+	// Issue 12: Đảm bảo thư mục downloadDir tồn tại trước khi xử lý
+	if err := os.MkdirAll(downloadDir, 0755); err != nil {
+		return nil, fmt.Errorf("không thể khởi tạo thư mục lưu kết quả (%s): %w", downloadDir, err)
+	}
+
+	// Issue 13: Giới hạn số lượng job AI whisper chạy song song tránh oversubscription
+	sem := getTranscribeSemaphore()
+	sem <- struct{}{}
+	defer func() { <-sem }()
+
 	// Kiểm tra thời lượng file trước khi xử lý AI
 	realAudioDur := getMediaDuration(inputPath)
 	if realAudioDur > MaxTranscribeDurationSeconds {
@@ -137,13 +207,16 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 
 	startTime := time.Now()
 
-	// 1. Tiền xử lý âm thanh qua FFmpeg
-	audioToProcess, isTemp, _ := PreprocessAudio(inputPath)
+	// Issue 3: Bắt lỗi tiền xử lý âm thanh rõ ràng thay vì bỏ qua '_'
+	audioToProcess, isTemp, prepErr := PreprocessAudio(inputPath)
+	if prepErr != nil {
+		log.Printf("⚠️ [WHISPER PREPROCESS] Tiền xử lý thất bại (%v), tiếp tục dùng file đầu vào gốc...", prepErr)
+	}
 	if isTemp {
 		defer os.Remove(audioToProcess)
 	}
 
-	// 2. Tìm binary whisper-cli và model
+	// Tìm binary whisper-cli và model
 	whisperBin := os.Getenv("WHISPER_BIN")
 	if whisperBin == "" {
 		whisperBin = "/usr/local/bin/whisper-cli"
@@ -161,17 +234,23 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		outFormat = "txt"
 	}
 
-	outPrefix := filepath.Join(downloadDir, fmt.Sprintf("%s_transcript", baseName))
+	// Issue 11: Thêm random ID để tránh Race Condition / Filename Collision khi nhiều user tải lên file cùng tên
+	uniqueTaskID := randomID()
+	outPrefix := filepath.Join(downloadDir, fmt.Sprintf("%s_%s_transcript", uniqueTaskID, baseName))
 
-	// Tự động xác định số luồng CPU tối ưu (tối đa 8 threads cho hiệu năng cao nhất trên multi-core)
+	// Issue 2: Linh hoạt số luồng CPU qua WHISPER_THREADS, mặc định mở rộng lên tới 12 threads
 	threads := runtime.NumCPU()
-	if threads > 8 {
-		threads = 8
+	if envT := os.Getenv("WHISPER_THREADS"); envT != "" {
+		if t, err := strconv.Atoi(envT); err == nil && t > 0 {
+			threads = t
+		}
+	} else if threads > 12 {
+		threads = 12
 	} else if threads < 2 {
 		threads = 2
 	}
 
-	// 3. Chuẩn bị tham số gọi whisper.cpp tối ưu (Giai đoạn 1)
+	// Chuẩn bị tham số gọi whisper.cpp tối ưu
 	args := []string{
 		"-m", modelPath,
 		"-f", audioToProcess,
@@ -179,13 +258,17 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		"--beam-size", "2",
 		"--temperature", "0.0",
 		"--no-fallback",
-		"--flash-attn",
 		"--max-len", "60",
 		"--output-file", outPrefix,
 		"--output-txt",
 		"--output-srt",
 		"--output-vtt",
 		"--output-json",
+	}
+
+	// Issue 1: Chỉ thêm --flash-attn nếu whisper.cpp thực sự hỗ trợ
+	if supportsFlashAttn(whisperBin) {
+		args = append(args, "--flash-attn")
 	}
 
 	lang := strings.TrimSpace(strings.ToLower(language))
@@ -199,7 +282,7 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		args = append(args, "--translate")
 	}
 
-	// 4. Chạy whisper-cli
+	// Chạy whisper-cli
 	cmd := exec.Command(whisperBin, args...)
 	outputBytes, err := cmd.CombinedOutput()
 	if err != nil {
@@ -208,7 +291,7 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 
 	processingDuration := time.Since(startTime).Seconds()
 
-	// 5. Đọc file kết quả JSON do whisper.cpp sinh ra
+	// Đọc file kết quả JSON do whisper.cpp sinh ra
 	jsonFilePath := outPrefix + ".json"
 	txtFilePath := outPrefix + ".txt"
 	srtFilePath := outPrefix + ".srt"
@@ -239,7 +322,9 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 						From int64 `json:"from"`
 						To   int64 `json:"to"`
 					} `json:"offsets"`
-					Text string `json:"text"`
+					Text       string  `json:"text"`
+					AvgLogprob float64 `json:"avg_logprob"`
+					Logprob    float64 `json:"logprob"`
 				} `json:"transcription"`
 			}
 
@@ -254,11 +339,19 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 						textParts = append(textParts, t)
 						startSec := float64(item.Offsets.From) / 1000.0
 						endSec := float64(item.Offsets.To) / 1000.0
+
+						// Issue 8: Bóc tách AvgLogprob từ JSON transcription
+						logprob := item.AvgLogprob
+						if logprob == 0 && item.Logprob != 0 {
+							logprob = item.Logprob
+						}
+
 						segments = append(segments, TranscribeSegment{
-							ID:    idx + 1,
-							Start: startSec,
-							End:   endSec,
-							Text:  t,
+							ID:         idx + 1,
+							Start:      mathRound(startSec, 3),
+							End:        mathRound(endSec, 3),
+							Text:       t,
+							AvgLogprob: mathRound(logprob, 3),
 						})
 					}
 				}
@@ -284,7 +377,8 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 		}
 	}
 
-	targetFilename := fmt.Sprintf("%s_transcript.%s", baseName, outFormat)
+	// Target filename với uniqueTaskID chống race condition
+	targetFilename := fmt.Sprintf("%s_%s_transcript.%s", uniqueTaskID, baseName, outFormat)
 	targetFilePath := filepath.Join(downloadDir, targetFilename)
 
 	// Đảm bảo file định dạng mong muốn tồn tại và xóa các file tạm thừa
@@ -351,14 +445,13 @@ func getMediaDuration(filePath string) float64 {
 	return 0.0
 }
 
+// Issue 9: Dùng chuẩn math.Round thay vì int(val*p+0.5) để xử lý chính xác tuyệt đối số âm và edge cases
 func mathRound(val float64, precision int) float64 {
-	p := 1.0
-	for i := 0; i < precision; i++ {
-		p *= 10.0
-	}
-	return float64(int(val*p+0.5)) / p
+	p := math.Pow(10, float64(precision))
+	return math.Round(val*p) / p
 }
 
+// Issue 10: Giữ nguyên ký tự xuống dòng '\n' khi nối nhiều dòng trong cùng một segment SRT thay vì xóa thành dấu cách ' '
 func parseSRTFile(srtPath string) []TranscribeSegment {
 	content, err := os.ReadFile(srtPath)
 	if err != nil {
@@ -411,7 +504,7 @@ func parseSRTFile(srtPath string) []TranscribeSegment {
 			if currentSeg.Text == "" {
 				currentSeg.Text = line
 			} else {
-				currentSeg.Text += " " + line
+				currentSeg.Text += "\n" + line
 			}
 		}
 	}
@@ -422,4 +515,3 @@ func parseSRTFile(srtPath string) []TranscribeSegment {
 
 	return segments
 }
-

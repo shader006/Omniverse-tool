@@ -17,9 +17,10 @@ import numpy as np
 
 logger = logging.getLogger("rmbg_engine")
 
-# Global Thread-Safe Singleton Engine
+# Global Thread-Safe Singleton Engine & Inference Serializer
 _BIREFNET_ENGINE: Optional[Any] = None
 _BIREFNET_LOCK = threading.Lock()
+_INFERENCE_LOCK = threading.Lock()  # Đảm bảo tuyệt đối 1 inference tại 1 thời điểm
 
 # Safety Limits: 2560px (~2.5K) cân bằng hoàn hảo giữa độ nét studio cực cao và chống tràn RAM
 MAX_IMAGE_SIZE = 2560
@@ -30,10 +31,22 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32).reshape((1, 3,
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32).reshape((1, 3, 1, 1))
 
 
-def get_optimal_cpu_threads() -> int:
-    """Xác định số luồng CPU tối ưu cho OpenVINO."""
-    cpu_count = os.cpu_count() or 4
-    return min(cpu_count, 4)
+def get_optimal_cpu_threads() -> Optional[int]:
+    """
+    Xác định số luồng CPU cho OpenVINO / ONNX.
+    Nếu trả về None: Để OpenVINO tự động quản lý (Auto TBB scheduler) để tối ưu theo kiến trúc CPU.
+    Có thể tùy chỉnh qua biến môi trường RMBG_NUM_THREADS.
+    """
+    env_threads = os.getenv("RMBG_NUM_THREADS")
+    if env_threads:
+        try:
+            t = int(env_threads.strip())
+            if t > 0:
+                return t
+        except ValueError:
+            pass
+    # Mặc định trả về None để OpenVINO tự tối ưu theo số core thực tế của máy chủ
+    return None
 
 
 def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
@@ -51,10 +64,14 @@ def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
         return (255, 255, 255)
 
 
-def free_system_memory():
-    """Giải phóng rác Python GC về bộ nhớ."""
+def cleanup_python_memory():
+    """Thu gom rác Python GC (không can thiệp C++ arena heap)."""
     import gc
     gc.collect()
+
+
+# Alias tương thích ngược
+free_system_memory = cleanup_python_memory
 
 
 
@@ -117,12 +134,15 @@ class BiRefNetOpenVINOEngine:
             config = {
                 "PERFORMANCE_HINT": "LATENCY",
                 "NUM_STREAMS": "1",
-                "INFERENCE_NUM_THREADS": str(self.num_threads),
                 "ENABLE_CPU_PINNING": "NO",
             }
+            if self.num_threads and self.num_threads > 0:
+                config["INFERENCE_NUM_THREADS"] = str(self.num_threads)
+
             self.compiled_model = core.compile_model(model, "CPU", config)
             self.backend = "openvino"
-            logger.info(f"🚀 [OpenVINO] BiRefNet-Lite đã nạp thành công với {self.num_threads} CPU threads.")
+            thread_str = f"{self.num_threads} CPU threads" if self.num_threads else "Auto TBB threads"
+            logger.info(f"🚀 [OpenVINO] BiRefNet-Lite đã nạp thành công ({thread_str}).")
             return
         except Exception as e:
             logger.warning(f"Lỗi OpenVINO Core: {e}. Thử chuyển sang ONNX Runtime...")
@@ -131,7 +151,8 @@ class BiRefNetOpenVINOEngine:
         try:
             import onnxruntime as ort
             opts = ort.SessionOptions()
-            opts.intra_op_num_threads = self.num_threads
+            if self.num_threads and self.num_threads > 0:
+                opts.intra_op_num_threads = self.num_threads
             opts.inter_op_num_threads = 1
             opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
             opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
@@ -143,7 +164,8 @@ class BiRefNetOpenVINOEngine:
                 providers=["CPUExecutionProvider"],
             )
             self.backend = "onnxruntime"
-            logger.info(f"⚡ [ONNX Runtime] BiRefNet-Lite đã nạp thành công với {self.num_threads} CPU threads.")
+            thread_str = f"{self.num_threads} CPU threads" if self.num_threads else "Auto threads"
+            logger.info(f"⚡ [ONNX Runtime] BiRefNet-Lite đã nạp thành công ({thread_str}).")
         except Exception as e:
             logger.error(f"Lỗi khởi tạo ONNX Runtime: {e}")
             self.compiled_model = None
@@ -160,30 +182,32 @@ class BiRefNetOpenVINOEngine:
         rgb_img = pil_img.convert("RGB")
         resized = rgb_img.resize(TARGET_INFERENCE_SIZE, Image.Resampling.BOX)
 
-        arr = np.array(resized, dtype=np.float32) / 255.0  # (1024, 1024, 3)
+        # Tối ưu RAM: Scale in-place, không cấp phát thêm 12MB mảng float32 trung gian thứ hai
+        arr = np.asarray(resized, dtype=np.float32)
         arr = np.transpose(arr, (2, 0, 1))  # (3, 1024, 1024)
+        arr *= (1.0 / 255.0)  # In-place scaling
         tensor = np.expand_dims(arr, axis=0)  # (1, 3, 1024, 1024)
-        tensor = (tensor - IMAGENET_MEAN) / IMAGENET_STD
+        tensor -= IMAGENET_MEAN  # In-place normalization
+        tensor /= IMAGENET_STD   # In-place normalization
 
-        # Dọn dẹp biến tạm tiền xử lý
-        del resized, arr
-        if rgb_img is not pil_img:
-            del rgb_img
+        # Dọn dẹp biến tạm tiền xử lý ngay lập tức
+        del resized, arr, rgb_img
 
-        # Inference
-        if self.backend == "openvino":
-            infer_req = self.compiled_model.create_infer_request()
-            results = infer_req.infer({0: tensor})
-            out_tensor = list(results.values())[0]
-            del infer_req, results
-        elif self.backend == "onnxruntime":
-            input_name = self.compiled_model.get_inputs()[0].name
-            results = self.compiled_model.run(None, {input_name: tensor})
-            out_tensor = results[0]
-            del results
-        else:
-            del tensor
-            return None
+        # Inference: Khóa _INFERENCE_LOCK để đảm bảo chuẩn 1 inference tại một thời điểm
+        with _INFERENCE_LOCK:
+            if self.backend == "openvino":
+                infer_req = self.compiled_model.create_infer_request()
+                results = infer_req.infer({0: tensor})
+                out_tensor = list(results.values())[0]
+                del infer_req, results
+            elif self.backend == "onnxruntime":
+                input_name = self.compiled_model.get_inputs()[0].name
+                results = self.compiled_model.run(None, {input_name: tensor})
+                out_tensor = results[0]
+                del results
+            else:
+                del tensor
+                return None
 
         del tensor
 
@@ -336,23 +360,27 @@ async def remove_background_async(
 
 
 def _fallback_remove_bg(pil_img: Image.Image, threshold: int = 30) -> Image.Image:
-    """Fallback tách nền nhanh dựa trên màu góc ảnh."""
+    """Fallback tách nền nhanh dựa trên màu góc ảnh với mức tiêu thụ RAM tối thiểu."""
     rgba = pil_img.convert("RGBA")
     w, h = rgba.size
     try:
-        arr = np.array(rgba)
-        c1 = arr[0, 0, :3].astype(np.int32)
-        c2 = arr[0, w-1, :3].astype(np.int32)
-        c3 = arr[h-1, 0, :3].astype(np.int32)
-        c4 = arr[h-1, w-1, :3].astype(np.int32)
-        avg_bg = (c1 + c2 + c3 + c4) / 4.0
+        # Lấy màu 4 góc trực tiếp từ ảnh không cần clone mảng int32 lớn
+        c1 = np.array(rgba.getpixel((0, 0))[:3], dtype=np.float32)
+        c2 = np.array(rgba.getpixel((w - 1, 0))[:3], dtype=np.float32)
+        c3 = np.array(rgba.getpixel((0, h - 1))[:3], dtype=np.float32)
+        c4 = np.array(rgba.getpixel((w - 1, h - 1))[:3], dtype=np.float32)
+        avg_bg = (c1 + c2 + c3 + c4) * 0.25
 
-        rgb = arr[:, :, :3].astype(np.int32)
-        dist = np.sqrt(np.sum((rgb - avg_bg) ** 2, axis=2))
-        mask = dist <= threshold
+        arr = np.array(rgba)  # 2560x2560x4 uint8 (~26MB)
+        # Tính khoảng cách theo từng kênh màu trực tiếp, tránh nhân bản mảng 75MB int32
+        diff_r = np.abs(arr[:, :, 0].astype(np.float32) - avg_bg[0])
+        diff_g = np.abs(arr[:, :, 1].astype(np.float32) - avg_bg[1])
+        diff_b = np.abs(arr[:, :, 2].astype(np.float32) - avg_bg[2])
+        mask = (diff_r <= threshold) & (diff_g <= threshold) & (diff_b <= threshold)
         arr[mask, 3] = 0
+        del diff_r, diff_g, diff_b, mask
         res = Image.fromarray(arr, "RGBA")
-        del arr, dist, mask
+        del arr
         return res
     except Exception:
         corner = rgba.getpixel((0, 0))
