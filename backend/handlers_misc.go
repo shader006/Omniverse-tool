@@ -15,9 +15,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	healthURL, finish := s.gotenbergLB.SelectEndpoint("/health")
 	resp, err := http.Get(healthURL)
 	finish(err)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	if err == nil && resp.StatusCode == http.StatusOK {
 		gotenbergHealthy = true
-		_ = resp.Body.Close()
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -48,7 +50,29 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 
 	encodedName := url.PathEscape(displayName)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", displayName, encodedName))
-	w.Header().Set("Content-Type", "application/octet-stream")
+
+	mimeType := "application/octet-stream"
+	switch strings.ToLower(filepath.Ext(displayName)) {
+	case ".vtt":
+		mimeType = "text/vtt; charset=utf-8"
+	case ".srt", ".txt":
+		mimeType = "text/plain; charset=utf-8"
+	case ".json":
+		mimeType = "application/json; charset=utf-8"
+	case ".mp3":
+		mimeType = "audio/mpeg"
+	case ".mp4":
+		mimeType = "video/mp4"
+	case ".png":
+		mimeType = "image/png"
+	case ".jpg", ".jpeg":
+		mimeType = "image/jpeg"
+	case ".webp":
+		mimeType = "image/webp"
+	case ".pdf":
+		mimeType = "application/pdf"
+	}
+	w.Header().Set("Content-Type", mimeType)
 
 	http.ServeFile(w, r, filePath)
 }

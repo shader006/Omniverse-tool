@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./downloads:/app/downloads
-      - ./backend/app:/app/app
+      - ./backend/app_python:/app/app
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8001
@@ -60,7 +60,7 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./models/birefnet:/root/.cache/birefnet
-      - ./backend/app:/app/app
+      - ./backend/app_python:/app/app
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003

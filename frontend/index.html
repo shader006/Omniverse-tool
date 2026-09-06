@@ -105,8 +105,8 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
   </noscript>
 
-  <link rel="preload" href="/static/style.css?v=5.1.0" as="style">
-  <link rel="stylesheet" href="/static/style.css?v=5.1.0">
+  <link rel="preload" href="/static/ui/style.css?v=5.4.1" as="style">
+  <link rel="stylesheet" href="/static/ui/style.css?v=5.4.1">
 
   <style>
     /* Critical CSS chống Flash of Unstyled Content (FOUC) & Tối ưu FCP */
@@ -171,6 +171,15 @@
             <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
           </svg>
           <span>Remove BG (AI)</span>
+        </button>
+        <button type="button" class="mode-btn" id="mode-pixel-btn" data-mode="pixel" onclick="window.switchMode && window.switchMode('pixel')">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span>Pixel Refine</span>
         </button>
       </div>
     </div>
@@ -857,6 +866,452 @@
       </div>
     </section>
 
+    <!-- ==================== SECTION 5: PIXEL ART REFINER STUDIO ==================== -->
+    <section id="section-pixel-mode" class="mode-section hidden">
+      <div class="hero-section">
+        <h1 class="hero-title">Pixel Art <span class="gradient-text">Refiner Studio</span></h1>
+        <p class="hero-subtitle">Khử Anti-Aliasing, tự động phát hiện lưới pixel, ép bảng màu Retro (NES, Game Boy, PICO-8), xóa nền trong suốt & xuất sprite chuẩn xác cho Game Dev!</p>
+        
+        <!-- Purpose Presets Toolbar -->
+        <div class="pixel-presets-bar">
+          <span class="pixel-presets-label">⚡ Mục đích:</span>
+          <button type="button" class="pixel-preset-btn active" data-preset="auto">Mặc định (Auto)</button>
+          <button type="button" class="pixel-preset-btn" data-preset="crisp-sprite">⚔️ Sprite Sắc Nét</button>
+          <button type="button" class="pixel-preset-btn" data-preset="transparent-icon">🛡️ Icon Viền Đen</button>
+          <button type="button" class="pixel-preset-btn" data-preset="retro-console">🕹️ Cổ Điển PICO-8</button>
+          <button type="button" class="pixel-preset-btn" data-preset="photo-pixel">📷 Chuyển Ảnh Thường</button>
+          <button type="button" class="pixel-preset-btn" data-preset="fine-details">🔍 Giữ Chi Tiết Nhỏ</button>
+        </div>
+      </div>
+
+      <div class="card search-card file-conver-card pixel-studio-card">
+        <!-- Hidden input for file upload -->
+        <input type="file" id="pixel-file-input" class="file-input-hidden" accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" style="display: none;">
+        
+        <!-- Studio Quick Bar: Tải ảnh, Chọn mẫu, Đảo bên Trái / Phải -->
+        <div class="pixel-studio-topbar">
+          <label for="pixel-file-input" class="pixel-upload-quick-zone" id="pixel-quick-upload-trigger">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span><strong>Tải ảnh lên</strong> hoặc Kéo & thả ảnh vào đây (Hỗ trợ Ctrl+V)</span>
+          </label>
+          <div class="pixel-topbar-actions">
+            <button type="button" id="btn-load-pixel-sample" class="btn-studio-pill" title="Nạp lại sprite mẫu Retro">
+              🎨 <span>Ảnh mẫu</span>
+            </button>
+            <button type="button" id="btn-toggle-layout" class="btn-studio-pill" title="Đảo bên giữa Visualize và Setting">
+              ⇄ <span>Đổi vị trí (Visualize ⇋ Setting)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dropzone Upload Area (Dự phòng cho drag & drop toàn màn hình) -->
+        <div id="pixel-dropzone" class="file-dropzone hidden">
+          <div id="pixel-dropzone-prompt" class="dropzone-prompt">
+            <div class="dropzone-icon">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+              </svg>
+            </div>
+            <h3 class="dropzone-title">Kéo & thả ảnh pixel art vào đây, hoặc <span class="browse-link highlight-text">chọn từ máy</span></h3>
+            <p class="dropzone-hint dropzone-subtitle">Hỗ trợ PNG, JPG, JPEG, WEBP, BMP — Nhấn <kbd style="background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 4px; font-family: monospace;">Ctrl+V</kbd> để dán ảnh trực tiếp</p>
+          </div>
+        </div>
+
+        <!-- Processing Progress -->
+        <div id="pixel-progress-card" class="active-progress-card hidden">
+          <div class="progress-header">
+            <div class="progress-title-row">
+              <div class="spinner-small"></div>
+              <span id="pixel-progress-text" class="progress-status-text">Đang phân tích và phục hồi pixel...</span>
+            </div>
+          </div>
+          <div class="progress-bar-track">
+            <div id="pixel-progress-bar" class="progress-bar-fill progress-bar-indeterminate"></div>
+          </div>
+        </div>
+
+        <!-- Error Box -->
+        <div id="pixel-error-box" class="error-box hidden">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span id="pixel-error-message">Đã có lỗi xảy ra.</span>
+        </div>
+
+        <!-- 2-COLUMN STUDIO WORKSPACE: VISUALIZE BÊN TRÁI, SETTING BÊN PHẢI (MẶC ĐỊNH) -->
+        <div id="pixel-studio-workspace" class="pixel-studio-workspace">
+          <!-- CỘT TRÁI: SETTINGS & CONTROLS -->
+          <div class="pixel-workspace-left">
+            <!-- File Info Compact Preview -->
+            <div id="pixel-file-info" class="file-info-preview">
+              <div class="file-preview-left">
+                <img id="pixel-source-thumb" class="bg-source-preview-thumb" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" alt="Xem trước pixel art gốc" loading="lazy">
+                <div class="file-details">
+                  <div id="pixel-file-name" class="selected-file-name">pixel_art.png</div>
+                  <div id="pixel-file-meta" class="selected-file-meta">PNG • 1.2 MB</div>
+                </div>
+              </div>
+              <button type="button" id="btn-remove-pixel-file" class="btn-remove-file" title="Xóa ảnh và chọn lại">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Options Panel for Pixel Refinement -->
+            <div id="pixel-options-panel" class="pixel-sidebar-panel">
+              <!-- CÁC TÙY CHỌN CHI TIẾT (OPTIONS GRID) -->
+              <div class="options-grid">
+                <!-- 1. Grid Size -->
+                <div class="option-item" style="grid-column: 1 / -1; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 2px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <label for="pixel-grid-select" class="option-label" style="font-size: 0.88rem; font-weight: 600; color: #e2e8f0; display: flex; align-items: center; gap: 6px; margin-bottom: 0;">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18M15 3v18"></path></svg>
+                      <span>1. Kích Thước Lưới Pixel (Bóc Tách Sprite Gốc):</span>
+                    </label>
+                    <span id="wasm-engine-status" class="pixel-tag" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Đang nạp WASM...</span>
+                  </div>
+                  <select id="pixel-grid-select" class="form-select">
+                    <option value="auto" selected>⚡ Tự động nhận diện (Auto Grid)</option>
+                    <option value="custom">✏️ Tự điền ô lưới (Custom Grid)...</option>
+                    <option value="1">1:1 Native (Không đổi lưới)</option>
+                    <option value="2">2x2 Pixel Cells</option>
+                    <option value="3">3x3 Pixel Cells</option>
+                    <option value="4">4x4 Pixel Cells</option>
+                    <option value="5">5x5 Pixel Cells</option>
+                    <option value="6">6x6 Pixel Cells</option>
+                    <option value="8">8x8 Pixel Cells</option>
+                    <option value="10">10x10 Pixel Cells</option>
+                    <option value="12">12x12 Pixel Cells</option>
+                    <option value="16">16x16 Pixel Cells</option>
+                    <option value="24">24x24 Pixel Cells</option>
+                    <option value="32">32x32 Pixel Cells</option>
+                  </select>
+                  <!-- Custom Grid Input Row -->
+                  <div id="pixel-custom-grid-wrapper" class="hidden" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 0.8rem; color: #94a3b8;">Cỡ ô:</span>
+                    <input type="number" id="pixel-custom-grid-input" min="1" max="256" step="1" value="4" class="form-input" style="width: 76px; padding: 4px 8px; font-size: 0.84rem; text-align: center;">
+                    <span style="font-size: 0.8rem; color: #94a3b8;">px / cell</span>
+                  </div>
+                  <!-- Interactive Grid Candidates Container -->
+                  <div id="pixel-grid-candidates-container" class="pixel-candidates-bar hidden"></div>
+                </div>
+
+                <!-- 2. Sprite Detail Options Title -->
+                <div style="grid-column: 1 / -1; margin-top: 6px; margin-bottom: 2px;">
+                  <span style="font-size: 0.86rem; font-weight: 600; color: #cbd5e1; display: flex; align-items: center; gap: 6px;">
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    <span>2. Tinh Chỉnh Chi Tiết Sprite:</span>
+                  </span>
+                </div>
+
+                <!-- Anti-Aliasing Cleanup -->
+                <div class="option-item">
+                  <label for="pixel-aa-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>Khử mờ Anti-Aliasing:</span>
+                  </label>
+                  <select id="pixel-aa-select" class="form-select">
+                    <option value="sharp" selected>⭐ Sắc nét (Sharp • Khuyên dùng)</option>
+                    <option value="ultra">🔥 Siêu sắc nét (Ultra Crisp)</option>
+                    <option value="mild">🌿 Mịn nhẹ (Mild • Giữ chi tiết)</option>
+                    <option value="off">Tắt (Lấy mẫu tâm cell)</option>
+                  </select>
+                </div>
+
+                <!-- Retro Console Palettes -->
+                <div class="option-item">
+                  <label for="pixel-palette-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor"></path></svg>
+                    <span>Bảng màu Retro (Palette):</span>
+                  </label>
+                  <select id="pixel-palette-select" class="form-select">
+                    <option value="original" selected>🎨 Giữ nguyên màu gốc (True Color)</option>
+                    <option value="gameboy">🟢 Game Boy Classic (4 màu lục)</option>
+                    <option value="pico8">👾 PICO-8 Fantasy (16 màu)</option>
+                    <option value="nes">🕹️ NES / Famicom 8-Bit (54 màu)</option>
+                    <option value="snes">🎮 SNES 16-Bit Curated (32 màu)</option>
+                    <option value="pc98">💻 NEC PC-9801 (16 màu)</option>
+                    <option value="msx">🕹️ MSX1 Classic (15 màu)</option>
+                    <option value="cyberpunk">🌃 Cyberpunk Neon (8 màu)</option>
+                    <option value="monochrome">⚪ Monochrome 1-Bit (Đen / Trắng)</option>
+                  </select>
+                </div>
+
+                <!-- Max Colors Limiter (Quantization) -->
+                <div class="option-item">
+                  <label for="pixel-max-colors-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <span>Giới hạn số màu (Quantize):</span>
+                  </label>
+                  <select id="pixel-max-colors-select" class="form-select">
+                    <option value="all" selected>Tất cả màu (Không giới hạn)</option>
+                    <option value="64">Tối đa 64 màu</option>
+                    <option value="32">Tối đa 32 màu</option>
+                    <option value="16">Tối đa 16 màu (Retro Low-color)</option>
+                    <option value="8">Tối đa 8 màu (Chunky retro)</option>
+                    <option value="4">Tối đa 4 màu (Ultra minimal)</option>
+                  </select>
+                </div>
+
+                <!-- Dithering -->
+                <div class="option-item">
+                  <label for="pixel-dither-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                    <span>Hiệu ứng Dithering:</span>
+                  </label>
+                  <select id="pixel-dither-select" class="form-select">
+                    <option value="none" selected>Không Dithering (Màu phẳng nét)</option>
+                    <option value="floyd">Floyd-Steinberg (Tán hạt mượt)</option>
+                    <option value="bayer">Bayer Matrix 4x4 (Chấm hạt hoài niệm)</option>
+                  </select>
+                </div>
+
+                <!-- Background Transparency -->
+                <div class="option-item">
+                  <label for="pixel-bg-mode-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    <span>Xử lý phông nền:</span>
+                  </label>
+                  <select id="pixel-bg-mode-select" class="form-select">
+                    <option value="auto" selected>🏁 Tự động tách phông biên (BFS)</option>
+                    <option value="custom">🎯 Chấm màu hút phông (Eyedropper)</option>
+                    <option value="keep">Giữ nguyên nền (Không xóa)</option>
+                  </select>
+                  <div id="pixel-custom-color-wrapper" class="bg-color-picker-wrapper hidden" style="margin-top: 8px;">
+                    <input type="color" id="pixel-custom-color-input" class="bg-custom-color-input" value="#ffffff" title="Chọn màu nền muốn xóa">
+                    <button type="button" id="btn-pixel-eyedropper" class="btn-studio-action" style="padding: 4px 10px; font-size: 0.8rem;" title="Hút màu trên màn hình">
+                      <span>Hút màu (Eyedropper)</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Background Fill Scope -->
+                <div class="option-item">
+                  <label for="pixel-bg-scope-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                    <span>Phạm vi tách phông:</span>
+                  </label>
+                  <select id="pixel-bg-scope-select" class="form-select">
+                    <option value="boundary" selected>🛡️ Chỉ xóa viền ngoài (Giữ mắt/áo trắng)</option>
+                    <option value="all">⚡ Xóa toàn bộ pixel trùng màu</option>
+                  </select>
+                </div>
+
+                <!-- Sprite Outline -->
+                <div class="option-item">
+                  <label for="pixel-outline-select" class="option-label">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                    <span>Viền Sprite (Outline):</span>
+                  </label>
+                  <div style="display: flex; gap: 8px; align-items: center;">
+                    <select id="pixel-outline-select" class="form-select" style="flex: 1;">
+                      <option value="none" selected>Không tạo viền</option>
+                      <option value="4way">Viền sắc nét 4 hướng (Sharp Cross)</option>
+                      <option value="8way">Viền tròn 8 hướng (Full Box)</option>
+                    </select>
+                    <input type="color" id="pixel-outline-color-input" class="bg-custom-color-input hidden" value="#000000" title="Chọn màu viền sprite">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Slider Tolerance -->
+              <div class="option-slider-row" style="margin-top: 14px; padding: 10px 14px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 0.86rem; color: #94a3b8; font-weight: 500;">Dung sai màu phông nền (Tolerance):</span>
+                  <span id="pixel-tolerance-val" style="font-size: 0.86rem; color: #818cf8; font-weight: 600;">18%</span>
+                </div>
+                <input type="range" id="pixel-tolerance-slider" min="0" max="100" value="18" style="width: 100%; accent-color: #6366f1; cursor: pointer;">
+              </div>
+
+              <!-- Checkbox Auto Trim -->
+              <div class="option-checkbox-row" style="margin-top: 10px;">
+                <label class="custom-checkbox">
+                  <input type="checkbox" id="pixel-auto-trim" checked>
+                  <span class="checkbox-box"></span>
+                  <span class="checkbox-label">✂️ Tự động cắt xén lề thừa (Auto Trim • Thu gọn sprite ôm sát nhân vật)</span>
+                </label>
+              </div>
+
+              <!-- 4. KÍCH THƯỚC OUTPUT SPRITE (GRID XONG ĐẾN OUTPUT: 1X NATIVE, PHÓNG TO 2X/4X/8X HOẶC CỐ ĐỊNH 128x128) -->
+              <div class="pixel-output-box" style="margin-top: 14px;">
+                <div class="pixel-section-title">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#10b981" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span>3. Kích Thước Output Sprite (Đích Xuất File / Phóng To):</span>
+                </div>
+
+                <!-- Quick Size Chips -->
+                <div class="pixel-output-chips" id="pixel-output-chips">
+                  <button type="button" class="pixel-size-chip active" data-size="auto" title="Giữ nguyên 1x chuẩn pixel art theo ô lưới">⚡ 1x Tự nhiên (Theo lưới)</button>
+                  <button type="button" class="pixel-size-chip" data-size="2x" title="Phóng to 2x từ sprite lưới">2×</button>
+                  <button type="button" class="pixel-size-chip" data-size="4x" title="Phóng to 4x từ sprite lưới">4×</button>
+                  <button type="button" class="pixel-size-chip" data-size="8x" title="Phóng to 8x từ sprite lưới">8×</button>
+                  <button type="button" class="pixel-size-chip" data-size="16x16">16×16</button>
+                  <button type="button" class="pixel-size-chip" data-size="32x32">32×32</button>
+                  <button type="button" class="pixel-size-chip" data-size="64x64">64×64</button>
+                  <button type="button" class="pixel-size-chip" data-size="128x128">128×128</button>
+                  <button type="button" class="pixel-size-chip" data-size="256x256">256×256</button>
+                </div>
+
+                <!-- Direct Output Typing Input -->
+                <div class="pixel-output-input-group">
+                  <div class="pixel-quick-input-wrap">
+                    <label for="pixel-output-quick-input" class="pixel-sub-label">✏️ Hoặc tự điền kích thước xuất (ví dụ 32x32, 128x128, 256x256):</label>
+                    <input type="text" id="pixel-output-quick-input" class="pixel-text-input" placeholder="Ví dụ: 32x32, 128x128, 48x64...">
+                  </div>
+
+                  <div class="pixel-dimension-inputs">
+                    <div class="dim-field">
+                      <span>W:</span>
+                      <input type="number" id="pixel-custom-width-input" min="4" max="2048" step="1" value="64" class="dim-input" title="Chiều rộng Sprite (Width)">
+                    </div>
+                    <span class="dim-times">×</span>
+                    <div class="dim-field">
+                      <span>H:</span>
+                      <input type="number" id="pixel-custom-height-input" min="4" max="2048" step="1" value="64" class="dim-input" title="Chiều cao Sprite (Height)">
+                    </div>
+                    <span class="dim-unit">px</span>
+                    <button type="button" id="btn-pixel-lock-ratio" class="btn-studio-action active" style="padding: 4px 8px; font-size: 0.78rem;" title="Khóa/Mở tỷ lệ khung hình">
+                      <span id="pixel-lock-icon">🔗 Khóa tỷ lệ</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Hidden select kept for backward compat -->
+                <select id="pixel-forced-size-select" class="form-select hidden">
+                  <option value="auto" selected>Kích thước tự nhiên (Theo lưới)</option>
+                  <option value="custom">✏️ Tự điền kích thước (Custom Size)...</option>
+                  <option value="16x16">16 x 16 px</option>
+                  <option value="24x24">24 x 24 px</option>
+                  <option value="32x32">32 x 32 px</option>
+                  <option value="48x48">48 x 48 px</option>
+                  <option value="64x64">64 x 64 px</option>
+                  <option value="128x128">128 x 128 px</option>
+                  <option value="256x256">256 x 256 px</option>
+                </select>
+                <div id="pixel-custom-size-wrapper" class="hidden"></div>
+              </div>
+
+              <!-- Action Button -->
+              <div class="convert-action-wrapper" style="margin-top: 16px;">
+                <button type="button" id="btn-start-pixel-process" class="btn-convert btn-start-convert" style="width: 100%; justify-content: center;">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                  <span>Áp Dụng & Tinh Chỉnh Pixel (Refine Now)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- CỘT PHẢI: VISUALIZE & EXPORT -->
+          <div class="pixel-workspace-right">
+            <!-- Interactive Result Comparison Card -->
+            <div id="pixel-result-card" class="file-result-card pixel-stage-card">
+              <div class="result-header" style="margin-bottom: 12px;">
+                <div class="result-icon-badge">
+                  <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#10b981" stroke-width="2.5">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                </div>
+                <div class="result-meta" style="flex: 1;">
+                  <h3 class="result-title" style="font-size: 1.15rem;">So Sánh Trực Quan (Live Comparison)</h3>
+                  <p id="pixel-result-stats" class="result-subtitle">Đang xử lý xem trước...</p>
+                </div>
+                <button type="button" id="btn-toggle-pixel-grid" class="btn-studio-pill" style="padding: 6px 12px; font-size: 0.8rem;" title="Bật/Tắt hiển thị ô lưới Pixel">
+                  ⊞ <span>Bật Lưới</span>
+                </button>
+              </div>
+
+              <!-- Interactive Before / After Comparison Slider -->
+              <div class="comparison-container pixel-compare-container" id="pixel-comparison-container">
+                <div class="comparison-before">
+                  <img id="pixel-compare-before-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" alt="Ảnh gốc" loading="lazy">
+                  <span class="comparison-tag tag-before">GỐC (BLURRY)</span>
+                </div>
+                <div class="comparison-after" id="pixel-compare-after-wrapper">
+                  <div class="checker-bg-wrap">
+                    <canvas id="pixel-compare-after-canvas" class="pixelated-canvas"></canvas>
+                    <canvas id="pixel-grid-overlay-canvas" class="pixel-grid-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; z-index: 3;"></canvas>
+                  </div>
+                  <span class="comparison-tag tag-after" id="pixel-tag-after">REFINED PIXEL (32x32)</span>
+                </div>
+                <input type="range" min="0" max="100" value="50" class="comparison-slider" id="pixel-comparison-slider" aria-label="So sánh Trước và Sau">
+                <div class="comparison-handle" id="pixel-comparison-handle">
+                  <div class="handle-line"></div>
+                  <div class="handle-button">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Result Download Actions -->
+              <div class="result-actions pixel-export-actions">
+                <button type="button" id="pixel-download-native-btn" class="btn-download-pdf" title="Tải sprite ở kích thước thực chuẩn để import vào Unity/Godot">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>Tải Sprite 1x Native</span>
+                </button>
+                <button type="button" id="pixel-download-2x-btn" class="btn-studio-action" style="padding: 10px 14px; font-weight: 600;" title="Phóng to 2x nét căng">
+                  <span>Tải 2x (.PNG)</span>
+                </button>
+                <button type="button" id="pixel-download-4x-btn" class="btn-studio-action" style="padding: 10px 14px; font-weight: 600;" title="Phóng to 4x không vỡ hình">
+                  <span>Tải 4x Crisp</span>
+                </button>
+                <button type="button" id="pixel-download-8x-btn" class="btn-studio-action" style="padding: 10px 14px; font-weight: 600;" title="Phóng to 8x làm avatar/sticker">
+                  <span>Tải 8x HD</span>
+                </button>
+                <button type="button" id="pixel-download-16x-btn" class="btn-studio-action" style="padding: 10px 14px; font-weight: 600;" title="Phóng to 16x siêu nét">
+                  <span>Tải 16x Ultra</span>
+                </button>
+                <button type="button" id="pixel-copy-btn" class="btn-studio-action" style="padding: 10px 14px;" title="Sao chép ảnh vào Clipboard">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <span>Copy</span>
+                </button>
+                <button type="button" id="btn-pixel-process-another" class="btn-another">Chọn ảnh khác</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+        <!-- Badges Supported Formats -->
+        <div class="supported-formats-row" style="margin-top: 18px;">
+          <span class="format-badge"><span class="badge-dot dot-word"></span> Auto Grid Detection</span>
+          <span class="format-badge"><span class="badge-dot dot-excel"></span> Anti-Aliasing Removal</span>
+          <span class="format-badge"><span class="badge-dot dot-ppt"></span> Game Boy / PICO-8 / NES / PC-98</span>
+          <span class="format-badge"><span class="badge-dot dot-md"></span> Floyd-Steinberg / Bayer</span>
+          <span class="format-badge"><span class="badge-dot dot-html"></span> Smart Boundary BFS Alpha</span>
+          <span class="format-badge"><span class="badge-dot dot-txt"></span> Sprite Stroke / Auto Trim</span>
+        </div>
+    </section>
+
     <!-- Supported Platforms Grid -->
     <section class="features-grid">
       <div class="feature-card">
@@ -896,6 +1351,10 @@
           <h3><span>✨</span> Xóa phông ảnh AI có bị giảm chất lượng không?</h3>
           <p>Không. Mô hình BiRefNet SOTA bảo toàn 100% độ phân giải gốc của ảnh, bóc tách viền tóc và chi tiết nhỏ mượt mà, xuất ra file PNG nền trong suốt chuẩn thiết kế đồ họa.</p>
         </article>
+        <article class="faq-card">
+          <h3><span>👾</span> Pixel Refiner Studio hoạt động như thế nào?</h3>
+          <p>Pixel Refiner tự động quét và nhận diện kích thước ô pixel, loại bỏ các pixel mờ do thuật toán làm mịn (Anti-aliasing), cho phép ép màu hoài niệm theo các hệ máy Game Boy, NES, PICO-8 và xuất ảnh sprite trong suốt cho Game Dev hoàn toàn trên trình duyệt.</p>
+        </article>
       </div>
     </section>
   </main>
@@ -904,8 +1363,9 @@
     <p>© 2026 MediaFlow Engine. Tích hợp Gotenberg & Docker Swarm.</p>
   </footer>
 
-  <script src="/static/rmbg-client.js?v=1.0.0" defer></script>
-  <script src="/static/app.js?v=5.2.0" defer></script>
+  <script src="/static/client/rmbg-client.js?v=1.0.0" defer></script>
+  <script src="/static/client/pixel-client.js?v=3.7.0" defer></script>
+  <script src="/static/client/app.js?v=5.3.0" defer></script>
 </body>
 </html>
 

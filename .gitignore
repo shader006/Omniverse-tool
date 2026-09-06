@@ -49,6 +49,10 @@ models/
 
 # Sub-projects & external repos
 hiai-observe/
+git_pixel/
+git\ pixel
+git\ pixel/
+
 
 # IDE & System
 .vscode/

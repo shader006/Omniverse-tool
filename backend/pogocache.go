@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	DefaultCacheTTL = 300 * time.Second // 5 phút TTL cho File & Metadata Cache
-	JobTTLSeconds   = 7200              // 2 giờ TTL cho Job State
+	DefaultCacheTTL = 3600 * time.Second // 1 giờ TTL cho File kết quả hoàn tất (tránh mất file khi Job State còn lưu 2 giờ)
+	TempFileTTL     = 1800 * time.Second // 30 phút TTL cho file tạm dở dang
+	JobTTLSeconds   = 7200               // 2 giờ TTL cho Job State
 )
 
 // RESP Protocol Helper: Gửi command RESP sang Pogocache (https://pogocache.com)
@@ -323,17 +324,70 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 	var freedBytes int64 = 0
 	now := time.Now()
 
+	// Thu thập danh sách file đang được xử lý bởi các active Job
+	activeFiles := make(map[string]bool)
+	pe.localJobs.Range(func(key, value interface{}) bool {
+		if j, ok := value.(Job); ok {
+			if j.Status == "downloading" || j.Status == "queued" {
+				if j.Filename != "" {
+					activeFiles[j.Filename] = true
+				}
+			}
+		}
+		return true
+	})
+
 	for _, entry := range entries {
+		// Xử lý dọn dẹp thư mục tmp/ riêng biệt
 		if entry.IsDir() {
+			if entry.Name() == "tmp" {
+				tmpDir := filepath.Join(pe.downloadDir, "tmp")
+				if tmpEntries, err := os.ReadDir(tmpDir); err == nil {
+					for _, te := range tmpEntries {
+						if te.IsDir() {
+							continue
+						}
+						if tInfo, err := te.Info(); err == nil {
+							if now.Sub(tInfo.ModTime()) > TempFileTTL {
+								fullTmpPath := filepath.Join(tmpDir, te.Name())
+								freedBytes += tInfo.Size()
+								_ = os.Remove(fullTmpPath)
+								deletedCount++
+							}
+						}
+					}
+				}
+			}
 			continue
 		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
 
+		// Không xóa file của các tác vụ đang tải dở hoặc đang được xử lý
+		if activeFiles[entry.Name()] {
+			continue
+		}
+
+		name := entry.Name()
+		isPartial := strings.HasSuffix(name, ".part") || strings.HasSuffix(name, ".ytdl") || strings.HasSuffix(name, ".tmp")
+
+		// File tải dở chỉ dọn sau TempFileTTL (30 phút) nếu bị bỏ rơi
+		if isPartial {
+			if now.Sub(info.ModTime()) > TempFileTTL {
+				fullPath := filepath.Join(pe.downloadDir, name)
+				freedBytes += info.Size()
+				_ = os.Remove(fullPath)
+				deletedCount++
+			}
+			continue
+		}
+
+		// File kết quả hoàn tất lưu trữ đủ DefaultCacheTTL (1 giờ)
 		if now.Sub(info.ModTime()) > DefaultCacheTTL {
-			fullPath := filepath.Join(pe.downloadDir, entry.Name())
+			fullPath := filepath.Join(pe.downloadDir, name)
 			freedBytes += info.Size()
 			_ = os.Remove(fullPath)
 			deletedCount++

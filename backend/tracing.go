@@ -29,12 +29,7 @@ var (
 		}
 		return "http://172.17.0.1:8001"
 	}()
-	hiaiObserveKey  = func() string {
-		if k := os.Getenv("HIAI_OBSERVE_API_KEY"); k != "" {
-			return k
-		}
-		return "ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779"
-	}()
+	hiaiObserveKey  = os.Getenv("HIAI_OBSERVE_API_KEY")
 	traceHTTPClient = &http.Client{Timeout: 2 * time.Second}
 )
 
@@ -51,6 +46,9 @@ func generateHexID(n int) string {
 }
 
 func sendGatewayOTLPTrace(item *otlpSpanItem) {
+	if hiaiObserveKey == "" {
+		return
+	}
 	traceID := randomID() + randomID() + randomID() + randomID()
 	spanID := randomID() + randomID()
 	startNano := item.StartTime.UnixNano()
@@ -117,6 +115,9 @@ func sendGatewayOTLPTrace(item *otlpSpanItem) {
 }
 
 func sendCustomOTLPTrace(serviceName, name string, durationMs float64, attributes map[string]string, isError bool) {
+	if hiaiObserveKey == "" {
+		return
+	}
 	go func() {
 		traceID := randomID() + randomID() + randomID() + randomID()
 		spanID := randomID() + randomID()

@@ -5,8 +5,8 @@ import json
 import urllib.request
 import urllib.error
 
-API_BASE = "http://localhost:8001"
-API_KEY = "ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779"
+API_BASE = os.getenv("HIAI_OBSERVE_URL", "http://localhost:8001")
+API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "")
 
 MONITORS = [
     {

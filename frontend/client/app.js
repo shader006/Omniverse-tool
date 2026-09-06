@@ -6,14 +6,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const modeFileBtn = document.getElementById('mode-file-btn');
   const modeTranscribeBtn = document.getElementById('mode-transcribe-btn');
   const modeBgBtn = document.getElementById('mode-bg-btn');
+  const modePixelBtn = document.getElementById('mode-pixel-btn');
   const sectionUrlMode = document.getElementById('section-url-mode');
   const sectionFileMode = document.getElementById('section-file-mode');
   const sectionTranscribeMode = document.getElementById('section-transcribe-mode');
   const sectionBgMode = document.getElementById('section-bg-mode');
+  const sectionPixelMode = document.getElementById('section-pixel-mode');
 
   function switchMode(mode) {
-    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn, modeBgBtn];
-    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode, sectionBgMode];
+    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn, modeBgBtn, modePixelBtn];
+    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode, sectionBgMode, sectionPixelMode];
 
     allBtns.forEach(btn => {
       if (btn) {
@@ -37,19 +39,25 @@ document.addEventListener('DOMContentLoaded', () => {
       sectionTranscribeMode.classList.remove('hidden');
     } else if (mode === 'bg' && sectionBgMode) {
       sectionBgMode.classList.remove('hidden');
+    } else if (mode === 'pixel' && sectionPixelMode) {
+      sectionPixelMode.classList.remove('hidden');
     }
+
+    document.body.classList.toggle('pixel-mode-active', mode === 'pixel');
   }
 
   // Gán switchMode vào window để inline onclick và debugging đều hoạt động 100%
   window.switchMode = switchMode;
 
-  // Kiểm tra nếu có hash trên URL (ví dụ #bg)
+  // Kiểm tra nếu có hash trên URL (ví dụ #bg, #pixel)
   if (window.location.hash === '#bg') {
     switchMode('bg');
   } else if (window.location.hash === '#file') {
     switchMode('file');
   } else if (window.location.hash === '#transcribe') {
     switchMode('transcribe');
+  } else if (window.location.hash === '#pixel') {
+    switchMode('pixel');
   }
 
   // Event delegation trên container để click vào icon svg hay text đều hoạt động 100%
@@ -70,6 +78,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (modeFileBtn) modeFileBtn.addEventListener('click', () => switchMode('file'));
   if (modeTranscribeBtn) modeTranscribeBtn.addEventListener('click', () => switchMode('transcribe'));
   if (modeBgBtn) modeBgBtn.addEventListener('click', () => switchMode('bg'));
+  if (modePixelBtn) modePixelBtn.addEventListener('click', () => switchMode('pixel'));
+
+  // Pixel Studio Iframe Reload Action
+  const reloadPixelBtn = document.getElementById('btn-reload-pixel-iframe');
+  if (reloadPixelBtn) {
+    reloadPixelBtn.addEventListener('click', () => {
+      const frame = document.getElementById('pixel-refiner-frame');
+      if (frame) {
+        frame.src = frame.src;
+      }
+    });
+  }
 
   // ==========================================
   // 2. URL TO MP3 / MP4 LOGIC

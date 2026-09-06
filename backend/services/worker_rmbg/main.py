@@ -222,16 +222,31 @@ async def remove_bg(
     try:
         content = await file.read()
 
+        Image.MAX_IMAGE_PIXELS = 25_000_000
+        try:
+            with Image.open(io.BytesIO(content)) as test_img:
+                w, h = test_img.size
+                if w * h > 25_000_000:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Kích thước ảnh ({w}x{h} px) vượt quá giới hạn an toàn 25 Megapixels."
+                    )
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail="File ảnh tải lên bị hỏng hoặc không đúng định dạng.")
+
         # Parse alpha_matting an toàn (hỗ trợ cả boolean và string)
         if isinstance(alpha_matting, bool):
             is_alpha = alpha_matting
         else:
             is_alpha = str(alpha_matting).strip().lower() in {"true", "1", "yes"}
 
+        # Luôn xuất ảnh transparent alpha để client có thể linh hoạt đổi màu nền Canvas tức thì
         out_img, metadata = remove_background(
             image_input=content,
             model_name="birefnet-lite",
-            bg_color=bg_color,
+            bg_color=None,
             alpha_matting=is_alpha,
         )
 

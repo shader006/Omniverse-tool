@@ -2,7 +2,7 @@
 FROM golang:1.22-alpine AS go-builder
 WORKDIR /build
 COPY go.mod ./
-COPY transcribe/ ./transcribe/
+COPY app_go/ ./app_go/
 COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server .
 

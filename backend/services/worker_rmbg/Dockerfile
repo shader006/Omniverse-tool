@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir \
     onnxruntime>=1.18.0 \
     huggingface_hub>=0.23.0
 
-COPY app/ /app/app/
+COPY app_python/ /app/app/
 COPY services/worker_rmbg/ /app/services/worker_rmbg/
 
 ENV PORT=8003

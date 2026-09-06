@@ -5,9 +5,11 @@ import uuid
 import json
 import urllib.request
 import threading
+import queue
 import logging
 from typing import Optional
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -21,67 +23,92 @@ logger = logging.getLogger("worker_ytdlp")
 
 app = FastAPI(title="Worker YT-DLP Microservice", version="1.0.0")
 
+# ── TELEMETRY QUEUE & SINGLE WORKER THREAD ──
+_TRACE_QUEUE = queue.Queue(maxsize=1000)
 HIAI_OBSERVE_URL = os.getenv("HIAI_OBSERVE_URL", "http://172.17.0.1:8001")
-HIAI_OBSERVE_API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779")
+HIAI_OBSERVE_API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "")  # Không hardcode secret fallback
 
-def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
-    """Gửi trace telemetry về HiAi Observe theo chuẩn OTLP/HTTP."""
-    def _send():
+def _send_otlp_http(payload: dict):
+    if not HIAI_OBSERVE_API_KEY or not HIAI_OBSERVE_URL:
+        return
+    try:
+        req = urllib.request.Request(
+            f"{HIAI_OBSERVE_URL}/v1/traces",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {HIAI_OBSERVE_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            pass
+    except Exception:
+        pass
+
+def _telemetry_worker():
+    """Worker duy nhất gửi telemetry, tránh tạo thread vô hạn theo từng request."""
+    while True:
         try:
-            now_ns = int(time.time() * 1e9)
-            start_ns = now_ns - int(duration_ms * 1e6)
-            trace_id = uuid.uuid4().hex
-            span_id = uuid.uuid4().hex[:16]
-
-            attrs_list = [
-                {"key": "service.name", "value": {"stringValue": "worker-ytdlp"}},
-                {"key": "deployment.environment", "value": {"stringValue": "production"}},
-            ]
-            for k, v in attributes.items():
-                if isinstance(v, (int, float)):
-                    attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
-                else:
-                    attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
-
-            payload = {
-                "resourceSpans": [
-                    {
-                        "resource": {"attributes": attrs_list[:2]},
-                        "scopeSpans": [
-                            {
-                                "scope": {"name": "ytdlp-tracer", "version": "1.0.0"},
-                                "spans": [
-                                    {
-                                        "traceId": trace_id,
-                                        "spanId": span_id,
-                                        "name": name,
-                                        "kind": 1,
-                                        "startTimeUnixNano": str(start_ns),
-                                        "endTimeUnixNano": str(now_ns),
-                                        "attributes": attrs_list,
-                                        "status": {"code": 2 if is_error else 1}
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-            req = urllib.request.Request(
-                f"{HIAI_OBSERVE_URL}/v1/traces",
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {HIAI_OBSERVE_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                method="POST"
-            )
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                pass
+            payload = _TRACE_QUEUE.get()
+            if payload is None:
+                break
+            _send_otlp_http(payload)
         except Exception:
             pass
+        finally:
+            _TRACE_QUEUE.task_done()
 
-    threading.Thread(target=_send, daemon=True).start()
+threading.Thread(target=_telemetry_worker, daemon=True).start()
+
+def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
+    """Đẩy trace vào hàng đợi để thread duy nhất gửi đi."""
+    if not HIAI_OBSERVE_API_KEY:
+        return
+
+    try:
+        now_ns = int(time.time() * 1e9)
+        start_ns = now_ns - int(duration_ms * 1e6)
+        trace_id = uuid.uuid4().hex
+        span_id = uuid.uuid4().hex[:16]
+
+        attrs_list = [
+            {"key": "service.name", "value": {"stringValue": "worker-ytdlp"}},
+            {"key": "deployment.environment", "value": {"stringValue": "production"}},
+        ]
+        for k, v in attributes.items():
+            if isinstance(v, (int, float)):
+                attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
+            else:
+                attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
+
+        payload = {
+            "resourceSpans": [
+                {
+                    "resource": {"attributes": attrs_list[:2]},
+                    "scopeSpans": [
+                        {
+                            "scope": {"name": "ytdlp-tracer", "version": "1.0.0"},
+                            "spans": [
+                                {
+                                    "traceId": trace_id,
+                                    "spanId": span_id,
+                                    "name": name,
+                                    "kind": 1,
+                                    "startTimeUnixNano": str(start_ns),
+                                    "endTimeUnixNano": str(now_ns),
+                                    "attributes": attrs_list,
+                                    "status": {"code": 2 if is_error else 1}
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+        _TRACE_QUEUE.put_nowait(payload)
+    except Exception:
+        pass
 
 class InfoRequest(BaseModel):
     url: str
@@ -129,37 +156,93 @@ def fetch_info(req: InfoRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/download")
-def start_download(req: DownloadRequest, background_tasks: BackgroundTasks):
+def start_download(req: DownloadRequest):
     if not req.url or not req.job_id:
         raise HTTPException(status_code=400, detail="Thiếu url hoặc job_id")
     
     out_dir = req.download_dir or os.getenv("DOWNLOAD_DIR", DEFAULT_DOWNLOAD_DIR)
     os.makedirs(out_dir, exist_ok=True)
 
-    send_otlp_trace(
-        name="POST /api/download",
-        duration_ms=10.0,
-        attributes={
-            "http.route": "/api/download",
-            "http.method": "POST",
-            "http.status_code": 200,
-            "job.id": req.job_id,
-            "media.url": req.url,
-            "media.format": req.format,
-            "media.quality": req.quality,
-        }
-    )
+    def event_generator():
+        q = queue.Queue()
 
-    # Chạy download task trong background
-    background_tasks.add_task(
-        run_download_task,
-        url=req.url,
-        media_format=req.format,
-        quality=req.quality,
-        output_dir=out_dir,
-        job_id=req.job_id
-    )
-    return {"success": True, "job_id": req.job_id, "status": "queued"}
+        def progress_cb(pct: float, msg: str):
+            q.put({
+                "status": "downloading",
+                "percent": round(pct, 1),
+                "speed": msg,
+                "eta": "-"
+            })
+
+        def run_task():
+            start_t = time.perf_counter()
+            try:
+                final_filename = run_download_task(
+                    url=req.url,
+                    media_format=req.format,
+                    quality=req.quality,
+                    progress_callback=progress_cb,
+                    output_dir=out_dir,
+                    job_id=req.job_id
+                )
+                duration_ms = (time.perf_counter() - start_t) * 1000.0
+                if final_filename:
+                    q.put({
+                        "status": "completed",
+                        "percent": 100.0,
+                        "filename": final_filename,
+                        "download_url": f"/api/file/{final_filename}"
+                    })
+                    send_otlp_trace(
+                        name="POST /api/download",
+                        duration_ms=duration_ms,
+                        attributes={
+                            "http.route": "/api/download",
+                            "http.method": "POST",
+                            "http.status_code": 200,
+                            "job.id": req.job_id,
+                            "media.url": req.url,
+                            "media.format": req.format,
+                            "media.quality": req.quality,
+                            "media.filename": final_filename
+                        }
+                    )
+                else:
+                    q.put({
+                        "status": "error",
+                        "error": "Không thể tải hoặc chuyển đổi file media từ liên kết."
+                    })
+                    send_otlp_trace(
+                        name="POST /api/download",
+                        duration_ms=duration_ms,
+                        attributes={"http.route": "/api/download", "http.status_code": 500, "error": "Download returned None"},
+                        is_error=True
+                    )
+            except Exception as e:
+                duration_ms = (time.perf_counter() - start_t) * 1000.0
+                q.put({
+                    "status": "error",
+                    "error": str(e)
+                })
+                send_otlp_trace(
+                    name="POST /api/download",
+                    duration_ms=duration_ms,
+                    attributes={"http.route": "/api/download", "http.status_code": 500, "error": str(e)},
+                    is_error=True
+                )
+            finally:
+                q.put(None)
+
+        worker_thread = threading.Thread(target=run_task, daemon=True)
+        worker_thread.start()
+
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            yield json.dumps(item) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8001"))

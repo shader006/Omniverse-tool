@@ -160,15 +160,63 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	var req DownloadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, `{"success":false,"detail":"Dữ liệu request không hợp lệ"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Dữ liệu yêu cầu không hợp lệ hoặc thiếu URL.",
+		})
 		return
 	}
 
+	req.URL = strings.TrimSpace(req.URL)
+	if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "URL không hợp lệ. Đường dẫn phải bắt đầu bằng http:// hoặc https://",
+		})
+		return
+	}
+
+	allowedFormats := map[string]bool{
+		"mp3": true, "mp4": true, "m4a": true, "wav": true, "flac": true, "webm": true,
+	}
+	req.Format = strings.ToLower(strings.TrimSpace(req.Format))
 	if req.Format == "" {
 		req.Format = "mp3"
 	}
+	if !allowedFormats[req.Format] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Định dạng '%s' không được hỗ trợ. Các định dạng hợp lệ: mp3, mp4, m4a, wav, flac, webm.", req.Format),
+		})
+		return
+	}
+
+	allowedQualities := map[string]bool{
+		"64": true, "128": true, "192": true, "256": true, "320": true,
+		"360": true, "480": true, "720": true, "1080": true, "1440": true, "2160": true, "best": true,
+	}
+	req.Quality = strings.ToLower(strings.TrimSpace(req.Quality))
 	if req.Quality == "" {
-		req.Quality = "320"
+		if req.Format == "mp4" {
+			req.Quality = "720"
+		} else {
+			req.Quality = "320"
+		}
+	}
+	if !allowedQualities[req.Quality] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Chất lượng '%s' không hợp lệ. Các chất lượng hợp lệ: 64, 128, 192, 256, 320, 360, 480, 720, 1080, 1440, 2160, best.", req.Quality),
+		})
+		return
 	}
 
 	jobID := randomID()
@@ -233,7 +281,7 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 		s.pogo.PublishJobUpdate(j)
 	}
 
-	// 1. Nếu có Worker YT-DLP Microservice -> Chuyển giao qua HTTP
+	// 1. Nếu có Worker YT-DLP Microservice -> Chuyển giao qua HTTP stream
 	if s.workerYtdlpURL != "" {
 		payload := map[string]string{
 			"job_id":       jobID,
@@ -242,15 +290,77 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 			"quality":      quality,
 			"download_dir": s.downloadDir,
 		}
-		_, statusCode, err := s.callWorkerJSON(s.workerYtdlpURL, "/api/download", payload)
-		if err == nil && statusCode == http.StatusOK {
-			log.Printf("✅ [WORKER YT-DLP] Đã chuyển giao Job %s sang worker-ytdlp xử lý", jobID)
-			return
+		bodyBytes, _ := json.Marshal(payload)
+		req, reqErr := http.NewRequest("POST", s.workerYtdlpURL+"/api/download", bytes.NewReader(bodyBytes))
+		if reqErr == nil {
+			req.Header.Set("Content-Type", "application/json")
+			client := &http.Client{Timeout: 900 * time.Second}
+			resp, callErr := client.Do(req)
+			if callErr == nil && resp.StatusCode == http.StatusOK {
+				defer resp.Body.Close()
+				scanner := bufio.NewScanner(resp.Body)
+				receivedFinal := false
+				for scanner.Scan() {
+					line := strings.TrimSpace(scanner.Text())
+					if line == "" {
+						continue
+					}
+					var event struct {
+						Status      string  `json:"status"`
+						Percent     float64 `json:"percent"`
+						Speed       string  `json:"speed"`
+						ETA         string  `json:"eta"`
+						Filename    string  `json:"filename"`
+						DownloadURL string  `json:"download_url"`
+						Error       string  `json:"error"`
+					}
+					if err := json.Unmarshal([]byte(line), &event); err == nil {
+						if event.Status == "downloading" {
+							if j, ok := s.pogo.GetJob(jobID); ok {
+								j.Percent = event.Percent
+								if event.Speed != "" {
+									j.Speed = event.Speed
+								}
+								s.pogo.PublishJobUpdate(j)
+							}
+						} else if event.Status == "completed" {
+							if j, ok := s.pogo.GetJob(jobID); ok {
+								j.Status = "completed"
+								j.Percent = 100.0
+								j.Filename = event.Filename
+								j.DownloadURL = fmt.Sprintf("/api/file/%s", event.Filename)
+								s.pogo.PublishJobUpdate(j)
+								receivedFinal = true
+								return
+							}
+						} else if event.Status == "error" {
+							errText := event.Error
+							if errText == "" {
+								errText = "Lỗi khi xử lý tải file hoặc liên kết không khả dụng."
+							}
+							s.failJob(jobID, errText)
+							receivedFinal = true
+							return
+						}
+					}
+				}
+				if receivedFinal {
+					return
+				}
+			}
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			log.Printf("⚠️ [WORKER YT-DLP] Gọi worker /api/download thất bại (%v)", callErr)
 		}
-		log.Printf("⚠️ [WORKER YT-DLP] Gọi worker /api/download thất bại (%v), fallback sang CLI cục bộ...", err)
 	}
 
-	// 2. Fallback sang CLI cục bộ
+	// 2. Fallback sang CLI cục bộ (chỉ khi có sẵn python3 trên hệ thống)
+	if _, err := exec.LookPath("python3"); err != nil {
+		log.Printf("⚠️ [LOCAL FALLBACK] Không tìm thấy python3 trên hệ thống, không thể fallback.")
+		s.failJob(jobID, "Dịch vụ tải media hiện đang bận hoặc không khả dụng. Vui lòng thử lại sau.")
+		return
+	}
 	cmd := exec.Command("python3", "-m", "app.url_conver.cli", "download",
 		"--url", url,
 		"--format", mediaFormat,

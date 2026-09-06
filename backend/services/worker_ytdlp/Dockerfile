@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir \
     httpx>=0.27.0 \
     orjson>=3.10.0
 
-COPY app/ /app/app/
+COPY app_python/ /app/app/
 COPY services/worker_ytdlp/ /app/services/worker_ytdlp/
 
 ENV PORT=8001

@@ -471,14 +471,44 @@
 
     const durationMs = Math.round(performance.now() - startTime);
 
+    // Lấy transparentBlob từ output của server để hỗ trợ tính năng đổi màu nền Canvas 5ms
+    let transparentBlob = null;
+    let downloadUrl = data.download_url;
+    let previewBase64 = data.preview_base64 || data.download_url;
+
+    try {
+      if (data.download_url) {
+        const blobResp = await fetch(data.download_url);
+        if (blobResp.ok) {
+          transparentBlob = await blobResp.blob();
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('[RMBG Server] Không thể tải transparent blob:', fetchErr);
+    }
+
+    // Nếu người dùng chọn màu nền ban đầu (khác transparent), ghép màu ngay trên Canvas
+    const requestedBg = options.bgColor || 'transparent';
+    if (transparentBlob && requestedBg !== 'transparent' && requestedBg !== '') {
+      try {
+        const recolored = await applyBackgroundColorToBlob(transparentBlob, requestedBg);
+        if (recolored) {
+          downloadUrl = recolored.downloadUrl;
+          previewBase64 = recolored.dataUrl;
+        }
+      } catch (colorErr) {
+        console.warn('[RMBG Server] Lỗi ghép màu nền Canvas ban đầu:', colorErr);
+      }
+    }
+
     return {
       success: true,
       engine: 'server',
       engineDisplay: 'Máy chủ (OpenVINO BiRefNet-Lite)',
       filename: data.filename || 'removed_bg.png',
-      downloadUrl: data.download_url,
-      previewBase64: data.preview_base64 || data.download_url,
-      transparentBlob: null,
+      downloadUrl: downloadUrl,
+      previewBase64: previewBase64,
+      transparentBlob: transparentBlob,
       processingTimeMs: data.processing_time_ms || durationMs,
       resultSizeBytes: data.result_size_bytes || 0,
       metadata: data.metadata || {

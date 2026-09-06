@@ -75,10 +75,23 @@ func main() {
 	mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
 		relPath := strings.TrimPrefix(r.URL.Path, "/static/")
 		filePath := filepath.Join(frontendDir, relPath)
+		setCachingHeaders := func(w http.ResponseWriter) {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
 		if _, err := os.Stat(filePath); err == nil {
-			w.Header().Set("Cache-Control", "public, max-age=86400")
+			setCachingHeaders(w)
 			http.ServeFile(w, r, filePath)
 			return
+		}
+		for _, sub := range []string{"client", "ui"} {
+			subPath := filepath.Join(frontendDir, sub, relPath)
+			if _, err := os.Stat(subPath); err == nil {
+				setCachingHeaders(w)
+				http.ServeFile(w, r, subPath)
+				return
+			}
 		}
 		http.NotFound(w, r)
 	})
@@ -95,6 +108,13 @@ func main() {
 			http.ServeFile(w, r, filePath)
 			return
 		}
+		for _, sub := range []string{"client", "ui"} {
+			subPath := filepath.Join(frontendDir, sub, r.URL.Path)
+			if _, err := os.Stat(subPath); err == nil {
+				http.ServeFile(w, r, subPath)
+				return
+			}
+		}
 		http.ServeFile(w, r, filepath.Join(frontendDir, "index.html"))
 	})
 
@@ -105,7 +125,8 @@ func main() {
 
 	initTracer()
 	log.Printf("🚀 [OMNIVERSE GO SERVER] Đang lắng nghe tại http://0.0.0.0:%s (OTLP Tracing Active)", port)
-	if err := http.ListenAndServe(":"+port, tracingMiddleware(corsMiddleware(mux))); err != nil {
+	handler := tracingMiddleware(corsMiddleware(rateLimitMiddleware(mux)))
+	if err := http.ListenAndServe(":"+port, handler); err != nil {
 		log.Fatalf("Lỗi khởi động Server: %v", err)
 	}
 }

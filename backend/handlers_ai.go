@@ -5,6 +5,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
@@ -14,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"omniverse_backend/transcribe"
+	"omniverse_backend/app_go/transcribe"
 )
 
 func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
@@ -64,17 +68,39 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	language := r.FormValue("language")
+	language := strings.ToLower(strings.TrimSpace(r.FormValue("language")))
 	if language == "" {
 		language = "auto"
 	}
-	format := r.FormValue("format")
+	format := strings.ToLower(strings.TrimSpace(r.FormValue("format")))
 	if format == "" {
 		format = "txt"
 	}
-	task := r.FormValue("task")
+	task := strings.ToLower(strings.TrimSpace(r.FormValue("task")))
 	if task == "" {
 		task = "transcribe"
+	}
+
+	allowedFormats := map[string]bool{"txt": true, "srt": true, "vtt": true, "json": true}
+	if !allowedFormats[format] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Định dạng xuất '%s' không hợp lệ. Các định dạng hợp lệ: txt, srt, vtt, json.", format),
+		})
+		return
+	}
+
+	allowedTasks := map[string]bool{"transcribe": true, "translate": true}
+	if !allowedTasks[task] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Tác vụ '%s' không hợp lệ. Các tác vụ hợp lệ: transcribe, translate.", task),
+		})
+		return
 	}
 
 	fileBytes, err := io.ReadAll(file)
@@ -108,10 +134,31 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(respBody)
 			return
 		}
-		log.Printf("⚠️ [WORKER WHISPER] Gọi worker thất bại (%v), fallback sang cục bộ...", callErr)
+		if callErr == nil && statusCode == http.StatusBadRequest {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write(respBody)
+			return
+		}
+		log.Printf("⚠️ [WORKER WHISPER] Gọi worker thất bại (%v), statusCode=%d", callErr, statusCode)
 	}
 
 	// 2. Fallback sang Go Native Transcribe Engine (whisper.cpp cục bộ)
+	whisperBin := os.Getenv("WHISPER_BIN")
+	if whisperBin == "" {
+		whisperBin = "/usr/local/bin/whisper-cli"
+	}
+	_, lookErr := exec.LookPath(whisperBin)
+	_, statErr := os.Stat(whisperBin)
+	if lookErr != nil && statErr != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Dịch vụ nhận diện giọng nói hiện đang bận hoặc không khả dụng. Vui lòng thử lại sau giây lát.",
+		})
+		return
+	}
 	tempFileName := fmt.Sprintf("%s_%s", randomID(), originalFilename)
 	tempFilePath := filepath.Join(s.downloadDir, tempFileName)
 
@@ -213,6 +260,20 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Kiểm tra kích thước ảnh (Width x Height) chống decompression bomb
+	cfg, _, imgErr := image.DecodeConfig(bytes.NewReader(fileBytes))
+	if imgErr == nil {
+		if cfg.Width > 5000 || cfg.Height > 5000 || (cfg.Width*cfg.Height) > 25000000 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"detail":  fmt.Sprintf("Kích thước ảnh (%dx%d px) vượt quá giới hạn an toàn 25 Megapixels.", cfg.Width, cfg.Height),
+			})
+			return
+		}
+	}
+
 	// 1. Nếu có Worker RMBG Microservice -> Forward qua HTTP với retry 3 lần
 	if s.workerRmbgURL != "" {
 		alphaStr := "false"
@@ -241,6 +302,13 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 			if callErr == nil && statusCode == http.StatusOK {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(respBody)
+				return
+			}
+			// Nếu worker trả 400 (ví dụ client gửi sai tham số hoặc ảnh lỗi), không retry vô ích
+			if callErr == nil && statusCode == http.StatusBadRequest {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write(respBody)
 				return
 			}
@@ -292,9 +360,9 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 
 	startTime := time.Now()
 
-	// Gọi python subprocess app.rmbg.cli
+	// Gọi python subprocess app_python.rmbg.cli
 	args := []string{
-		"-m", "app.rmbg.cli", "process",
+		"-m", "app_python.rmbg.cli", "process",
 		"--input", tempInputPath,
 		"--output", outputPath,
 		"--model", model,
