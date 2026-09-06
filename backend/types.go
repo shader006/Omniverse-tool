@@ -41,6 +41,7 @@ type Server struct {
 	workerYtdlpURL   string
 	workerWhisperURL string
 	workerRmbgURL    string
+	workerPixelfixerURL string
 	httpClient       *http.Client
 }
 

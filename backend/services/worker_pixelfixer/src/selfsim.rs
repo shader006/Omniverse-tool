@@ -1,4 +1,9 @@
-//! Shift self-similarity grid detection. Mirrors detector/selfsim.py (single-threaded for WASM).
+//! Shift self-similarity grid detection. Mirrors detector/selfsim.py.
+//!
+//! The "quant" feature is weight-0 in the reference (ablated) and is not
+//! ported. `_phase` is skipped too: no caller consumes selfsim's phase.
+
+use rayon::prelude::*;
 
 pub const TMAX: usize = 72;
 pub const PMIN: f64 = 1.7;
@@ -53,6 +58,8 @@ fn refl(i: i64, n: i64) -> usize {
 /// cv2.GaussianBlur(y, (0,0), 1.0): 9-tap separable Gaussian, reflect101.
 fn gaussian_blur_1(src: &Plane) -> Plane {
     let (w, h) = (src.w, src.h);
+    // OpenCV kernel: exp(-x^2/(2 sigma^2)) at x = i - 4, normalized (f64),
+    // then applied as f32 coefficients
     let mut k64 = [0f64; 9];
     let mut sum = 0f64;
     for i in 0..9 {
@@ -63,7 +70,7 @@ fn gaussian_blur_1(src: &Plane) -> Plane {
     let k: Vec<f32> = k64.iter().map(|&v| (v / sum) as f32).collect();
 
     let mut tmp = vec![0f32; w * h];
-    tmp.chunks_mut(w).enumerate().for_each(|(y, row)| {
+    tmp.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
         for x in 0..w {
             let mut acc = 0f32;
             for t in 0..9 {
@@ -74,7 +81,7 @@ fn gaussian_blur_1(src: &Plane) -> Plane {
         }
     });
     let mut out = vec![0f32; w * h];
-    out.chunks_mut(w).enumerate().for_each(|(y, row)| {
+    out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
         for x in 0..w {
             let mut acc = 0f32;
             for t in 0..9 {
@@ -91,7 +98,7 @@ fn gaussian_blur_1(src: &Plane) -> Plane {
 fn abs_laplacian(src: &Plane) -> Plane {
     let (w, h) = (src.w, src.h);
     let mut out = vec![0f32; w * h];
-    out.chunks_mut(w).enumerate().for_each(|(y, row)| {
+    out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
         for x in 0..w {
             let up = src.at(refl(y as i64 - 1, h as i64), x);
             let dn = src.at(refl(y as i64 + 1, h as i64), x);
@@ -155,6 +162,8 @@ fn tile_starts(n: usize, parts: usize) -> Vec<usize> {
     v
 }
 
+/// Per-tile numerator/denominator d(t) curves for one (pre-oriented)
+/// single-channel feature. Returns (num, den) shaped [n_tiles_y][n_tiles_x][T].
 #[allow(clippy::type_complexity)]
 fn dcurves_tiled(
     arr0: &Plane,
@@ -176,8 +185,11 @@ fn dcurves_tiled(
     let mut num = vec![vec![vec![0f64; t_cap]; nx]; ny];
     let mut den = vec![vec![vec![0f64; t_cap]; nx]; ny];
 
+    // per-t work is independent; parallelize over t and merge
     let results: Vec<(usize, Vec<Vec<f64>>, Vec<Vec<f64>>, bool)> = (1..=t_cap)
+        .into_par_iter()
         .map(|t| {
+            // column boundaries clamped like the reference
             let clamp_at = if w >= t + 1 { w - t - 1 } else { 0 };
             let cs: Vec<usize> = cs0.iter().map(|&c| c.min(clamp_at)).collect();
             let mut cs_u = cs.clone();
@@ -187,6 +199,8 @@ fn dcurves_tiled(
             let ncols = use_cs.len();
             let ext = w - t;
 
+            // two-stage sums like the reference reduceat chain: rows first
+            // (f32-rounded per column), then column segments (f32-rounded)
             let mut nu = vec![vec![0f64; ncols]; ny];
             let mut de = vec![vec![0f64; ncols]; ny];
             let mut coln = vec![0f64; ext];
@@ -244,6 +258,7 @@ fn dcurves_tiled(
     (num, den, t_cap)
 }
 
+/// Regroup tile num/den grids into gy x gx summed d(t) curves.
 fn group(num: &[Vec<Vec<f64>>], den: &[Vec<Vec<f64>>], gy: usize, gx: usize) -> Vec<Vec<f64>> {
     let ny = num.len();
     let nx = num[0].len();
@@ -273,6 +288,7 @@ fn group(num: &[Vec<Vec<f64>>], den: &[Vec<Vec<f64>>], gy: usize, gx: usize) -> 
 }
 
 fn interp1(xs_start: f64, dm: &[f64], q: f64) -> f64 {
+    // np.interp over ts = 1..T with clamping
     let t_len = dm.len();
     let pos = q - xs_start;
     if pos <= 0.0 {
@@ -286,12 +302,14 @@ fn interp1(xs_start: f64, dm: &[f64], q: f64) -> f64 {
     dm[i] * (1.0 - f) + dm[i + 1] * f
 }
 
+/// t-statistic comb score for one normalized curve dm(t), t = 1..T.
 fn comb_tstat(dm: &[f64], p_grid: &[f64], kcap: usize) -> Vec<f64> {
     let t_len = dm.len();
     let mut s_out = vec![-1e9; p_grid.len()];
     if t_len < 8 {
         return s_out;
     }
+    // trapezoid cumulative integral F over ts = 1..T
     let mut cum = vec![0f64; t_len];
     for i in 1..t_len {
         cum[i] = cum[i - 1] + 0.5 * (dm[i] + dm[i - 1]);
@@ -302,7 +320,7 @@ fn comb_tstat(dm: &[f64], p_grid: &[f64], kcap: usize) -> Vec<f64> {
     let noise = if d2.is_empty() {
         1e-9
     } else {
-        d2.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        d2.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let n = d2.len();
         (if n % 2 == 1 { d2[n / 2] } else { 0.5 * (d2[n / 2 - 1] + d2[n / 2]) }) + 1e-9
     };
@@ -334,6 +352,7 @@ fn comb_tstat(dm: &[f64], p_grid: &[f64], kcap: usize) -> Vec<f64> {
     s_out
 }
 
+/// local maxima of z (>= left, > right), sorted by z descending
 fn local_maxima(z: &[f64]) -> Vec<usize> {
     let mut idx: Vec<usize> = Vec::new();
     for i in 1..z.len().saturating_sub(1) {
@@ -341,7 +360,7 @@ fn local_maxima(z: &[f64]) -> Vec<usize> {
             idx.push(i);
         }
     }
-    idx.sort_by(|&a, &b| z[b].partial_cmp(&z[a]).unwrap_or(std::cmp::Ordering::Equal));
+    idx.sort_by(|&a, &b| z[b].partial_cmp(&z[a]).unwrap());
     idx
 }
 
@@ -356,6 +375,7 @@ fn parabolic(x0: f64, dx: f64, y: &[f64], i: usize) -> f64 {
     x0 + i as f64 * dx
 }
 
+/// Sub-pixel step from minima of R(t) near k*s0, weighted LS fit.
 fn refine_step(r: &[f64], s0: f64) -> f64 {
     let t_len = r.len();
     let kmax = std::cmp::min(KCAP, ((t_len as f64 - 1.0) / s0) as usize);
@@ -404,6 +424,7 @@ fn refine_step(r: &[f64], s0: f64) -> f64 {
     }
 }
 
+/// Mean-normalized, box(9)-detrended residual (edge-padded convolution).
 fn residual_curve(d: &[f64]) -> Vec<f64> {
     let n = d.len();
     let mean = d.iter().sum::<f64>() / n.max(1) as f64;
@@ -425,7 +446,7 @@ fn residual_curve(d: &[f64]) -> Vec<f64> {
 
 fn score_curves(curves: &[Vec<f64>], p_grid: &[f64], fw: f64, kcap: usize) -> Vec<Vec<f64>> {
     curves
-        .iter()
+        .par_iter()
         .map(|d| {
             let m = d.iter().sum::<f64>() / d.len().max(1) as f64;
             if m > 1e-9 {
@@ -446,6 +467,7 @@ fn arange(start: f64, stop: f64, step: f64) -> Vec<f64> {
     (0..n).map(|i| start + i as f64 * step).collect()
 }
 
+/// python round() = banker's rounding
 fn pyround(v: f64) -> f64 {
     v.round_ties_even()
 }
@@ -458,6 +480,7 @@ pub struct SsAxis {
 fn detect_axis(feats: [(&Plane, f64); 3], wt: &Plane, size: usize) -> SsAxis {
     let p_grid = arange(PMIN, PMAX.min(size as f64 / 4.0), PSTEP);
     let np_ = p_grid.len();
+    // wt here is pre-oriented: shift axis horizontal
     let (h, w) = (wt.h, wt.w);
     let (other, shift) = (h, w);
     let ny = (pyround(other as f64 / 128.0)).clamp(1.0, 8.0) as usize;
@@ -505,6 +528,7 @@ fn detect_axis(feats: [(&Plane, f64); 3], wt: &Plane, size: usize) -> SsAxis {
             agg_res[j] += fw * res[j];
         }
         if fi == 0 {
+            // grad0 tile weights
             w_fine = d_fine
                 .iter()
                 .map(|c| c.iter().sum::<f64>() / c.len().max(1) as f64)
@@ -539,9 +563,10 @@ fn detect_axis(feats: [(&Plane, f64); 3], wt: &Plane, size: usize) -> SsAxis {
     } else {
         *qual
             .iter()
-            .min_by(|&&a, &&b| p_grid[a].partial_cmp(&p_grid[b]).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|&&a, &&b| p_grid[a].partial_cmp(&p_grid[b]).unwrap())
             .unwrap()
     };
+    // explicit divisor walk
     let mut changed = true;
     while changed {
         changed = false;
@@ -571,6 +596,7 @@ fn detect_axis(feats: [(&Plane, f64); 3], wt: &Plane, size: usize) -> SsAxis {
     }
     let p_star = p_grid[best_i];
 
+    // per-fine-tile votes around a center
     let tile_votes = |center: f64| -> (Vec<f64>, Vec<f64>) {
         let win = (VOTE_WIN * center).max(6.0 * PSTEP);
         let lo = std::cmp::max(pyround((center - win - p_grid[0]) / PSTEP) as i64, 0) as usize;
@@ -599,7 +625,7 @@ fn detect_axis(feats: [(&Plane, f64); 3], wt: &Plane, size: usize) -> SsAxis {
     };
     let wmedian = |v: &[f64], w: &[f64]| -> f64 {
         let mut order: Vec<usize> = (0..v.len()).collect();
-        order.sort_by(|&a, &b| v[a].partial_cmp(&v[b]).unwrap_or(std::cmp::Ordering::Equal));
+        order.sort_by(|&a, &b| v[a].partial_cmp(&v[b]).unwrap());
         let total: f64 = w.iter().sum();
         let mut cw = 0f64;
         for &o in &order {
@@ -656,18 +682,22 @@ pub struct SsDetection {
 pub fn detect(rgba: &[u8], w: usize, h: usize) -> SsDetection {
     let (feats, wt) = build_features(rgba, w, h);
     let wt_plane = Plane { data: wt, w, h };
+    // pre-orient the y-axis pass (shift axis horizontal)
     let g0t = transpose_plane(&feats.grad0);
     let gbt = transpose_plane(&feats.gradb);
     let lbt = transpose_plane(&feats.lapb);
     let wtt = transpose_plane(&wt_plane);
 
-    let ax = detect_axis(
-        [(&feats.grad0, 1.0), (&feats.gradb, 1.0), (&feats.lapb, 1.0)],
-        &wt_plane,
-        w,
+    let (ax, ay) = rayon::join(
+        || {
+            detect_axis(
+                [(&feats.grad0, 1.0), (&feats.gradb, 1.0), (&feats.lapb, 1.0)],
+                &wt_plane,
+                w,
+            )
+        },
+        || detect_axis([(&g0t, 1.0), (&gbt, 1.0), (&lbt, 1.0)], &wtt, h),
     );
-    let ay = detect_axis([(&g0t, 1.0), (&gbt, 1.0), (&lbt, 1.0)], &wtt, h);
-
     SsDetection {
         step_x: ax.s,
         step_y: ay.s,

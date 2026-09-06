@@ -28,6 +28,7 @@ services:
       - WORKER_YTDLP_URL=http://tasks.worker-ytdlp:8001
       - WORKER_WHISPER_URL=http://tasks.worker-whisper:8002
       - WORKER_RMBG_URL=http://tasks.worker-rmbg:8003
+      - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
       - MAX_MEDIA_CONCURRENT_JOBS=4
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
@@ -90,6 +91,22 @@ services:
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet
+    networks:
+      - omniverse_net
+
+  worker-pixelfixer:
+    image: omniversetool-worker-pixelfixer:latest
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: any
+        delay: 1s
+      resources:
+        limits:
+          memory: 1024M
+    environment:
+      - PORT=8004
     networks:
       - omniverse_net
 

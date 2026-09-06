@@ -17,6 +17,7 @@ pub fn to_gray(rgba: &[u8], w: usize, h: usize) -> Vec<f32> {
 
 /// 3x3 median (border replicate) then quantize to steps of 12.
 pub fn median_quant(g: &[f32], w: usize, h: usize) -> Vec<f32> {
+    // numpy astype(uint8): truncation toward zero (g is within [0, 255.001])
     let u8v: Vec<u8> = g.iter().map(|&v| v as u8).collect();
     let mut out = vec![0f32; w * h];
     let mut buf = [0u8; 9];
@@ -32,6 +33,7 @@ pub fn median_quant(g: &[f32], w: usize, h: usize) -> Vec<f32> {
                 }
             }
             buf.sort_unstable();
+            // np.round = half-to-even, not half-away-from-zero
             out[y * w + x] = (buf[4] as f32 / 12.0).round_ties_even() * 12.0;
         }
     }

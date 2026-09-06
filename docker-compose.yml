@@ -18,6 +18,7 @@ services:
       - WORKER_YTDLP_URL=http://worker-ytdlp:8001
       - WORKER_WHISPER_URL=http://worker-whisper:8002
       - WORKER_RMBG_URL=http://worker-rmbg:8003
+      - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
       - MAX_MEDIA_CONCURRENT_JOBS=4
     depends_on:
       - gotenberg
@@ -25,6 +26,7 @@ services:
       - worker-ytdlp
       - worker-whisper
       - worker-rmbg
+      - worker-pixelfixer
 
   worker-ytdlp:
     build:
@@ -66,6 +68,17 @@ services:
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=120
+
+  worker-pixelfixer:
+    build:
+      context: ./backend
+      dockerfile: services/worker_pixelfixer/Dockerfile
+    container_name: mediaflow_worker_pixelfixer
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
 
   pogocache:
     image: pogocache/pogocache:latest

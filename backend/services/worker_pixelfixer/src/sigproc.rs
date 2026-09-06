@@ -8,7 +8,7 @@ pub fn percentile(values: &[f64], q: f64) -> f64 {
         return 0.0;
     }
     let mut v = values.to_vec();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let pos = q / 100.0 * (v.len() as f64 - 1.0);
     let lo = pos.floor() as usize;
     let hi = pos.ceil() as usize;
@@ -61,6 +61,9 @@ pub fn gaussian_filter1d(x: &[f64], sigma: f64) -> Vec<f64> {
         .map(|i| {
             let mut acc = 0f64;
             for (j, &kv) in kern.iter().enumerate() {
+                // scipy correlate1d applies weights reversed relative to
+                // convolution; the gaussian kernel is symmetric so it
+                // doesn't matter
                 acc += kv * x[refl(i + j as i64 - radius)];
             }
             acc
@@ -68,7 +71,8 @@ pub fn gaussian_filter1d(x: &[f64], sigma: f64) -> Vec<f64> {
         .collect()
 }
 
-/// scipy find_peaks with `height` and `distance`. Returns (positions, heights).
+/// scipy find_peaks with `height` and `distance`. Returns (positions,
+/// heights). Plateau peaks resolve to the plateau midpoint like scipy.
 pub fn find_peaks(x: &[f64], height: f64, distance: f64) -> (Vec<usize>, Vec<f64>) {
     let n = x.len();
     let mut peaks: Vec<usize> = Vec::new();
@@ -89,15 +93,16 @@ pub fn find_peaks(x: &[f64], height: f64, distance: f64) -> (Vec<usize>, Vec<f64
         }
         i += 1;
     }
-    // height filter first
+    // height filter first (scipy order)
     let mut kept: Vec<usize> = peaks.into_iter().filter(|&p| x[p] >= height).collect();
-    // distance filter
+    // distance filter: highest priority first, remove neighbours closer
+    // than ceil(distance)
     if distance > 1.0 && kept.len() > 1 {
         let dmin = distance.ceil();
         let m = kept.len();
         let mut keep = vec![true; m];
         let mut priority: Vec<usize> = (0..m).collect();
-        priority.sort_by(|&a, &b| x[kept[a]].partial_cmp(&x[kept[b]]).unwrap_or(std::cmp::Ordering::Equal));
+        priority.sort_by(|&a, &b| x[kept[a]].partial_cmp(&x[kept[b]]).unwrap());
         for pi in (0..m).rev() {
             let j = priority[pi];
             if !keep[j] {
@@ -136,7 +141,7 @@ pub fn median_filter1d(x: &[f64], size: usize) -> Vec<f64> {
                 let j = (i + k).clamp(0, n as i64 - 1) as usize;
                 buf[bi] = x[j];
             }
-            buf.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            buf.sort_by(|a, b| a.partial_cmp(b).unwrap());
             buf[size / 2]
         })
         .collect()
@@ -148,7 +153,7 @@ pub fn median(values: &[f64]) -> f64 {
         return 0.0;
     }
     let mut v = values.to_vec();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = v.len();
     if n % 2 == 1 {
         v[n / 2]

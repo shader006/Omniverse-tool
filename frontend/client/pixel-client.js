@@ -120,13 +120,13 @@
     paletteKey: 'original',
     maxColors: 'all',
     dithering: 'none',
-    transparencyMode: 'auto',
+    transparencyMode: 'keep',
     bgScope: 'boundary', // 'boundary' (BFS Flood fill from edges) | 'all' (All matching)
     customBgColor: [255, 255, 255],
     tolerance: 18,
     outlineStyle: 'none',
     outlineColor: '#000000',
-    autoTrim: true,
+    autoTrim: false,
     forcedSize: 'auto',
     customForcedWidth: 64,
     customForcedHeight: 64,
@@ -225,67 +225,10 @@
   // =========================================================================
 
   /**
-   * Tính toán các ứng viên lưới (Grid Candidates) kèm tỷ lệ % tin cậy
-   * Tự động ưu tiên WASM Engine siêu tốc nếu có, fallback sang JS thuần
+   * Phân tích ứng viên ô lưới bằng thuật toán JS dự phòng
    */
   function analyzeGridCandidates(imageData) {
     const { width, height, data } = imageData;
-    const statusEl = document.getElementById('wasm-engine-status');
-
-    if (wasmModule) {
-      try {
-        const bytes = (data instanceof Uint8Array && !(data instanceof Uint8ClampedArray))
-          ? data
-          : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-
-        // Hướng A: Ensemble Consensus đa detector chuẩn Pixel Art Fixer Core
-        if (wasmModule.detect_grid_ensemble) {
-          const ensembleRes = wasmModule.detect_grid_ensemble(bytes, width, height);
-          if (ensembleRes) {
-            console.log(`🦀 [WASM Ensemble Consensus (Direction A)]:`, ensembleRes);
-            state.ensembleGrid = ensembleRes;
-            if (statusEl) {
-              const badge = ensembleRes.consensus || 'ensemble';
-              statusEl.textContent = `WASM: ${badge} ⚡`;
-              statusEl.style.color = '#34d399';
-              statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
-              statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-              statusEl.title = `WASM Consensus (${badge}): ${ensembleRes.step_x.toFixed(2)}x${ensembleRes.step_y.toFixed(2)}px (${ensembleRes.cols}x${ensembleRes.rows}), offset: (${ensembleRes.offset_x.toFixed(2)}, ${ensembleRes.offset_y.toFixed(2)}) - Tin cậy: ${ensembleRes.confidence}%`;
-            }
-            if (Array.isArray(ensembleRes.candidates) && ensembleRes.candidates.length > 0) {
-              return ensembleRes.candidates;
-            }
-          }
-        }
-
-        // Fallback detect_grid_candidates
-        if (wasmModule.detect_grid_candidates) {
-          const wasmRes = wasmModule.detect_grid_candidates(bytes, width, height);
-          if (Array.isArray(wasmRes) && wasmRes.length > 0) {
-            console.log(`🦀 [WASM Grid Detection - Candidates]:`, wasmRes);
-            if (statusEl) {
-              statusEl.textContent = `WASM (${wasmRes[0].size}px) ⚡`;
-              statusEl.style.color = '#34d399';
-              statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
-              statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-              statusEl.title = `WASM ACF nhận diện chính xác cỡ ô: ${wasmRes[0].size}px (Tin cậy: ${wasmRes[0].confidence}%)`;
-            }
-            return wasmRes;
-          }
-        }
-      } catch (err) {
-        console.warn('WASM detection error, falling back to JS:', err);
-      }
-    }
-
-    if (statusEl) {
-      statusEl.textContent = 'JS Fallback ⚠️';
-      statusEl.style.color = '#fbbf24';
-      statusEl.style.background = 'rgba(245, 158, 11, 0.15)';
-      statusEl.style.border = '1px solid rgba(245, 158, 11, 0.3)';
-      statusEl.title = 'Đang chạy thuật toán JS dự phòng';
-    }
-
     const sampleRows = Math.min(height, 80);
     const sampleCols = Math.min(width, 80);
     const rowStep = Math.max(1, Math.floor(height / sampleRows));
@@ -399,6 +342,72 @@
     }
 
     return candidates;
+  }
+
+  /**
+   * Kích hoạt nhận diện lưới nâng cao bằng Backend Rust Engine (Rayon Multi-threaded)
+   */
+  async function triggerBackendGridDetect(fileOrCanvas) {
+    const statusEl = document.getElementById('wasm-engine-status');
+    if (statusEl) {
+      statusEl.textContent = 'Rust: Đang tính... ⚡';
+      statusEl.style.color = '#38bdf8';
+    }
+
+    try {
+      let blob = fileOrCanvas instanceof Blob ? fileOrCanvas : null;
+      if (!blob && fileOrCanvas && fileOrCanvas.toBlob) {
+        blob = await new Promise(resolve => fileOrCanvas.toBlob(resolve, 'image/png'));
+      }
+      if (!blob) throw new Error('Không có dữ liệu ảnh');
+
+      const fd = new FormData();
+      fd.append('file', blob, 'image.png');
+
+      const res = await fetch('/api/pixel/detect?mode=full', {
+        method: 'POST',
+        body: fd,
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      if (data && data.success) {
+        console.log('🦀 [Backend Rust Pixel Art Fixer (Rayon Core)]:', data);
+        state.ensembleGrid = data;
+        state.detectedGridSize = Math.max(1, Math.round((data.step_x + data.step_y) / 2));
+        if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+          state.gridCandidates = data.candidates;
+        }
+
+        if (statusEl) {
+          const badge = data.consensus || 'full';
+          statusEl.textContent = `Rust: ${badge} ⚡`;
+          statusEl.style.color = '#34d399';
+          statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
+          statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          statusEl.title = `Rust Core (${badge}): ${data.step_x.toFixed(2)}x${data.step_y.toFixed(2)}px (${data.cols}x${data.rows}), offset: (${data.offset_x.toFixed(2)}, ${data.offset_y.toFixed(2)}) - Tin cậy: ${data.confidence}% (${(data.secs * 1000).toFixed(1)}ms)`;
+        }
+
+        if (selectGridSize && state.currentGridSize === 'auto') {
+          const autoOpt = selectGridSize.querySelector('option[value="auto"]');
+          if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đoán: ${state.detectedGridSize}x${state.detectedGridSize}px)`;
+        }
+
+        renderGridCandidates(state.gridCandidates);
+        runPixelRefineProcess();
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend Rust detect error, using client fallback:', err);
+      if (statusEl) {
+        statusEl.textContent = 'Client Fallback ⚠️';
+        statusEl.style.color = '#fbbf24';
+        statusEl.style.background = 'rgba(245, 158, 11, 0.15)';
+        statusEl.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+        statusEl.title = `Backend Rust không phản hồi (${err.message}). Đang dùng thuật toán client fallback.`;
+      }
+    }
   }
 
   function colorDistance(r1, g1, b1, r2, g2, b2) {
@@ -663,99 +672,157 @@
   // 4. MAIN PROCESS PIPELINE
   // =========================================================================
 
-  function runPixelRefineProcess() {
+  /**
+   * Gọi Backend Rust Engine (/api/pixel/fix) để tái tạo Sprite gốc chuẩn thuật toán Pixel Art Fixer
+   * (Áp dụng Snapped Cuts + Modal Color Extraction + Dark Stroke + Wu Optimal Palette)
+   */
+  async function fetchBackendReconstruct(sourceCanvas, cols, rows, stepX, stepY, autoPalette = false) {
+    try {
+      const blob = await new Promise((resolve) => sourceCanvas.toBlob(resolve, 'image/png'));
+      if (!blob) return null;
+
+      const fd = new FormData();
+      fd.append('file', blob, 'source.png');
+      if (cols) fd.append('cols', cols);
+      if (rows) fd.append('rows', rows);
+      if (stepX) fd.append('step_x', stepX);
+      if (stepY) fd.append('step_y', stepY);
+      fd.append('mode', 'full');
+      if (autoPalette) fd.append('auto_palette', 'true');
+
+      const res = await fetch('/api/pixel/fix', {
+        method: 'POST',
+        body: fd,
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const pngBlob = await res.blob();
+      const img = new Image();
+      const url = URL.createObjectURL(pngBlob);
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (e) => reject(e);
+        img.src = url;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || cols;
+      canvas.height = img.naturalHeight || rows;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+
+      return {
+        canvas,
+        cols: canvas.width,
+        rows: canvas.height,
+      };
+    } catch (err) {
+      console.warn('⚠️ [Backend Rust Fix Fallback]:', err);
+      return null;
+    }
+  }
+
+  async function runPixelRefineProcess() {
     if (!state.sourceCanvas) return;
 
-    showProgress('Đang xử lý làm sạch và tinh chỉnh sprite pixel...');
+    showProgress('Đang xử lý làm sạch và tinh chỉnh sprite pixel (Rust Core ⚡)...');
 
-    setTimeout(() => {
-      try {
-        const srcW = state.originalWidth;
-        const srcH = state.originalHeight;
-        const srcCtx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
-        const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
-        const srcBytes = srcImgData.data;
+    try {
+      const srcW = state.originalWidth;
+      const srcH = state.originalHeight;
+      const srcCtx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
+      const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
+      const srcBytes = srcImgData.data;
 
-        // 1. Xác định Kích thước và Tọa độ Ô Lưới (Grid Cell & Native Geometry)
-        let cols, rows, stepX, stepY, offsetX = 0, offsetY = 0;
-        let cellSizeLabel = '1';
-        let usedWasmReconstruct = false;
+      // 1. Xác định Kích thước và Tọa độ Ô Lưới (Grid Cell & Native Geometry)
+      let cols, rows, stepX, stepY, offsetX = 0, offsetY = 0;
+      let cellSizeLabel = '1';
 
-        const spriteCanvas = document.createElement('canvas');
-        let spriteCtx, spriteImgData, spriteBytes;
+      if (state.currentGridSize === 'auto' && state.ensembleGrid) {
+        stepX = state.ensembleGrid.step_x;
+        stepY = state.ensembleGrid.step_y;
+        cols = Math.max(1, state.ensembleGrid.cols);
+        rows = Math.max(1, state.ensembleGrid.rows);
+        offsetX = state.ensembleGrid.offset_x || 0;
+        offsetY = state.ensembleGrid.offset_y || 0;
+        cellSizeLabel = `${stepX.toFixed(1)}x${stepY.toFixed(1)}`;
+      } else {
+        let cellSize = 1;
+        if (state.currentGridSize === 'auto') {
+          cellSize = state.detectedGridSize || 1;
+        } else if (state.currentGridSize === 'custom') {
+          cellSize = Math.max(1, parseInt(state.customGridSize, 10) || 4);
+        } else {
+          cellSize = Math.max(1, parseInt(state.currentGridSize, 10) || 1);
+        }
+        cellSizeLabel = `${cellSize}`;
 
-        if (state.currentGridSize === 'auto' && state.ensembleGrid) {
-          stepX = state.ensembleGrid.step_x;
-          stepY = state.ensembleGrid.step_y;
-          cols = Math.max(1, state.ensembleGrid.cols);
-          rows = Math.max(1, state.ensembleGrid.rows);
-          offsetX = state.ensembleGrid.offset_x || 0;
-          offsetY = state.ensembleGrid.offset_y || 0;
-          cellSizeLabel = `${stepX.toFixed(1)}x${stepY.toFixed(1)}`;
+        cols = Math.max(1, Math.round(srcW / cellSize));
+        rows = Math.max(1, Math.round(srcH / cellSize));
+        stepX = srcW / cols;
+        stepY = srcH / rows;
+      }
 
-          spriteCanvas.width = cols;
-          spriteCanvas.height = rows;
-          spriteCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
-          spriteImgData = spriteCtx.createImageData(cols, rows);
-          spriteBytes = spriteImgData.data;
+      // 2. TÁI TẠO SPRITE: Ưu tiên Backend Rust Engine (/api/pixel/fix) chuẩn Pixel Art Fixer
+      let spriteCanvas = null;
+      let usedRustReconstruct = false;
 
-          // Hướng A: Tái tạo Native Pixel Art bằng WASM Reconstruction Engine
-          if (wasmModule && wasmModule.reconstruct_native_sprite) {
-            try {
-              const reconRes = wasmModule.reconstruct_native_sprite(
-                srcBytes, srcW, srcH, stepX, stepY, cols, rows, false
-              );
-              if (reconRes && reconRes.width === cols && reconRes.height === rows && reconRes.rgba) {
-                spriteBytes.set(reconRes.rgba);
-                usedWasmReconstruct = true;
-                console.log(`✨ [WASM Native Reconstruction (Direction A)] Tái tạo hoàn hảo ${cols}x${rows} sprite pixel!`);
-              }
-            } catch (err) {
-              console.warn('WASM reconstruct_native_sprite error, fallback to client sampling:', err);
-            }
+      const autoPal = state.antiAliasing === 'ultra';
+      const backendResult = await fetchBackendReconstruct(state.sourceCanvas, cols, rows, stepX, stepY, autoPal);
+
+      if (backendResult && backendResult.canvas) {
+        spriteCanvas = backendResult.canvas;
+        cols = backendResult.cols;
+        rows = backendResult.rows;
+        usedRustReconstruct = true;
+        console.log(`🦀 [Rust Native Reconstruct]: Tái tạo thành công ${cols}x${rows} bằng two_stage_pack (Pixel Art Fixer Core).`);
+      } else {
+        // Fallback Client nếu Backend ngắt kết nối
+        console.warn('⚠️ [Client Fallback Reconstruct]: Đang lấy mẫu màu bằng Canvas 2D.');
+        spriteCanvas = document.createElement('canvas');
+        spriteCanvas.width = cols;
+        spriteCanvas.height = rows;
+        const fallbackCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
+        const fallbackImgData = fallbackCtx.createImageData(cols, rows);
+        const fallbackBytes = fallbackImgData.data;
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const cellColor = sampleCellColor(
+              srcBytes, srcW, srcH,
+              offsetX + c * stepX, offsetY + r * stepY, stepX, stepY,
+              state.antiAliasing
+            );
+            const idx = (r * cols + c) * 4;
+            fallbackBytes[idx] = cellColor[0];
+            fallbackBytes[idx + 1] = cellColor[1];
+            fallbackBytes[idx + 2] = cellColor[2];
+            fallbackBytes[idx + 3] = cellColor[3];
           }
         }
+        fallbackCtx.putImageData(fallbackImgData, 0, 0);
+      }
 
-        if (!usedWasmReconstruct) {
-          let cellSize = 1;
-          if (state.currentGridSize === 'auto') {
-            cellSize = state.detectedGridSize || 1;
-          } else if (state.currentGridSize === 'custom') {
-            cellSize = Math.max(1, parseInt(state.customGridSize, 10) || 4);
-          } else {
-            cellSize = Math.max(1, parseInt(state.currentGridSize, 10) || 1);
-          }
-          cellSizeLabel = `${cellSize}`;
+      // 3. KIỂM TRA BỘ LỌC BỔ TRỢ (CHỈ CHẠY KHI NGƯỜI DÙNG BẬT)
+      // Nếu giữ nguyên thiết lập chuẩn (Keep background, No outline, Palette original):
+      // => KHÔNG CAN THIỆP BẤT KỲ PIXEL NÀO, GIỮ NGUYÊN 100% BIT-EXACT TỪ PIXEL ART FIXER RUST CORE
+      const hasPostProcessing = (
+        state.transparencyMode !== 'keep' ||
+        state.maxColors !== 'all' ||
+        (state.paletteKey !== 'original' && RETRO_PALETTES[state.paletteKey]?.colors) ||
+        state.outlineStyle !== 'none'
+      );
 
-          cols = Math.max(1, Math.round(srcW / cellSize));
-          rows = Math.max(1, Math.round(srcH / cellSize));
-          stepX = srcW / cols;
-          stepY = srcH / rows;
+      if (hasPostProcessing) {
+        const spriteCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
+        const spriteImgData = spriteCtx.getImageData(0, 0, cols, rows);
+        const spriteBytes = spriteImgData.data;
 
-          spriteCanvas.width = cols;
-          spriteCanvas.height = rows;
-          spriteCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
-          spriteImgData = spriteCtx.createImageData(cols, rows);
-          spriteBytes = spriteImgData.data;
-
-          // Lấy mẫu ô pixel từ ảnh gốc xuống kích thước cols x rows theo ô lưới đã dò
-          for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-              const cellColor = sampleCellColor(
-                srcBytes, srcW, srcH,
-                offsetX + c * stepX, offsetY + r * stepY, stepX, stepY,
-                state.antiAliasing
-              );
-              const idx = (r * cols + c) * 4;
-              spriteBytes[idx] = cellColor[0];
-              spriteBytes[idx + 1] = cellColor[1];
-              spriteBytes[idx + 2] = cellColor[2];
-              spriteBytes[idx + 3] = cellColor[3];
-            }
-          }
-        }
-
-        // 2. Xóa nền thông minh với Boundary BFS
+        // A. Xóa nền thông minh với Boundary BFS
         if (state.transparencyMode !== 'keep') {
           let targetBg = state.customBgColor;
           if (state.transparencyMode === 'auto') {
@@ -765,10 +832,8 @@
           const tolDist = (state.tolerance / 100) * 441.67;
 
           if (state.bgScope === 'boundary') {
-            // BFS tràn từ viền mép ngoài vào trong (Bảo vệ mắt & quần áo trắng)
             removeBackgroundBFS(spriteBytes, cols, rows, targetBg, tolDist);
           } else {
-            // All: Xóa mọi pixel khớp màu
             for (let i = 0; i < cols * rows; i++) {
               const idx = i * 4;
               if (spriteBytes[idx + 3] === 0) continue;
@@ -783,7 +848,7 @@
           }
         }
 
-        // 4. Giới hạn số lượng màu (Max Colors) nếu có
+        // B. Giới hạn số lượng màu (Max Colors)
         if (state.maxColors !== 'all') {
           const maxC = parseInt(state.maxColors, 10);
           if (maxC > 0) {
@@ -791,7 +856,7 @@
           }
         }
 
-        // 5. Ép bảng màu Retro & Dithering
+        // C. Ép bảng màu Retro & Dithering
         const palette = RETRO_PALETTES[state.paletteKey];
         if (palette && palette.colors) {
           const palColors = palette.colors;
@@ -871,7 +936,7 @@
           }
         }
 
-        // 6. Viền Outline
+        // D. Viền Outline
         if (state.outlineStyle !== 'none') {
           const outlineRGB = hexToRgb(state.outlineColor);
           const mask = new Uint8Array(cols * rows);
@@ -916,13 +981,14 @@
         }
 
         spriteCtx.putImageData(spriteImgData, 0, 0);
+      }
 
-        // 7. Auto Trim
-        let finalCanvas = spriteCanvas;
-        if (state.autoTrim) {
-          const trimmed = autoTrimCanvas(spriteCanvas);
-          if (trimmed) finalCanvas = trimmed;
-        }
+      // 4. Auto Trim (Chỉ chạy khi người dùng chủ động tích chọn)
+      let finalCanvas = spriteCanvas;
+      if (state.autoTrim) {
+        const trimmed = autoTrimCanvas(spriteCanvas);
+        if (trimmed) finalCanvas = trimmed;
+      }
 
         // 8. Kích thước Output cuối cùng (Quy trình chuẩn: Grid xong đến Output)
         // Sprite đã được bóc tách và làm sạch theo chuẩn ô lưới ở các bước trên.
@@ -956,7 +1022,6 @@
         hideProgress();
         showError('Đã xảy ra lỗi trong quá trình xử lý pixel: ' + err.message);
       }
-    }, 30);
   }
 
   // =========================================================================
@@ -1271,10 +1336,10 @@
         state.antiAliasing = 'sharp';
         state.paletteKey = 'original';
         state.dithering = 'none';
-        state.transparencyMode = 'auto';
+        state.transparencyMode = 'keep';
         state.bgScope = 'boundary';
         state.outlineStyle = 'none';
-        state.autoTrim = true;
+        state.autoTrim = false;
         state.maxColors = 'all';
         break;
     }
@@ -1389,6 +1454,7 @@
         if (resultCard) resultCard.classList.remove('hidden');
 
         runPixelRefineProcess();
+        triggerBackendGridDetect(file);
       };
       img.src = e.target.result;
     };
@@ -1845,75 +1911,22 @@
   }
 
   /**
-   * Khởi tạo và nạp động module WebAssembly
+   * Kiểm tra kết nối với Backend Rust Microservice (worker-pixelfixer)
    */
-  async function initPixelWasm() {
+  async function checkBackendEngine() {
     const statusEl = document.getElementById('wasm-engine-status');
     try {
-      const v = '3.7.0';
-      // 1. Tải trước file nhị phân .wasm dưới dạng ArrayBuffer để tránh hoàn toàn lỗi instantiateStreaming / MIME-Type trên các trình duyệt
-      let wasmBytes = null;
-      try {
-        const wasmRes = await fetch(`/static/wasm/pixel_wasm_bg.wasm?v=${v}`);
-        if (wasmRes.ok) {
-          wasmBytes = await wasmRes.arrayBuffer();
-        }
-      } catch (fetchErr) {
-        console.warn('Không thể fetch wasm qua /static/wasm, thử ./wasm:', fetchErr);
-        try {
-          const wasmRes2 = await fetch(`./wasm/pixel_wasm_bg.wasm?v=${v}`);
-          if (wasmRes2.ok) {
-            wasmBytes = await wasmRes2.arrayBuffer();
-          }
-        } catch (_) {}
-      }
-
-      let wasmImport;
-      try {
-        wasmImport = await import(`/static/wasm/pixel_wasm.js?v=${v}`);
-      } catch (_) {
-        wasmImport = await import(`./wasm/pixel_wasm.js?v=${v}`);
-      }
-
-      if (wasmImport && wasmImport.default) {
-        if (wasmBytes) {
-          await wasmImport.default({ module_or_path: wasmBytes });
-        } else {
-          await wasmImport.default();
-        }
-        wasmModule = wasmImport;
-        console.log('🦀 [WASM Engine] Omniverse Pixel WASM Module loaded successfully!');
-        if (statusEl) {
-          statusEl.textContent = 'WASM Ready ⚡';
-          statusEl.style.color = '#34d399';
-          statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
-          statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-          statusEl.title = 'WebAssembly ACF engine đang kích hoạt cho nhận diện lưới siêu tốc';
-        }
-        if (state.sourceCanvas) {
-          const ctx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
-          const imgData = ctx.getImageData(0, 0, state.originalWidth, state.originalHeight);
-          const wasmCands = analyzeGridCandidates(imgData);
-          if (wasmCands && wasmCands.length > 0) {
-            state.gridCandidates = wasmCands;
-            state.detectedGridSize = wasmCands[0].size || 1;
-            renderGridCandidates(wasmCands);
-            if (selectGridSize && state.currentGridSize === 'auto') {
-              const autoOpt = selectGridSize.querySelector('option[value="auto"]');
-              if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đoán: ${state.detectedGridSize}x${state.detectedGridSize}px)`;
-            }
-          }
-          runPixelRefineProcess();
-        }
-      }
-    } catch (err) {
-      console.warn('⚠️ [WASM Engine] Không thể nạp WebAssembly, chuyển sang chế độ JS thuần:', err);
+      const resp = await fetch('/api/pixel/detect', { method: 'OPTIONS' }).catch(() => null);
       if (statusEl) {
-        statusEl.textContent = 'JS Fallback ⚠️';
-        statusEl.style.color = '#fbbf24';
-        statusEl.style.background = 'rgba(245, 158, 11, 0.15)';
-        statusEl.style.border = '1px solid rgba(245, 158, 11, 0.3)';
-        statusEl.title = `Lỗi nạp WASM: ${err.message || err}`;
+        statusEl.textContent = 'Backend Rust ⚡';
+        statusEl.style.color = '#34d399';
+        statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
+        statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+        statusEl.title = 'Pixel Art Fixer Rust Backend (Rayon đa luồng) sẵn sàng phục vụ';
+      }
+    } catch (_) {
+      if (statusEl) {
+        statusEl.textContent = 'Client Engine';
       }
     }
   }
@@ -1921,7 +1934,7 @@
   document.addEventListener('DOMContentLoaded', async () => {
     initDOMElements();
     setupEventListeners();
-    await initPixelWasm();
+    await checkBackendEngine();
     // Tự động nạp sprite mẫu để Visualizer (trái) và Settings (phải) hiển thị sống động ngay khi mở tab
     if (!state.sourceCanvas) {
       loadSamplePixelSprite();

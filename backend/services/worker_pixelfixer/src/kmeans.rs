@@ -1,5 +1,8 @@
-//! Deterministic k-means++ used by the fusion evidence and reconstruction.
-//! Faithful-criteria replacement with a fixed-seed RNG.
+//! Deterministic k-means++ used by the fusion evidence (quantize.py) and
+//! reconsearch (_quantize). cv2.kmeans depends on OpenCV's global RNG, so
+//! bit-parity is impossible; this is a faithful-criteria replacement with
+//! a fixed-seed RNG. Downstream scores are aggregates over many steps and
+//! are robust to the small clustering differences.
 
 /// xorshift64* — deterministic, decent quality, no deps.
 pub struct Rng(u64);
@@ -165,13 +168,61 @@ pub fn kmeans(
     best.unwrap().0
 }
 
+/// quantize.py kmeans_quantize: k=16 on RGB u8, returns quantized RGBA.
+pub fn kmeans_quantize_rgba(rgba: &[u8], w: usize, h: usize, k: usize) -> Vec<u8> {
+    let n = w * h;
+    let sample_idx = even_sample(n, 60_000);
+    let sample: Vec<[f32; 3]> = sample_idx
+        .iter()
+        .map(|&i| {
+            let p = i * 4;
+            [rgba[p] as f32, rgba[p + 1] as f32, rgba[p + 2] as f32]
+        })
+        .collect();
+    // k_eff = min(k, unique sample colors)
+    let mut uniq: Vec<[u8; 3]> = sample_idx
+        .iter()
+        .map(|&i| {
+            let p = i * 4;
+            [rgba[p], rgba[p + 1], rgba[p + 2]]
+        })
+        .collect();
+    uniq.sort_unstable();
+    uniq.dedup();
+    let k_eff = k.min(uniq.len());
+    if k_eff <= 1 {
+        return rgba.to_vec();
+    }
+    let centers = kmeans(&sample, k_eff, 12, 0.5, 2, 42);
+
+    let mut out = rgba.to_vec();
+    for i in 0..n {
+        let p = i * 4;
+        let px = [rgba[p] as f32, rgba[p + 1] as f32, rgba[p + 2] as f32];
+        let mut best = 0usize;
+        let mut bd = f64::INFINITY;
+        for (ci, c) in centers.iter().enumerate() {
+            let d = dist2(&px, c);
+            if d < bd {
+                bd = d;
+                best = ci;
+            }
+        }
+        for c in 0..3 {
+            // np.rint = banker's
+            out[p + c] = (centers[best][c] as f64).round_ties_even().clamp(0.0, 255.0) as u8;
+        }
+    }
+    out
+}
+
 /// Adaptive structure-only K from coarse (4-bit) colour complexity of the
 /// opaque pixels; mirrors detector.reconstruct.adaptive_k.
-pub fn adaptive_k(rgba: &[u8], _w: usize, _h: usize, lo: usize, hi: usize, share: f64) -> usize {
-    let total_pixels = rgba.len() / 4;
+pub fn adaptive_k(rgba: &[u8], w: usize, h: usize, lo: usize, hi: usize,
+                  share: f64) -> usize {
     let mut cnt = vec![0u32; 4096];
     let mut total = 0u64;
-    for i in 0..total_pixels {
+    for i in 0..w * h {
         if rgba[i * 4 + 3] > 0 {
             let key = (((rgba[i * 4] >> 4) as usize) << 8)
                 | (((rgba[i * 4 + 1] >> 4) as usize) << 4)
@@ -190,6 +241,7 @@ pub fn adaptive_k(rgba: &[u8], _w: usize, _h: usize, lo: usize, hi: usize, share
 /// k-means (sample for centroids, then assign every pixel) -> (labels, K).
 /// Used by two-stage packing for the STRUCTURE quantisation.
 pub fn kmeans_labels(rgba: &[u8], w: usize, h: usize, k: usize) -> (Vec<u32>, usize) {
+    use rayon::prelude::*;
     let n = w * h;
     let opaque: Vec<usize> = (0..n).filter(|&i| rgba[i * 4 + 3] > 0).collect();
     let src: Vec<usize> = if opaque.is_empty() { (0..n).collect() } else { opaque };
@@ -205,6 +257,7 @@ pub fn kmeans_labels(rgba: &[u8], w: usize, h: usize, k: usize) -> (Vec<u32>, us
     let centers = kmeans(&sample, k_eff, 15, 0.5, 1, 42);
     let kc = centers.len();
     let labels: Vec<u32> = (0..n)
+        .into_par_iter()
         .map(|i| {
             let p = [rgba[i * 4] as f32, rgba[i * 4 + 1] as f32, rgba[i * 4 + 2] as f32];
             let mut best = 0u32;

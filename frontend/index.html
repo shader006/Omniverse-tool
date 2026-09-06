@@ -979,7 +979,7 @@
                       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18M15 3v18"></path></svg>
                       <span>1. Kích Thước Lưới Pixel (Bóc Tách Sprite Gốc):</span>
                     </label>
-                    <span id="wasm-engine-status" class="pixel-tag" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);">Đang nạp WASM...</span>
+                    <span id="wasm-engine-status" class="pixel-tag" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Backend Rust Core ⚡</span>
                   </div>
                   <select id="pixel-grid-select" class="form-select">
                     <option value="auto" selected>⚡ Tự động nhận diện (Auto Grid)</option>
@@ -1084,9 +1084,9 @@
                     <span>Xử lý phông nền:</span>
                   </label>
                   <select id="pixel-bg-mode-select" class="form-select">
-                    <option value="auto" selected>🏁 Tự động tách phông biên (BFS)</option>
+                    <option value="keep" selected>Giữ nguyên nền (Chuẩn Pixel Art Fixer)</option>
+                    <option value="auto">🏁 Tự động tách phông biên (BFS)</option>
                     <option value="custom">🎯 Chấm màu hút phông (Eyedropper)</option>
-                    <option value="keep">Giữ nguyên nền (Không xóa)</option>
                   </select>
                   <div id="pixel-custom-color-wrapper" class="bg-color-picker-wrapper hidden" style="margin-top: 8px;">
                     <input type="color" id="pixel-custom-color-input" class="bg-custom-color-input" value="#ffffff" title="Chọn màu nền muốn xóa">
@@ -1137,7 +1137,7 @@
               <!-- Checkbox Auto Trim -->
               <div class="option-checkbox-row" style="margin-top: 10px;">
                 <label class="custom-checkbox">
-                  <input type="checkbox" id="pixel-auto-trim" checked>
+                  <input type="checkbox" id="pixel-auto-trim">
                   <span class="checkbox-box"></span>
                   <span class="checkbox-label">✂️ Tự động cắt xén lề thừa (Auto Trim • Thu gọn sprite ôm sát nhân vật)</span>
                 </label>

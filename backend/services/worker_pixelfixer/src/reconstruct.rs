@@ -1,11 +1,10 @@
 //! Reconstruction: detected grid -> native-resolution pixel art.
-//! Mirrors detector/reconstruct.py (converted to single-threaded Rust for WASM).
+//! Mirrors detector/reconstruct.py (color="mode" path; palette_snap is not
+//! ported - the server API default is palette_snap=False).
 
-use super::kmeans;
-use super::wu;
+use rayon::prelude::*;
 
 /// python/np.round banker's rounding
-#[inline]
 fn pyround(v: f64) -> f64 {
     v.round_ties_even()
 }
@@ -23,35 +22,32 @@ pub fn axis_profile(rgba: &[u8], w: usize, h: usize, axis: usize) -> Vec<f64> {
             * a;
     }
     if axis == 0 {
-        let mut acc = vec![0f64; w.saturating_sub(1)];
-        if w > 1 {
-            for y in 0..h {
-                let r = y * w;
-                for x in 0..w - 1 {
-                    acc[x] += (g[r + x + 1] - g[r + x]).abs() as f64;
-                }
+        // diff along x, sum over rows (f64 accumulate, f32-rounded like numpy)
+        let mut acc = vec![0f64; w - 1];
+        for y in 0..h {
+            let r = y * w;
+            for x in 0..w - 1 {
+                acc[x] += (g[r + x + 1] - g[r + x]).abs() as f64;
             }
         }
         acc.iter().map(|&v| v as f32 as f64).collect()
     } else {
-        let mut acc = vec![0f64; h.saturating_sub(1)];
-        if h > 1 {
-            for y in 0..h - 1 {
-                let r0 = y * w;
-                let r1 = (y + 1) * w;
-                let mut s = 0f64;
-                for x in 0..w {
-                    s += (g[r1 + x] - g[r0 + x]).abs() as f64;
-                }
-                acc[y] = s as f32 as f64;
+        let mut acc = vec![0f64; h - 1];
+        for y in 0..h - 1 {
+            let r0 = y * w;
+            let r1 = (y + 1) * w;
+            let mut s = 0f64;
+            for x in 0..w {
+                s += (g[r1 + x] - g[r0 + x]).abs() as f64;
             }
+            acc[y] = s as f32 as f64;
         }
         acc
     }
 }
 
 /// Integral images for within-cell variance of arbitrary cut sets.
-pub struct Sat {
+struct Sat {
     s1: Vec<[f64; 3]>, // (h+1)*(w+1)
     s2: Vec<f64>,
     w: usize,
@@ -59,7 +55,7 @@ pub struct Sat {
 }
 
 impl Sat {
-    pub fn new(rgba: &[u8], w: usize, h: usize) -> Sat {
+    fn new(rgba: &[u8], w: usize, h: usize) -> Sat {
         let stride = w + 1;
         let mut s1 = vec![[0f64; 3]; (h + 1) * stride];
         let mut s2 = vec![0f64; (h + 1) * stride];
@@ -75,7 +71,7 @@ impl Sat {
                 row1[1] += g;
                 row1[2] += b;
                 row2 += r * r + g * g + b * b;
-                let up = y * stride + (x + 1);
+                let up = (y) * stride + (x + 1);
                 let cur = (y + 1) * stride + (x + 1);
                 s1[cur] = [
                     s1[up][0] + row1[0],
@@ -88,13 +84,13 @@ impl Sat {
         Sat { s1, s2, w, h }
     }
 
-    pub fn cell_var(&self, xs: &[i64], ys: &[i64]) -> f64 {
+    fn cell_var(&self, xs: &[i64], ys: &[i64]) -> f64 {
         let stride = self.w + 1;
         let mut num = 0f64;
         let mut den = 0f64;
-        for yi in 0..ys.len().saturating_sub(1) {
+        for yi in 0..ys.len() - 1 {
             let (y0, y1) = (ys[yi] as usize, ys[yi + 1] as usize);
-            for xi in 0..xs.len().saturating_sub(1) {
+            for xi in 0..xs.len() - 1 {
                 let (x0, x1) = (xs[xi] as usize, xs[xi + 1] as usize);
                 let idx = |y: usize, x: usize| y * stride + x;
                 let a = idx(y0, x0);
@@ -135,7 +131,7 @@ fn phase_cuts(phase: f64, extent: usize, step: f64) -> Vec<i64> {
 }
 
 /// Grid phase minimizing within-cell variance (coarse 5x5 SAT sweep).
-pub fn best_phase(sat: &Sat, step_x: f64, step_y: f64) -> (f64, f64) {
+fn best_phase(sat: &Sat, step_x: f64, step_y: f64) -> (f64, f64) {
     let n = 5;
     let mut best = (0f64, 0f64, f64::INFINITY);
     for iy in 0..n {
@@ -160,7 +156,7 @@ pub fn comb_phase(profile: &[f64], step: f64) -> (f64, f64) {
         return (0.0, 0.0);
     }
     let n_ph = std::cmp::max(8, pyround(step * 4.0) as usize);
-    let kmax = ((n as f64 - 2.0) / step) as usize;
+    let kmax = ((n as f64 - 2.0) / step) as usize; // ks = 0..=kmax
     let mut resp = vec![0f64; n_ph];
     for b in 0..n_ph {
         let phase = b as f64 * (step / n_ph as f64);
@@ -199,7 +195,7 @@ pub fn comb_phase(profile: &[f64], step: f64) -> (f64, f64) {
 
 /// Exactly n_cells+1 cuts: lattice targets phase+k*step, interior cuts
 /// snapped to the local |d1| max, sliver-guarded (min gap 55% of step).
-pub fn snapped_cuts(profile: &[f64], step: f64, phase: f64, extent: usize, n_cells: usize) -> Vec<i64> {
+fn snapped_cuts(profile: &[f64], step: f64, phase: f64, extent: usize, n_cells: usize) -> Vec<i64> {
     let mut cuts = vec![0i64; n_cells + 1];
     cuts[n_cells] = extent as i64;
     let rad = std::cmp::max(1, pyround(step * 0.30) as i64);
@@ -251,6 +247,8 @@ pub fn snapped_cuts(profile: &[f64], step: f64, phase: f64, extent: usize, n_cel
     cuts
 }
 
+/// Bend global cut lines into per-band polylines.
+/// Returns (band_edges, cuts[n_bands][n_cuts] as f64).
 fn banded_cuts(
     rgba: &[u8],
     w: usize,
@@ -288,7 +286,9 @@ fn banded_cuts(
         .collect();
 
     let profs: Vec<Vec<f64>> = (0..n_bands)
+        .into_par_iter()
         .map(|b| {
+            // prof[c] = |d1| energy of a cut between positions c-1 and c
             let mut prof = vec![0f64; extent];
             if axis == 0 {
                 for y in edges[b]..edges[b + 1] {
@@ -309,6 +309,7 @@ fn banded_cuts(
                 }
             }
             if axis == 0 {
+                // f32-round the row-summed profile like numpy
                 for v in prof.iter_mut() {
                     *v = *v as f32 as f64;
                 }
@@ -366,6 +367,7 @@ fn banded_cuts(
     (edges, cuts)
 }
 
+/// searchsorted(a, v, side="right") - 1
 fn cell_of(a: &[f64], v: f64) -> i64 {
     let mut lo = 0usize;
     let mut hi = a.len();
@@ -380,6 +382,8 @@ fn cell_of(a: &[f64], v: f64) -> i64 {
     lo as i64 - 1
 }
 
+/// Per-pixel warped cell index along one axis from banded cut polylines.
+/// Returns (perp_len x extent) row-major.
 fn warped_index(
     bands: &[Vec<f64>],
     edges: &[usize],
@@ -402,9 +406,11 @@ fn warped_index(
     let centers: Vec<f64> = (0..n_b)
         .map(|i| (edges[i] + edges[i + 1]) as f64 / 2.0)
         .collect();
-    out.chunks_mut(extent).enumerate().for_each(|(r, orow)| {
+    out.par_chunks_mut(extent).enumerate().for_each(|(r, orow)| {
         let t = r as f64;
+        // continuous polyline positions at this scanline (monotone-forced)
         let mut line = vec![0f64; n_cuts];
+        // np.interp over band centers with clamped extrapolation
         let seg = if t <= centers[0] {
             0
         } else if t >= centers[n_b - 1] {
@@ -435,26 +441,9 @@ fn warped_index(
 }
 
 pub struct ReconOut {
-    pub rgba: Vec<u8>,
+    pub rgba: Vec<u8>, // ncx * ncy * 4
     pub cols: usize,
     pub rows: usize,
-}
-
-pub fn find_grid_phase(rgba: &[u8], w: usize, h: usize, step_x: f64, step_y: f64) -> (f64, f64) {
-    let mut prof_x = vec![0f64];
-    prof_x.extend(axis_profile(rgba, w, h, 0));
-    let mut prof_y = vec![0f64];
-    prof_y.extend(axis_profile(rgba, w, h, 1));
-
-    let (mut px, sx_str) = comb_phase(&prof_x, step_x);
-    let (mut py, sy_str) = comb_phase(&prof_y, step_y);
-    if sx_str.min(sy_str) < 1.35 {
-        let sat = Sat::new(rgba, w, h);
-        let bp = best_phase(&sat, step_x, step_y);
-        px = bp.0;
-        py = bp.1;
-    }
-    (px, py)
 }
 
 pub fn reconstruct(
@@ -470,6 +459,7 @@ pub fn reconstruct(
 ) -> ReconOut {
     let sat = Sat::new(rgba, w, h);
 
+    // profile[c] = |d1| energy of a cut between columns c-1 and c
     let mut prof_x = vec![0f64];
     prof_x.extend(axis_profile(rgba, w, h, 0));
     let mut prof_y = vec![0f64];
@@ -483,6 +473,7 @@ pub fn reconstruct(
         py = bp.1;
     }
 
+    // candidate cut sets: snapped / phase lattice / phase-0 lattice
     let flat_x = vec![0f64; prof_x.len()];
     let flat_y = vec![0f64; prof_y.len()];
     let cand_x = [
@@ -538,6 +529,7 @@ pub fn reconstruct(
         }
     }
 
+    // rgb in [0,1]
     let rgb: Vec<[f64; 3]> = (0..w * h)
         .map(|i| {
             let p = i * 4;
@@ -577,22 +569,31 @@ pub fn reconstruct(
         num / den.max(1e-12)
     };
 
-    let (x_edges, xs_b) = banded_cuts(rgba, w, h, &xs, step_x, 0);
-    let (y_edges, ys_b) = banded_cuts(rgba, w, h, &ys, step_y, 1);
-    if xs_b.len() > 1 || ys_b.len() > 1 {
-        let ixw = warped_index(&xs_b, &x_edges, h, w, ncx);
-        let iyw = warped_index(&ys_b, &y_edges, w, h, ncy);
-        let mut cell_w: Vec<i64> = Vec::with_capacity(w * h);
-        for y in 0..h {
-            for x in 0..w {
-                cell_w.push(iyw[x * h + y] * ncx as i64 + ixw[y * w + x]);
+    // banded (warped) refinement, adopted only when variance drops >= 0.5%
+    {
+        let ((x_edges, xs_b), (y_edges, ys_b)) = rayon::join(
+            || banded_cuts(rgba, w, h, &xs, step_x, 0),
+            || banded_cuts(rgba, w, h, &ys, step_y, 1),
+        );
+        if xs_b.len() > 1 || ys_b.len() > 1 {
+            let (ixw, iyw) = rayon::join(
+                || warped_index(&xs_b, &x_edges, h, w, ncx),
+                || warped_index(&ys_b, &y_edges, w, h, ncy),
+            );
+            // iyw is (w, h) row-major; transpose access
+            let mut cell_w: Vec<i64> = Vec::with_capacity(w * h);
+            for y in 0..h {
+                for x in 0..w {
+                    cell_w.push(iyw[x * h + y] * ncx as i64 + ixw[y * w + x]);
+                }
             }
-        }
-        if pooled_var(&cell_w) < 0.995 * pooled_var(&cell) {
-            cell = cell_w;
+            if pooled_var(&cell_w) < 0.995 * pooled_var(&cell) {
+                cell = cell_w;
+            }
         }
     }
 
+    // center weights: triangular within each straight-cut cell span
     let mut wx = vec![0f64; w];
     for x in 0..w {
         let i = ix[x] as usize;
@@ -629,6 +630,7 @@ pub fn reconstruct(
         }
     }
 
+    // ---- 5-bit binned local mode with center-weighted votes
     let key: Vec<u32> = (0..w * h)
         .map(|i| {
             let p = i * 4;
@@ -637,6 +639,7 @@ pub fn reconstruct(
                 | ((rgba[p + 2] as u32) >> 3)
         })
         .collect();
+    // global per-bin mean colors
     let mut gcnt = vec![0f64; 32768];
     let mut gmean = vec![[0f64; 3]; 32768];
     for i in 0..w * h {
@@ -653,6 +656,7 @@ pub fn reconstruct(
         }
     }
 
+    // per-cell winning bin: max weighted vote, ties -> larger bin key
     let binned_mode = |sel: &dyn Fn(usize) -> bool| -> Vec<Option<u32>> {
         use std::collections::HashMap;
         let mut votes: HashMap<u64, f64> = HashMap::new();
@@ -664,13 +668,13 @@ pub fn reconstruct(
         }
         let mut win: Vec<Option<(f64, u32)>> = vec![None; n];
         let mut comps: Vec<(&u64, &f64)> = votes.iter().collect();
-        comps.sort_by_key(|(c, _)| **c);
+        comps.sort_by_key(|(c, _)| **c); // ascending comp = lexsort tiebreak
         for (&comp, &v) in comps {
             let ci = (comp / 32768) as usize;
             let k = (comp % 32768) as u32;
             match win[ci] {
                 Some((bv, _)) if v < bv => {}
-                Some((bv, _)) if v == bv => win[ci] = Some((v, k)),
+                Some((bv, _)) if v == bv => win[ci] = Some((v, k)), // last wins
                 _ if win[ci].is_some() && win[ci].unwrap().0 > v => {}
                 _ => win[ci] = Some((v, k)),
             }
@@ -732,6 +736,10 @@ pub fn reconstruct(
         }
     }
 
+    // OPTIMAL PALETTE: snap the (structurally correct but color-muddy) mode
+    // output onto a small Wu palette. K is detected on this already-denoised
+    // 1x output (reliable), so soft AA boundary cells collapse onto real
+    // pixel-art colors: crisp detail + a flat palette. See detector/wu.py.
     if auto_palette {
         let wpx: Vec<[u8; 3]> = (0..n)
             .map(|ci| {
@@ -742,13 +750,14 @@ pub fn reconstruct(
                 ]
             })
             .collect();
-        let k = wu::elbow_color_count(&wpx, 64);
-        let (pal, labels) = wu::quantize(&wpx, k);
+        let k = crate::wu::elbow_color_count(&wpx, 64);
+        let (pal, labels) = crate::wu::quantize(&wpx, k);
         for ci in 0..n {
             out[ci] = pal[labels[ci]];
         }
     }
 
+    // alpha: majority of pixels with a > 127
     let mut asum = vec![0f64; n];
     for i in 0..w * h {
         if rgba[i * 4 + 3] > 127 {
@@ -759,6 +768,7 @@ pub fn reconstruct(
     let mut out_rgba = vec![0u8; n * 4];
     for ci in 0..n {
         for ch in 0..3 {
+            // np.rint = banker's rounding
             out_rgba[ci * 4 + ch] = pyround(out[ci][ch] * 255.0).clamp(0.0, 255.0) as u8;
         }
         out_rgba[ci * 4 + 3] = if asum[ci] / cnt[ci] > 0.5 { 255 } else { 0 };
@@ -766,20 +776,21 @@ pub fn reconstruct(
     ReconOut { rgba: out_rgba, cols: ncx, rows: ncy }
 }
 
-pub fn two_stage_pack(
-    rgba: &[u8],
-    w: usize,
-    h: usize,
-    cols: usize,
-    rows: usize,
-    k_colors: usize,
-) -> ReconOut {
+/// Two-stage packing on a regular even grid (mirrors
+/// detector.reconstruct.two_stage_pack).
+///
+/// Stage 1 (STRUCTURE): quantise to a small palette (adaptive K) and let each
+/// cell vote among the clean quantised labels -> crisp placement.
+/// Stage 2 (COLOUR): colour each cell from the ORIGINAL pixels carrying the
+/// winning label -> crisp lines AND accurate, un-clamped colours.
+pub fn two_stage_pack(rgba: &[u8], w: usize, h: usize, cols: usize, rows: usize,
+                      k_colors: usize) -> ReconOut {
     let k_req = if k_colors > 0 {
         k_colors
     } else {
-        kmeans::adaptive_k(rgba, w, h, 16, 48, 0.003)
+        crate::kmeans::adaptive_k(rgba, w, h, 16, 48, 0.003)
     };
-    let (labels, kc) = kmeans::kmeans_labels(rgba, w, h, k_req);
+    let (labels, kc) = crate::kmeans::kmeans_labels(rgba, w, h, k_req);
     let kc = kc.max(1);
     let n = cols * rows;
     let cw = w as f64 / cols as f64;
@@ -802,6 +813,7 @@ pub fn two_stage_pack(
         wys[y] = 1.0 - 2.0 * (fy - 0.5).abs();
     }
 
+    // stage 1: winning label per cell (centre-weighted vote over labels)
     let mut wsum = vec![0f64; n * kc];
     for y in 0..h {
         for x in 0..w {
@@ -825,6 +837,7 @@ pub fn two_stage_pack(
         win[c] = bi as u32;
     }
 
+    // stage 2: colour from original pixels carrying the winning label
     let mut csum = vec![[0f64; 3]; n];
     let mut wden = vec![0f64; n];
     let mut selcnt = vec![0f64; n];
@@ -873,4 +886,15 @@ pub fn two_stage_pack(
         out_rgba[c * 4 + 3] = if asum[c] / cnt[c].max(1.0) > 0.5 { 255 } else { 0 };
     }
     ReconOut { rgba: out_rgba, cols, rows }
+}
+
+/// Find grid phase (offset_x, offset_y) using comb phase of edge luminance profiles.
+pub fn find_grid_phase(rgba: &[u8], w: usize, h: usize, step_x: f64, step_y: f64) -> (f64, f64) {
+    let mut prof_x = vec![0f64];
+    prof_x.extend(axis_profile(rgba, w, h, 0));
+    let mut prof_y = vec![0f64];
+    prof_y.extend(axis_profile(rgba, w, h, 1));
+    let (px, _) = comb_phase(&prof_x, step_x);
+    let (py, _) = comb_phase(&prof_y, step_y);
+    (px, py)
 }

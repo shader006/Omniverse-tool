@@ -4,8 +4,9 @@
 //! Feature maps are pre-oriented: every map is row-major (lines x extent)
 //! with the scan axis horizontal, so the y-axis maps arrive transposed.
 
-use super::acf::*;
-use super::gray::*;
+use crate::acf::*;
+use crate::gray::*;
+use rayon::prelude::*;
 use rustfft::FftPlanner;
 
 /// One pre-oriented feature map with its fusion weight.
@@ -37,6 +38,8 @@ pub fn axis_estimate(
     let mut raw = vec![0f64; ns];
     let mut ac_sum = vec![0f64; extent];
 
+    // evaluate every (map, band) task in parallel; accumulate in the
+    // reference order afterwards so float sums stay bit-identical
     let mut tasks: Vec<(usize, usize, f64)> = Vec::new();
     for (mi, m) in maps.iter().enumerate() {
         for (band, bw) in [(12usize, 0.5f64), (BAND, 1.0), (m.lines, 1.0)] {
@@ -44,14 +47,14 @@ pub fn axis_estimate(
         }
     }
     let results: Vec<(Vec<f64>, Vec<f64>)> = tasks
-        .iter()
+        .par_iter()
         .map(|&(mi, band, _)| {
             let m = &maps[mi];
             let mut local = FftPlanner::new();
             let prof = band_profiles(&m.data, m.lines, m.extent, band);
             let ac = band_acf(&prof, &mut local);
             let combs: Vec<f64> = steps
-                .iter()
+                .par_iter()
                 .map(|&s| comb_score(&ac, s, 24, 12.0))
                 .collect();
             (ac, combs)
@@ -102,7 +105,7 @@ pub fn axis_estimate(
             loc.push(i);
         }
     }
-    loc.sort_by(|&a, &b| sel[b].partial_cmp(&sel[a]).unwrap_or(std::cmp::Ordering::Equal));
+    loc.sort_by(|&a, &b| sel[b].partial_cmp(&sel[a]).unwrap());
     loc.truncate(8);
     let mut cands: Vec<(f64, f64)> = Vec::new();
     for &i in &loc {
@@ -174,23 +177,27 @@ pub fn local_count(
     maps: &[FeatMap],
     extent: usize,
     s0: f64,
-    _planner: &mut FftPlanner<f64>,
+    planner: &mut FftPlanner<f64>,
 ) -> f64 {
     let uniform = extent as f64 / s0;
     let nw = (extent as f64 / (14.0 * s0)).clamp(1.0, 8.0) as usize;
     if nw < 2 || uniform < 96.0 {
         return uniform;
     }
+    // np.linspace(0, extent, nw+1).astype(int)
     let edges: Vec<usize> = (0..=nw)
         .map(|i| (extent as f64 * i as f64 / nw as f64) as usize)
         .collect();
+    let _ = planner;
     let counts: Vec<f64> = (0..nw)
+        .into_par_iter()
         .map(|wdw| {
             let (a, b) = (edges[wdw], edges[wdw + 1]);
             let wlen = b - a;
             let mut local = FftPlanner::new();
             let mut ac_loc = vec![0f64; wlen];
             for m in maps {
+                // column slice [a, b) of the pre-oriented map
                 let mut sl = vec![0f32; m.lines * wlen];
                 for y in 0..m.lines {
                     let src = y * m.extent + a;
@@ -206,9 +213,9 @@ pub fn local_count(
             }
             let scan: Vec<f64> = arange(0.85, 1.18, 0.01).iter().map(|f| s0 * f).collect();
             let sc: Vec<f64> = scan.iter().map(|&s| comb_score(&ac_loc, s, 12, 8.0)).collect();
-            let s_glob: f64 = comb_score(&ac_loc, s0, 12, 8.0);
-            let sc_max: f64 = sc.iter().cloned().fold(f64::MIN, f64::max);
-            let s_i: f64 = if sc_max > (1.6f64 * s_glob.max(0.0f64)).max(0.02f64) {
+            let s_glob = comb_score(&ac_loc, s0, 12, 8.0);
+            let sc_max = sc.iter().cloned().fold(f64::MIN, f64::max);
+            let s_i = if sc_max > (1.6 * s_glob.max(0.0)).max(0.02) {
                 let mut i = 0;
                 for j in 0..sc.len() {
                     if sc[j] > sc[i] {
@@ -271,10 +278,14 @@ pub struct Pre {
 pub fn prepare(rgba: &[u8], w: usize, h: usize) -> Pre {
     let g = to_gray(rgba, w, h);
     let gq = median_quant(&g, w, h);
-    let maps_x = build_maps(&g, &gq, w, h, false);
-    let maps_y = build_maps(&g, &gq, w, h, true);
-    let ex = axis_estimate(&maps_x, w, &mut FftPlanner::new());
-    let ey = axis_estimate(&maps_y, h, &mut FftPlanner::new());
+    let (maps_x, maps_y) = rayon::join(
+        || build_maps(&g, &gq, w, h, false),
+        || build_maps(&g, &gq, w, h, true),
+    );
+    let (ex, ey) = rayon::join(
+        || axis_estimate(&maps_x, w, &mut FftPlanner::new()),
+        || axis_estimate(&maps_y, h, &mut FftPlanner::new()),
+    );
     Pre { maps_x, maps_y, ex, ey }
 }
 
@@ -373,11 +384,15 @@ pub fn detect_from_estimates(
         }
     }
 
-    let n_cols = local_count(maps_x, w, sx, planner);
-    let n_rows = local_count(maps_y, h, sy, planner);
+    // drift-aware counting
+    let _ = planner;
+    let (n_cols, n_rows) = rayon::join(
+        || local_count(maps_x, w, sx, &mut FftPlanner::new()),
+        || local_count(maps_y, h, sy, &mut FftPlanner::new()),
+    );
 
     let mut cands: Vec<(f64, f64)> = cx.iter().chain(cy.iter()).cloned().collect();
-    cands.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    cands.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     cands.truncate(8);
 
     Detection {

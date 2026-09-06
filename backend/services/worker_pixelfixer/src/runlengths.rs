@@ -1,5 +1,11 @@
 //! Grid detection from boundary-run statistics + robust soft-GCD lattice fit.
-//! Mirrors detector/runlengths.py (converted for single-threaded WASM).
+//! Mirrors detector/runlengths.py exactly (see that file for the theory).
+//!
+//! Parallelism note: rayon is used only as ordered map -> sequential reduce,
+//! so every float accumulation happens in the reference order and results
+//! stay bit-identical to the single-threaded path.
+
+use rayon::prelude::*;
 
 pub const S_MIN: f64 = 2.05;
 pub const S_MAX: f64 = 26.0;
@@ -14,7 +20,7 @@ pub const TILINGS: [(usize, usize); 3] = [(3, 3), (5, 5), (1, 8)];
 /// 3x3 median blur of one u8 channel, border replicate (cv2.medianBlur).
 fn median3_channel(src: &[u8], w: usize, h: usize) -> Vec<u8> {
     let mut out = vec![0u8; w * h];
-    out.chunks_mut(w).enumerate().for_each(|(y, row)| {
+    out.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
         let mut buf = [0u8; 9];
         for x in 0..w {
             let mut k = 0;
@@ -37,6 +43,7 @@ fn median3_channel(src: &[u8], w: usize, h: usize) -> Vec<u8> {
 /// interleaved u8 out.
 pub fn prep_u8(rgba: &[u8], w: usize, h: usize) -> Vec<u8> {
     let chans: Vec<Vec<u8>> = (0..4usize)
+        .into_par_iter()
         .map(|c| {
             let plane: Vec<u8> = (0..w * h).map(|i| rgba[i * 4 + c]).collect();
             median3_channel(&plane, w, h)
@@ -70,6 +77,7 @@ fn transpose4(img: &[f32], w: usize, h: usize) -> Vec<f32> {
 }
 
 /// numpy-style linear percentile of the positive entries of `d`.
+/// Order statistics via O(n) selection (same values a full sort would give).
 fn percentile95_positive(d: &[f32]) -> f32 {
     let mut v: Vec<f32> = d.iter().cloned().filter(|&x| x > 0.0).collect();
     if v.is_empty() {
@@ -84,6 +92,7 @@ fn percentile95_positive(d: &[f32]) -> f32 {
     let vhi = if hi == lo {
         vlo
     } else {
+        // hi == lo + 1: the minimum of the right partition
         rest.iter().cloned().fold(f32::INFINITY, f32::min)
     };
     vlo + (vhi - vlo) * f
@@ -96,8 +105,9 @@ pub fn boundaries(img4: &[f32], rows: usize, cols: usize) -> (Vec<i64>, Vec<f64>
         return (Vec::new(), Vec::new());
     }
     let dw = cols - 1;
+    // L1 color+alpha difference between x-neighbors
     let mut d = vec![0f32; rows * dw];
-    d.chunks_mut(dw).enumerate().for_each(|(y, row)| {
+    d.par_chunks_mut(dw).enumerate().for_each(|(y, row)| {
         for x in 0..dw {
             let a = (y * cols + x) * 4;
             let b = a + 4;
@@ -108,12 +118,12 @@ pub fn boundaries(img4: &[f32], rows: usize, cols: usize) -> (Vec<i64>, Vec<f64>
             row[x] = s;
         }
     });
-
+    // coherence: vertical box mean over COHERENCE rows, border replicate
     let mut sm = vec![0f32; rows * dw];
     let half = (COHERENCE / 2) as i64;
     {
         let d_ref = &d;
-        sm.chunks_mut(dw).enumerate().for_each(|(y, row)| {
+        sm.par_chunks_mut(dw).enumerate().for_each(|(y, row)| {
             for x in 0..dw {
                 let mut acc = 0f64;
                 for k in -half..=half {
@@ -191,6 +201,7 @@ fn hist(runs: &[f32], bin_w: f64) -> (Vec<f64>, Vec<f64>) {
         if i >= nb {
             i = nb - 1;
         }
+        // numpy's float-error correction against the exact edges
         let edge = |j: usize| RUN_MAX * j as f64 / nb as f64;
         if v < edge(i) && i > 0 {
             i -= 1;
@@ -221,7 +232,7 @@ fn comb_score_grid(runs: &[f32], s_grid: &[f64], bin_w: f64) -> (Vec<f64>, f64) 
     let total: f64 = hv.iter().sum();
     let wsum = total;
     let s_out: Vec<f64> = s_grid
-        .iter()
+        .par_iter()
         .map(|&s| {
             let mut acc = 0f64;
             for (j, &c) in cv.iter().enumerate() {
@@ -257,7 +268,7 @@ pub fn pick_step(runs: &[f32], s_grid: &[f64]) -> PickResult {
         return none;
     }
     let mut order = idx.clone();
-    order.sort_by(|&a, &b| s_score[b].partial_cmp(&s_score[a]).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|&a, &b| s_score[b].partial_cmp(&s_score[a]).unwrap());
     let smax = s_score[order[0]];
     if smax <= 0.0 {
         return none;
@@ -279,7 +290,7 @@ pub fn pick_step(runs: &[f32], s_grid: &[f64]) -> PickResult {
         .filter(|&&i| s_score[i] >= 0.70 * smax)
         .map(|&i| (s_grid[i], s_score[i]))
         .collect();
-    tied.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    tied.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     let mut best_s = s_grid[order[0]];
     let mut best_v = smax;
     for &(s, v) in &tied {
@@ -305,7 +316,7 @@ pub fn refine(runs: &[f32], s0: f64) -> f64 {
     let (hv, cv) = hist(runs, 0.05);
     let fine = arange(0.94 * s0, 1.06 * s0, 0.002);
     let sf: Vec<f64> = fine
-        .iter()
+        .par_iter()
         .map(|&f| {
             let mut acc = 0f64;
             for j in 0..cv.len() {
@@ -376,8 +387,10 @@ fn tile_peak(diffs: &[f32], s0: f64) -> Option<f64> {
 
 /// cols = W * mean(1/s_local), pooled over several tile grids.
 pub fn integrate_step(ys: &[i64], pos: &[f64], n_perp: usize, n_scan: usize, s0: f64) -> f64 {
+    // enumerate tiles in reference order, evaluate in parallel, reduce in order
     let mut tiles: Vec<(f64, f64, f64, f64)> = Vec::new();
     for &(tp, tsc) in TILINGS.iter() {
+        // np.linspace: value = i * (extent / n)
         let dy = n_perp as f64 / tp as f64;
         let dx = n_scan as f64 / tsc as f64;
         for i in 0..tp {
@@ -391,7 +404,7 @@ pub fn integrate_step(ys: &[i64], pos: &[f64], n_perp: usize, n_scan: usize, s0:
         }
     }
     let peaks: Vec<Option<f64>> = tiles
-        .iter()
+        .par_iter()
         .map(|&(y0, y1, x0, x1)| {
             let mut tys: Vec<i64> = Vec::new();
             let mut tpos: Vec<f64> = Vec::new();
@@ -448,8 +461,10 @@ pub fn detect(rgba: &[u8], w: usize, h: usize) -> RlDetection {
     let s_grid = arange(S_MIN, S_MAX, 0.01);
 
     let img4t = transpose4(&img4, w, h);
-    let ax = axis_pass(&img4, h, w, &s_grid);
-    let ay = axis_pass(&img4t, w, h, &s_grid);
+    let (ax, ay) = rayon::join(
+        || axis_pass(&img4, h, w, &s_grid),
+        || axis_pass(&img4t, w, h, &s_grid),
+    );
     drop(img4t);
 
     let (mut sx, mut sy) = (ax.s, ay.s);
@@ -496,8 +511,10 @@ pub fn detect(rgba: &[u8], w: usize, h: usize) -> RlDetection {
     let mut sy = sy.unwrap_or(sx);
 
     // local-step integration (drift-aware effective step)
-    let sx2 = integrate_step(&ax.ys, &ax.pos, h, w, sx);
-    let sy2 = integrate_step(&ay.ys, &ay.pos, w, h, sy);
+    let (sx2, sy2) = rayon::join(
+        || integrate_step(&ax.ys, &ax.pos, h, w, sx),
+        || integrate_step(&ay.ys, &ay.pos, w, h, sy),
+    );
     sx = sx2;
     sy = sy2;
 
@@ -510,7 +527,7 @@ pub fn detect(rgba: &[u8], w: usize, h: usize) -> RlDetection {
     }
 
     let mut cands: Vec<(f64, f64)> = ax.cands.iter().chain(ay.cands.iter()).cloned().collect();
-    cands.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    cands.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
     RlDetection {
         step_x: sx,

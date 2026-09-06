@@ -44,16 +44,21 @@ func main() {
 	workerYtdlpURL := os.Getenv("WORKER_YTDLP_URL")
 	workerWhisperURL := os.Getenv("WORKER_WHISPER_URL")
 	workerRmbgURL := os.Getenv("WORKER_RMBG_URL")
+	workerPixelfixerURL := os.Getenv("WORKER_PIXELFIXER_URL")
+	if workerPixelfixerURL == "" {
+		workerPixelfixerURL = "http://worker-pixelfixer:8004"
+	}
 
 	server := &Server{
-		pogo:             NewPogocacheEngine(pogoAddr, downloadDir),
-		mediaLimiter:     make(chan struct{}, maxMediaJobs),
-		downloadDir:      downloadDir,
-		frontendDir:      frontendDir,
-		gotenbergLB:      NewGotenbergLoadBalancer(gotenbergURL),
-		workerYtdlpURL:   workerYtdlpURL,
-		workerWhisperURL: workerWhisperURL,
-		workerRmbgURL:    workerRmbgURL,
+		pogo:                NewPogocacheEngine(pogoAddr, downloadDir),
+		mediaLimiter:        make(chan struct{}, maxMediaJobs),
+		downloadDir:         downloadDir,
+		frontendDir:         frontendDir,
+		gotenbergLB:         NewGotenbergLoadBalancer(gotenbergURL),
+		workerYtdlpURL:      workerYtdlpURL,
+		workerWhisperURL:    workerWhisperURL,
+		workerRmbgURL:       workerRmbgURL,
+		workerPixelfixerURL: workerPixelfixerURL,
 		httpClient: &http.Client{
 			Timeout: 180 * time.Second,
 		},
@@ -67,6 +72,8 @@ func main() {
 	mux.HandleFunc("/api/convert/file", server.handleConvertFile)
 	mux.HandleFunc("/api/transcribe", server.handleTranscribe)
 	mux.HandleFunc("/api/remove-bg", server.handleRemoveBackground)
+	mux.HandleFunc("/api/pixel/detect", server.handlePixelDetect)
+	mux.HandleFunc("/api/pixel/fix", server.handlePixelFix)
 	mux.HandleFunc("/api/status/", server.handleStatus)
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)

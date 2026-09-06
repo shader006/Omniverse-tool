@@ -24,6 +24,9 @@ pub fn band_profiles(feat: &[f32], lines: usize, extent: usize, band: usize) -> 
                 dst[x] += feat[row + x] as f64;
             }
         }
+        // the reference accumulates in float32; round through f32 so the
+        // FFT sees the same profile values (razor-thin comb ties flip on
+        // less than this)
         for v in dst.iter_mut() {
             *v = *v as f32 as f64;
         }
@@ -47,6 +50,8 @@ pub fn band_acf(prof: &[Vec<f64>], planner: &mut FftPlanner<f64>) -> Vec<f64> {
     let ifft = planner.plan_fft_inverse(nfft);
     let half = nfft / 2;
 
+    // accumulate per-band power spectra (each normalised by its own
+    // half-spectrum power, matching numpy's rfft-bin normalisation)
     let mut psum = vec![0f64; nfft];
     let mut buf = vec![Complex::new(0f64, 0f64); nfft];
     for row in prof {
@@ -71,6 +76,7 @@ pub fn band_acf(prof: &[Vec<f64>], planner: &mut FftPlanner<f64>) -> Vec<f64> {
             }
         }
     }
+    // one inverse FFT of the summed (Hermitian, real) spectrum
     for (k, c) in buf.iter_mut().enumerate() {
         *c = Complex::new(psum[k], 0.0);
     }
@@ -87,8 +93,8 @@ pub fn band_acf(prof: &[Vec<f64>], planner: &mut FftPlanner<f64>) -> Vec<f64> {
     ac
 }
 
-fn median_helper(v: &mut [f64]) -> f64 {
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+fn median(v: &mut [f64]) -> f64 {
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = v.len();
     if n == 0 {
         return 0.0;
@@ -137,7 +143,7 @@ pub fn band_cepstrum(prof: &[Vec<f64>], planner: &mut FftPlanner<f64>) -> Vec<f6
     let m = n / 2;
     let mut c: Vec<f64> = (0..m).map(|i| buf[i].re / nfft as f64).collect();
     let mut tmp = c.clone();
-    let med = median_helper(&mut tmp);
+    let med = median(&mut tmp);
     let cm = c.iter().sum::<f64>() / m.max(1) as f64;
     let var = c.iter().map(|&v| (v - cm) * (v - cm)).sum::<f64>() / m.max(1) as f64;
     let std = var.sqrt();
@@ -147,7 +153,8 @@ pub fn band_cepstrum(prof: &[Vec<f64>], planner: &mut FftPlanner<f64>) -> Vec<f6
     c
 }
 
-/// Linear interp with numpy-matching clipping
+/// Linear interp with numpy-matching clipping: i clipped to [0, n-2],
+/// fractional part NOT re-clamped (extrapolates past the end like the ref).
 pub fn interp_at(arr: &[f64], pos: f64) -> f64 {
     let n = arr.len();
     let i = (pos as i64).clamp(0, n as i64 - 2) as usize;
