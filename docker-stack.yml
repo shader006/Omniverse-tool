@@ -30,6 +30,8 @@ services:
       - WORKER_RMBG_URL=http://tasks.worker-rmbg:8003
       - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
       - MAX_MEDIA_CONCURRENT_JOBS=4
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
@@ -49,6 +51,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8001
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     networks:
@@ -67,6 +71,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     networks:
@@ -88,6 +94,8 @@ services:
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=300
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet
@@ -107,6 +115,9 @@ services:
           memory: 1024M
     environment:
       - PORT=8004
+      - RUST_LOG=info
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     networks:
       - omniverse_net
 
@@ -180,7 +191,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - POGOCACHE_ADDR=pogocache:9401
-      - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_gotenberg
+      - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_worker-pixelfixer,omniverse_gotenberg
       - MIN_REPLICAS=1
       - MAX_REPLICAS=3
       - SCALE_DOWN_COOLDOWN_SEC=15

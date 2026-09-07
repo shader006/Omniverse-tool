@@ -135,6 +135,11 @@
     activePreset: 'auto',
     isEyedropperActive: false,
     ensembleGrid: null,
+    sourceFile: null,
+    cachedSpriteCanvas: null,
+    cachedCols: 0,
+    cachedRows: 0,
+    processCounter: 0,
   };
 
   // =========================================================================
@@ -364,7 +369,7 @@
       const fd = new FormData();
       fd.append('file', blob, 'image.png');
 
-      const res = await fetch('/api/pixel/detect?mode=full', {
+      const res = await fetch('/api/pixel/detect?mode=fast', {
         method: 'POST',
         body: fd,
       });
@@ -678,7 +683,11 @@
    */
   async function fetchBackendReconstruct(sourceCanvas, cols, rows, stepX, stepY, autoPalette = false) {
     try {
-      const blob = await new Promise((resolve) => sourceCanvas.toBlob(resolve, 'image/png'));
+      // Ưu tiên tái sử dụng file gốc để không tốn thời gian toBlob trên main thread
+      let blob = state.sourceFile;
+      if (!blob && sourceCanvas) {
+        blob = await new Promise((resolve) => sourceCanvas.toBlob(resolve, 'image/png'));
+      }
       if (!blob) return null;
 
       const fd = new FormData();
@@ -687,15 +696,27 @@
       if (rows) fd.append('rows', rows);
       if (stepX) fd.append('step_x', stepX);
       if (stepY) fd.append('step_y', stepY);
-      fd.append('mode', 'full');
+      fd.append('mode', 'fast');
       if (autoPalette) fd.append('auto_palette', 'true');
 
-      const res = await fetch('/api/pixel/fix', {
+      const res = await fetch('/api/pixel/fix?mode=fast', {
         method: 'POST',
         body: fd,
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Đọc thông tin nhận diện ô lưới từ Headers của worker-pixelfixer
+      const headerCols = parseInt(res.headers.get('x-grid-cols'), 10);
+      const headerRows = parseInt(res.headers.get('x-grid-rows'), 10);
+      const headerStepX = parseFloat(res.headers.get('x-grid-stepx'));
+      const headerStepY = parseFloat(res.headers.get('x-grid-stepy'));
+      const headerConsensus = res.headers.get('x-grid-consensus') || 'fast';
+      const headerCandidatesStr = res.headers.get('x-grid-candidates');
+      let headerCandidates = null;
+      if (headerCandidatesStr) {
+        try { headerCandidates = JSON.parse(headerCandidatesStr); } catch (e) {}
+      }
 
       const pngBlob = await res.blob();
       const img = new Image();
@@ -708,8 +729,8 @@
       });
 
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || cols;
-      canvas.height = img.naturalHeight || rows;
+      canvas.width = img.naturalWidth || headerCols || cols || 1;
+      canvas.height = img.naturalHeight || headerRows || rows || 1;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0);
@@ -719,6 +740,10 @@
         canvas,
         cols: canvas.width,
         rows: canvas.height,
+        stepX: headerStepX || stepX,
+        stepY: headerStepY || stepY,
+        consensus: headerConsensus,
+        candidates: headerCandidates,
       };
     } catch (err) {
       console.warn('⚠️ [Backend Rust Fix Fallback]:', err);
@@ -729,32 +754,31 @@
   async function runPixelRefineProcess() {
     if (!state.sourceCanvas) return;
 
+    const localProcessId = ++state.processCounter;
     showProgress('Đang xử lý làm sạch và tinh chỉnh sprite pixel (Rust Core ⚡)...');
 
     try {
       const srcW = state.originalWidth;
       const srcH = state.originalHeight;
-      const srcCtx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
-      const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
-      const srcBytes = srcImgData.data;
 
       // 1. Xác định Kích thước và Tọa độ Ô Lưới (Grid Cell & Native Geometry)
-      let cols, rows, stepX, stepY, offsetX = 0, offsetY = 0;
-      let cellSizeLabel = '1';
+      let cols = null, rows = null, stepX = null, stepY = null, offsetX = 0, offsetY = 0;
+      let cellSizeLabel = 'auto';
 
-      if (state.currentGridSize === 'auto' && state.ensembleGrid) {
-        stepX = state.ensembleGrid.step_x;
-        stepY = state.ensembleGrid.step_y;
-        cols = Math.max(1, state.ensembleGrid.cols);
-        rows = Math.max(1, state.ensembleGrid.rows);
-        offsetX = state.ensembleGrid.offset_x || 0;
-        offsetY = state.ensembleGrid.offset_y || 0;
-        cellSizeLabel = `${stepX.toFixed(1)}x${stepY.toFixed(1)}`;
+      if (state.currentGridSize === 'auto') {
+        if (state.ensembleGrid) {
+          stepX = state.ensembleGrid.step_x;
+          stepY = state.ensembleGrid.step_y;
+          cols = Math.max(1, state.ensembleGrid.cols);
+          rows = Math.max(1, state.ensembleGrid.rows);
+          offsetX = state.ensembleGrid.offset_x || 0;
+          offsetY = state.ensembleGrid.offset_y || 0;
+          cellSizeLabel = `${stepX.toFixed(1)}x${stepY.toFixed(1)}`;
+        }
+        // Nếu chưa có ensembleGrid, giữ cols/rows null để worker-pixelfixer tự detect trong 1 request
       } else {
         let cellSize = 1;
-        if (state.currentGridSize === 'auto') {
-          cellSize = state.detectedGridSize || 1;
-        } else if (state.currentGridSize === 'custom') {
+        if (state.currentGridSize === 'custom') {
           cellSize = Math.max(1, parseInt(state.customGridSize, 10) || 4);
         } else {
           cellSize = Math.max(1, parseInt(state.currentGridSize, 10) || 1);
@@ -771,40 +795,102 @@
       let spriteCanvas = null;
       let usedRustReconstruct = false;
 
-      const autoPal = state.antiAliasing === 'ultra';
-      const backendResult = await fetchBackendReconstruct(state.sourceCanvas, cols, rows, stepX, stepY, autoPal);
-
-      if (backendResult && backendResult.canvas) {
-        spriteCanvas = backendResult.canvas;
-        cols = backendResult.cols;
-        rows = backendResult.rows;
-        usedRustReconstruct = true;
-        console.log(`🦀 [Rust Native Reconstruct]: Tái tạo thành công ${cols}x${rows} bằng two_stage_pack (Pixel Art Fixer Core).`);
-      } else {
-        // Fallback Client nếu Backend ngắt kết nối
-        console.warn('⚠️ [Client Fallback Reconstruct]: Đang lấy mẫu màu bằng Canvas 2D.');
+      // Kiểm tra cache nếu kích thước lưới cols x rows không đổi (khi chỉ chỉnh palette/outline/dither)
+      if (cols && rows && state.cachedSpriteCanvas && state.cachedCols === cols && state.cachedRows === rows) {
         spriteCanvas = document.createElement('canvas');
         spriteCanvas.width = cols;
         spriteCanvas.height = rows;
-        const fallbackCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
-        const fallbackImgData = fallbackCtx.createImageData(cols, rows);
-        const fallbackBytes = fallbackImgData.data;
+        const cCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
+        cCtx.drawImage(state.cachedSpriteCanvas, 0, 0);
+        usedRustReconstruct = true;
+      } else {
+        const autoPal = state.antiAliasing === 'ultra';
+        const backendResult = await fetchBackendReconstruct(state.sourceCanvas, cols, rows, stepX, stepY, autoPal);
 
-        for (let r = 0; r < rows; r++) {
-          for (let c = 0; c < cols; c++) {
-            const cellColor = sampleCellColor(
-              srcBytes, srcW, srcH,
-              offsetX + c * stepX, offsetY + r * stepY, stepX, stepY,
-              state.antiAliasing
-            );
-            const idx = (r * cols + c) * 4;
-            fallbackBytes[idx] = cellColor[0];
-            fallbackBytes[idx + 1] = cellColor[1];
-            fallbackBytes[idx + 2] = cellColor[2];
-            fallbackBytes[idx + 3] = cellColor[3];
-          }
+        // Bỏ qua nếu có request mới hơn đang chạy
+        if (localProcessId !== state.processCounter) {
+          console.log('[PixelRefiner] Đã huỷ kết quả cũ do có thao tác mới.');
+          return;
         }
-        fallbackCtx.putImageData(fallbackImgData, 0, 0);
+
+        if (backendResult && backendResult.canvas) {
+          spriteCanvas = backendResult.canvas;
+          cols = backendResult.cols;
+          rows = backendResult.rows;
+          if (backendResult.stepX) stepX = backendResult.stepX;
+          if (backendResult.stepY) stepY = backendResult.stepY;
+          cellSizeLabel = `${stepX.toFixed(1)}x${stepY.toFixed(1)}`;
+          usedRustReconstruct = true;
+
+          // Cập nhật thông tin nhận diện ô lưới tự động từ Backend
+          if (state.currentGridSize === 'auto') {
+            state.ensembleGrid = {
+              cols,
+              rows,
+              step_x: stepX,
+              step_y: stepY,
+              consensus: backendResult.consensus || 'fast',
+            };
+            state.detectedGridSize = Math.max(1, Math.round((stepX + stepY) / 2));
+            if (backendResult.candidates && backendResult.candidates.length > 0) {
+              state.gridCandidates = backendResult.candidates;
+              renderGridCandidates(state.gridCandidates);
+            }
+            if (selectGridSize) {
+              const autoOpt = selectGridSize.querySelector('option[value="auto"]');
+              if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đoán: ${state.detectedGridSize}x${state.detectedGridSize}px)`;
+            }
+            const statusEl = document.getElementById('wasm-engine-status');
+            if (statusEl) {
+              statusEl.textContent = `Rust: ${backendResult.consensus || 'fast'} ⚡`;
+              statusEl.style.color = '#34d399';
+            }
+          }
+
+          // Lưu cache bản dựng sạch
+          const cacheC = document.createElement('canvas');
+          cacheC.width = cols;
+          cacheC.height = rows;
+          cacheC.getContext('2d').drawImage(spriteCanvas, 0, 0);
+          state.cachedSpriteCanvas = cacheC;
+          state.cachedCols = cols;
+          state.cachedRows = rows;
+          console.log(`🦀 [Rust Native Reconstruct]: Tái tạo thành công ${cols}x${rows} bằng two_stage_pack (Pixel Art Fixer Core).`);
+        } else {
+          // Fallback Client nếu Backend ngắt kết nối
+          console.warn('⚠️ [Client Fallback Reconstruct]: Đang lấy mẫu màu bằng Canvas 2D.');
+          cols = cols || Math.max(1, Math.round(srcW / (state.detectedGridSize || 4)));
+          rows = rows || Math.max(1, Math.round(srcH / (state.detectedGridSize || 4)));
+          stepX = stepX || (srcW / cols);
+          stepY = stepY || (srcH / rows);
+
+          const srcCtx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
+          const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
+          const srcBytes = srcImgData.data;
+
+          spriteCanvas = document.createElement('canvas');
+          spriteCanvas.width = cols;
+          spriteCanvas.height = rows;
+          const fallbackCtx = spriteCanvas.getContext('2d', { willReadFrequently: true });
+          const fallbackImgData = fallbackCtx.createImageData(cols, rows);
+          const fallbackBytes = fallbackImgData.data;
+
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const cellColor = sampleCellColor(
+                srcBytes, srcW, srcH,
+                offsetX + c * stepX, offsetY + r * stepY, stepX, stepY,
+                state.antiAliasing
+              );
+              const idx = (r * cols + c) * 4;
+              fallbackBytes[idx] = cellColor[0];
+              fallbackBytes[idx + 1] = cellColor[1];
+              fallbackBytes[idx + 2] = cellColor[2];
+              fallbackBytes[idx + 3] = cellColor[3];
+            }
+          }
+          fallbackCtx.putImageData(fallbackImgData, 0, 0);
+        }
       }
 
       // 3. KIỂM TRA BỘ LỌC BỔ TRỢ (CHỈ CHẠY KHI NGƯỜI DÙNG BẬT)
@@ -1107,6 +1193,10 @@
   function displayRefinedResult(processedCanvas, spriteCanvas, origCols, origRows, cellSize) {
     if (!resultCard) return;
 
+    if (comparisonContainer) {
+      comparisonContainer.classList.remove('is-processing');
+    }
+
     // Hiển thị trực tiếp processedCanvas để phản ánh 100% kích thước pixel mà người dùng chọn (ví dụ 32x32)!
     compareAfterCanvas.width = processedCanvas.width;
     compareAfterCanvas.height = processedCanvas.height;
@@ -1207,6 +1297,13 @@
   }
 
   function showProgress(msg) {
+    if (comparisonContainer) {
+      comparisonContainer.classList.add('is-processing');
+    }
+    const overlayText = document.getElementById('pixel-overlay-text');
+    if (overlayText) {
+      overlayText.textContent = msg || 'Đang tái tạo pixel art (Rust Core ⚡)...';
+    }
     if (resultStatsText) {
       resultStatsText.textContent = '⚡ ' + (msg || 'Đang tinh chỉnh pixel...');
     }
@@ -1214,8 +1311,10 @@
   }
 
   function hideProgress() {
-    // Không hiện/ẩn progressCard dạng khối để triệt tiêu hoàn toàn hiện tượng giật nảy màn hình (Zero Layout Shift)
     if (progressCard) progressCard.classList.add('hidden');
+    if (comparisonContainer) {
+      comparisonContainer.classList.remove('is-processing');
+    }
   }
 
   function showError(msg) {
@@ -1406,65 +1505,97 @@
     }
 
     if (errorBox) errorBox.classList.add('hidden');
-    const reader = new FileReader();
+    state.sourceFile = file;
+    state.cachedSpriteCanvas = null;
+    state.cachedCols = 0;
+    state.cachedRows = 0;
+    state.ensembleGrid = null;
+    state.processCounter++;
 
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        state.sourceImage = img;
-        state.originalWidth = img.naturalWidth || img.width;
-        state.originalHeight = img.naturalHeight || img.height;
+    // Xóa triệt để kết quả ảnh cũ để tránh lỗi đè ảnh cũ lên ảnh mới
+    if (compareAfterCanvas) {
+      const afterCtx = compareAfterCanvas.getContext('2d');
+      afterCtx.clearRect(0, 0, compareAfterCanvas.width, compareAfterCanvas.height);
+      compareAfterCanvas.width = 1;
+      compareAfterCanvas.height = 1;
+    }
 
-        const canvas = document.createElement('canvas');
-        canvas.width = state.originalWidth;
-        canvas.height = state.originalHeight;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0);
-        state.sourceCanvas = canvas;
+    const tagAfter = document.getElementById('pixel-tag-after');
+    if (tagAfter) {
+      tagAfter.textContent = '⚡ ĐANG TÁI TẠO PIXEL ART...';
+      tagAfter.style.background = 'rgba(59, 130, 246, 0.9)';
+    }
 
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        state.gridCandidates = analyzeGridCandidates(imgData);
-        state.detectedGridSize = state.gridCandidates[0].size || 1;
-        state.currentGridSize = 'auto';
+    if (comparisonContainer) {
+      comparisonContainer.classList.add('is-processing');
+    }
 
-        if (fileName) fileName.textContent = file.name;
-        if (fileMeta) {
-          const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-          fileMeta.textContent = `${file.type.split('/')[1].toUpperCase()} • ${sizeMB} MB • ${state.originalWidth}x${state.originalHeight}px (Lưới đoán: ~${state.detectedGridSize}px)`;
-        }
-        if (fileThumb) fileThumb.src = e.target.result;
-        if (compareBeforeImg) compareBeforeImg.src = e.target.result;
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      state.sourceImage = img;
+      state.originalWidth = img.naturalWidth || img.width;
+      state.originalHeight = img.naturalHeight || img.height;
 
-        if (selectGridSize) {
-          const autoOpt = selectGridSize.querySelector('option[value="auto"]');
-          if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đoán: ${state.detectedGridSize}x${state.detectedGridSize}px)`;
-          selectGridSize.value = 'auto';
-        }
+      const canvas = document.createElement('canvas');
+      canvas.width = state.originalWidth;
+      canvas.height = state.originalHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      state.sourceCanvas = canvas;
 
-        if (state.isRatioLocked && state.originalWidth > 0 && state.originalHeight > 0) {
-          state.customForcedHeight = Math.max(1, Math.round(state.customForcedWidth * (state.originalHeight / state.originalWidth)));
-          if (customHeightInput) customHeightInput.value = state.customForcedHeight;
-        }
+      state.currentGridSize = 'auto';
 
-        renderGridCandidates(state.gridCandidates);
+      if (fileName) fileName.textContent = file.name;
+      if (fileMeta) {
+        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        fileMeta.textContent = `${file.type.split('/')[1].toUpperCase()} • ${sizeMB} MB • ${state.originalWidth}x${state.originalHeight}px`;
+      }
+      if (fileThumb) fileThumb.src = objectUrl;
+      if (compareBeforeImg) compareBeforeImg.src = objectUrl;
 
-        if (dropzone) dropzone.classList.add('hidden');
-        if (studioWorkspace) studioWorkspace.classList.remove('hidden');
-        if (optionsPanel) optionsPanel.classList.remove('hidden');
-        if (resultCard) resultCard.classList.remove('hidden');
+      if (selectGridSize) {
+        const autoOpt = selectGridSize.querySelector('option[value="auto"]');
+        if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đang tính toán...)`;
+        selectGridSize.value = 'auto';
+      }
 
-        runPixelRefineProcess();
-        triggerBackendGridDetect(file);
-      };
-      img.src = e.target.result;
+      if (state.isRatioLocked && state.originalWidth > 0 && state.originalHeight > 0) {
+        state.customForcedHeight = Math.max(1, Math.round(state.customForcedWidth * (state.originalHeight / state.originalWidth)));
+        if (customHeightInput) customHeightInput.value = state.customForcedHeight;
+      }
+
+      if (dropzone) dropzone.classList.add('hidden');
+      if (studioWorkspace) studioWorkspace.classList.remove('hidden');
+      if (optionsPanel) optionsPanel.classList.remove('hidden');
+      if (resultCard) resultCard.classList.remove('hidden');
+
+      // Tinh chỉnh ngay bằng Rust Core ⚡ trong 1 request duy nhất (tránh độ trễ gọi kép)
+      runPixelRefineProcess();
     };
-    reader.readAsDataURL(file);
+    img.src = objectUrl;
   }
 
   function resetFileSelection() {
     state.sourceImage = null;
     state.sourceCanvas = null;
     state.processedCanvas = null;
+    state.sourceFile = null;
+    state.cachedSpriteCanvas = null;
+    state.cachedCols = 0;
+    state.cachedRows = 0;
+    state.ensembleGrid = null;
+    state.processCounter++;
+
+    if (compareAfterCanvas) {
+      const ctx = compareAfterCanvas.getContext('2d');
+      ctx.clearRect(0, 0, compareAfterCanvas.width, compareAfterCanvas.height);
+      compareAfterCanvas.width = 1;
+      compareAfterCanvas.height = 1;
+    }
+    if (comparisonContainer) {
+      comparisonContainer.classList.remove('is-processing');
+    }
 
     if (fileInput) fileInput.value = '';
     if (dropzone) dropzone.classList.remove('hidden');
@@ -1563,17 +1694,9 @@
     });
 
     dropzone.addEventListener('click', (e) => {
-      if (e.target.closest('#btn-remove-pixel-file') || e.target.closest('#btn-load-pixel-sample')) return;
+      if (e.target.closest('#btn-remove-pixel-file')) return;
       fileInput.click();
     });
-
-    const btnLoadSample = document.getElementById('btn-load-pixel-sample');
-    if (btnLoadSample) {
-      btnLoadSample.addEventListener('click', (e) => {
-        e.stopPropagation();
-        loadSamplePixelSprite();
-      });
-    }
 
     fileInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) {
@@ -1610,13 +1733,23 @@
       }
     });
 
-    const triggerAutoRefine = () => {
-      if (state.sourceCanvas) runPixelRefineProcess();
+    let refineDebounceTimer = null;
+    const triggerAutoRefine = (delay = 70) => {
+      if (!state.sourceCanvas) return;
+      if (refineDebounceTimer) clearTimeout(refineDebounceTimer);
+      if (delay <= 0) {
+        runPixelRefineProcess();
+      } else {
+        refineDebounceTimer = setTimeout(() => {
+          runPixelRefineProcess();
+        }, delay);
+      }
     };
 
     if (selectGridSize) {
       selectGridSize.addEventListener('change', (e) => {
         state.currentGridSize = e.target.value;
+        state.cachedSpriteCanvas = null; // xóa cache khi đổi cỡ lưới
         if (customGridWrapper) {
           if (state.currentGridSize === 'custom') {
             customGridWrapper.classList.remove('hidden');
@@ -1624,7 +1757,7 @@
             customGridWrapper.classList.add('hidden');
           }
         }
-        triggerAutoRefine();
+        triggerAutoRefine(0);
       });
     }
 
@@ -1633,10 +1766,11 @@
         const val = parseInt(e.target.value, 10);
         if (val && val > 0) {
           state.customGridSize = val;
+          state.cachedSpriteCanvas = null;
           state.forcedSize = 'auto';
           if (selectForcedSize) selectForcedSize.value = 'auto';
           syncOutputSizeUI();
-          triggerAutoRefine();
+          triggerAutoRefine(150);
         }
       });
     }
@@ -1935,10 +2069,6 @@
     initDOMElements();
     setupEventListeners();
     await checkBackendEngine();
-    // Tự động nạp sprite mẫu để Visualizer (trái) và Settings (phải) hiển thị sống động ngay khi mở tab
-    if (!state.sourceCanvas) {
-      loadSamplePixelSprite();
-    }
   });
 
 })();

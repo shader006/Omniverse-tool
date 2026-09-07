@@ -79,6 +79,9 @@ services:
       - "8004:8004"
     environment:
       - PORT=8004
+      - RUST_LOG=info
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
 
   pogocache:
     image: pogocache/pogocache:latest

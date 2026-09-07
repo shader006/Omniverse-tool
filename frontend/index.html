@@ -899,9 +899,6 @@
             <span><strong>Tải ảnh lên</strong> hoặc Kéo & thả ảnh vào đây (Hỗ trợ Ctrl+V)</span>
           </label>
           <div class="pixel-topbar-actions">
-            <button type="button" id="btn-load-pixel-sample" class="btn-studio-pill" title="Nạp lại sprite mẫu Retro">
-              🎨 <span>Ảnh mẫu</span>
-            </button>
             <button type="button" id="btn-toggle-layout" class="btn-studio-pill" title="Đảo bên giữa Visualize và Setting">
               ⇄ <span>Đổi vị trí (Visualize ⇋ Setting)</span>
             </button>
@@ -909,7 +906,7 @@
         </div>
 
         <!-- Dropzone Upload Area (Dự phòng cho drag & drop toàn màn hình) -->
-        <div id="pixel-dropzone" class="file-dropzone hidden">
+        <div id="pixel-dropzone" class="file-dropzone">
           <div id="pixel-dropzone-prompt" class="dropzone-prompt">
             <div class="dropzone-icon">
               <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -948,7 +945,7 @@
         </div>
 
         <!-- 2-COLUMN STUDIO WORKSPACE: VISUALIZE BÊN TRÁI, SETTING BÊN PHẢI (MẶC ĐỊNH) -->
-        <div id="pixel-studio-workspace" class="pixel-studio-workspace">
+        <div id="pixel-studio-workspace" class="pixel-studio-workspace hidden">
           <!-- CỘT TRÁI: SETTINGS & CONTROLS -->
           <div class="pixel-workspace-left">
             <!-- File Info Compact Preview -->
@@ -1251,6 +1248,10 @@
                   <div class="checker-bg-wrap">
                     <canvas id="pixel-compare-after-canvas" class="pixelated-canvas"></canvas>
                     <canvas id="pixel-grid-overlay-canvas" class="pixel-grid-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; z-index: 3;"></canvas>
+                    <div class="pixel-processing-overlay" id="pixel-processing-overlay">
+                      <div class="pixel-spinner"></div>
+                      <span id="pixel-overlay-text">Đang tái tạo pixel art (Rust Core ⚡)...</span>
+                    </div>
                   </div>
                   <span class="comparison-tag tag-after" id="pixel-tag-after">REFINED PIXEL (32x32)</span>
                 </div>

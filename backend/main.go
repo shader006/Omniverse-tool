@@ -74,6 +74,7 @@ func main() {
 	mux.HandleFunc("/api/remove-bg", server.handleRemoveBackground)
 	mux.HandleFunc("/api/pixel/detect", server.handlePixelDetect)
 	mux.HandleFunc("/api/pixel/fix", server.handlePixelFix)
+	mux.HandleFunc("/api/pixel/health", server.handlePixelHealth)
 	mux.HandleFunc("/api/status/", server.handleStatus)
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)

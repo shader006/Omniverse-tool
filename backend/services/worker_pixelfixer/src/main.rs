@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, Query},
+    extract::{DefaultBodyLimit, Multipart, Query},
     http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -7,10 +7,134 @@ use axum::{
 };
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::Cursor, net::SocketAddr, time::Instant};
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    net::SocketAddr,
+    sync::OnceLock,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
+use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 
 use worker_pixelfixer::{core, reconstruct};
+
+pub struct SpanEvent {
+    pub name: String,
+    pub duration_ms: f64,
+    pub attributes: HashMap<String, serde_json::Value>,
+    pub is_error: bool,
+}
+
+static TRACE_TX: OnceLock<mpsc::Sender<SpanEvent>> = OnceLock::new();
+
+fn send_otlp_trace(
+    name: &str,
+    duration_ms: f64,
+    attributes: HashMap<String, serde_json::Value>,
+    is_error: bool,
+) {
+    if let Some(tx) = TRACE_TX.get() {
+        let _ = tx.try_send(SpanEvent {
+            name: name.to_string(),
+            duration_ms,
+            attributes,
+            is_error,
+        });
+    }
+}
+
+fn init_telemetry() {
+    let observe_url = std::env::var("HIAI_OBSERVE_URL")
+        .unwrap_or_else(|_| "http://172.17.0.1:8001".to_string());
+    let api_key = match std::env::var("HIAI_OBSERVE_API_KEY") {
+        Ok(k) if !k.is_empty() => k,
+        _ => {
+            tracing::info!("HiAI Observe API Key not set; OTLP tracing disabled.");
+            return;
+        }
+    };
+
+    let (tx, mut rx) = mpsc::channel::<SpanEvent>(1000);
+    let _ = TRACE_TX.set(tx);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap_or_default();
+
+    tokio::spawn(async move {
+        tracing::info!(
+            "🚀 HiAi Observe OTLP Tracer initialized for worker-pixelfixer -> {}/v1/traces",
+            observe_url
+        );
+        while let Some(event) = rx.recv().await {
+            let now = SystemTime::now();
+            let now_ns = now
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let start_ns = now_ns.saturating_sub((event.duration_ms * 1_000_000.0) as u128);
+
+            let trace_id = uuid::Uuid::new_v4().simple().to_string();
+            let span_id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
+
+            let mut attrs_list = vec![
+                serde_json::json!({ "key": "service.name", "value": { "stringValue": "worker-pixelfixer" } }),
+                serde_json::json!({ "key": "deployment.environment", "value": { "stringValue": "production" } }),
+            ];
+
+            for (k, v) in event.attributes {
+                if let Some(n) = v.as_f64() {
+                    attrs_list.push(serde_json::json!({ "key": k, "value": { "doubleValue": n } }));
+                } else if let Some(b) = v.as_bool() {
+                    attrs_list.push(serde_json::json!({ "key": k, "value": { "boolValue": b } }));
+                } else {
+                    attrs_list.push(serde_json::json!({ "key": k, "value": { "stringValue": v.to_string().trim_matches('"') } }));
+                }
+            }
+
+            let payload = serde_json::json!({
+                "resourceSpans": [
+                    {
+                        "resource": {
+                            "attributes": [
+                                { "key": "service.name", "value": { "stringValue": "worker-pixelfixer" } },
+                                { "key": "deployment.environment", "value": { "stringValue": "production" } }
+                            ]
+                        },
+                        "scopeSpans": [
+                            {
+                                "scope": { "name": "pixelfixer-tracer", "version": "1.0.0" },
+                                "spans": [
+                                    {
+                                        "traceId": trace_id,
+                                        "spanId": span_id,
+                                        "name": event.name,
+                                        "kind": 1,
+                                        "startTimeUnixNano": start_ns.to_string(),
+                                        "endTimeUnixNano": now_ns.to_string(),
+                                        "attributes": attrs_list,
+                                        "status": { "code": if event.is_error { 2 } else { 1 } }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            });
+
+            let _ = client
+                .post(format!("{}/v1/traces", observe_url))
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&payload)
+                .send()
+                .await;
+        }
+    });
+}
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GridCandidate {
@@ -164,6 +288,22 @@ async fn detect_handler(
 
     let candidates = collect_candidates(avg_step, confidence);
     let secs = t0.elapsed().as_secs_f64();
+    let dur_ms = secs * 1000.0;
+
+    tracing::info!(
+        "🔍 [DETECT] {}x{} | mode: {} | grid: {}x{} (conf: {}%) in {:.2}ms",
+        w, h, mode, res.cols, res.rows, confidence, dur_ms
+    );
+
+    let mut trace_attrs = HashMap::new();
+    trace_attrs.insert("image.width".to_string(), serde_json::json!(w));
+    trace_attrs.insert("image.height".to_string(), serde_json::json!(h));
+    trace_attrs.insert("detect.mode".to_string(), serde_json::json!(mode));
+    trace_attrs.insert("grid.cols".to_string(), serde_json::json!(res.cols));
+    trace_attrs.insert("grid.rows".to_string(), serde_json::json!(res.rows));
+    trace_attrs.insert("grid.confidence".to_string(), serde_json::json!(confidence));
+    trace_attrs.insert("grid.consensus".to_string(), serde_json::json!(res.consensus));
+    send_otlp_trace("pixelfixer.detect", dur_ms, trace_attrs, false);
 
     Ok(Json(DetectResponse {
         success: true,
@@ -187,13 +327,14 @@ async fn fix_handler(
     Query(query): Query<FixParams>,
     mut multipart: Multipart,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
+    let t0 = Instant::now();
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut req_mode = query.mode;
     let mut req_cols = query.cols;
     let mut req_rows = query.rows;
     let mut req_step_x = query.step_x;
     let mut req_step_y = query.step_y;
-    let mut auto_palette = query.auto_palette.unwrap_or(false);
+    let mut auto_palette = query.auto_palette.unwrap_or(true);
     let mut req_two_stage = query.two_stage;
     let mut req_k_colors = query.k_colors;
 
@@ -322,8 +463,34 @@ async fn fix_handler(
     if let Ok(v) = HeaderValue::from_str(&consensus) {
         headers.insert("X-Grid-Consensus", v);
     }
+    let candidates = collect_candidates(step_x, 95);
+    if let Ok(cand_json) = serde_json::to_string(&candidates) {
+        if let Ok(v) = HeaderValue::from_str(&cand_json) {
+            headers.insert("X-Grid-Candidates", v);
+        }
+    }
 
-    Ok((headers, png_buf.into_inner()).into_response())
+    let dur_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let out_bytes = png_buf.into_inner();
+    let out_len = out_bytes.len();
+
+    tracing::info!(
+        "🛠️ [FIX] In: {}x{} -> Out: {}x{} ({} bytes, grid: {:.2}x{:.2}) in {:.2}ms",
+        w, h, cols, rows, out_len, step_x, step_y, dur_ms
+    );
+
+    let mut trace_attrs = HashMap::new();
+    trace_attrs.insert("image.in_width".to_string(), serde_json::json!(w));
+    trace_attrs.insert("image.in_height".to_string(), serde_json::json!(h));
+    trace_attrs.insert("image.out_cols".to_string(), serde_json::json!(cols));
+    trace_attrs.insert("image.out_rows".to_string(), serde_json::json!(rows));
+    trace_attrs.insert("grid.step_x".to_string(), serde_json::json!(step_x));
+    trace_attrs.insert("grid.step_y".to_string(), serde_json::json!(step_y));
+    trace_attrs.insert("reconstruct.two_stage".to_string(), serde_json::json!(use_two_stage));
+    trace_attrs.insert("image.out_bytes".to_string(), serde_json::json!(out_len));
+    send_otlp_trace("pixelfixer.fix", dur_ms, trace_attrs, false);
+
+    Ok((headers, out_bytes).into_response())
 }
 
 #[tokio::main]
@@ -332,12 +499,15 @@ async fn main() {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    init_telemetry();
+
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/detect", post(detect_handler))
         .route("/api/pixel/detect", post(detect_handler))
         .route("/fix", post(fix_handler))
         .route("/api/pixel/fix", post(fix_handler))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

@@ -28,6 +28,12 @@ MONITORS = [
         "monitor_group": "Gateways"
     },
     {
+        "name": "🦀 PixelFixer Worker",
+        "url": "http://172.17.0.1:8000/api/pixel/health",
+        "interval_seconds": 30,
+        "monitor_group": "Workers"
+    },
+    {
         "name": "🔍 HiAi Observe Health",
         "url": "http://localhost:8001/api/health",
         "interval_seconds": 30,
