@@ -777,14 +777,251 @@ pub fn reconstruct(
 }
 
 /// Two-stage packing on a regular even grid (mirrors
+/// Uniform grid cuts: divides limit into cells segments.
+pub fn uniform_grid_cuts(limit: usize, cells: usize) -> Vec<usize> {
+    if cells == 0 || limit == 0 {
+        return vec![0];
+    }
+    let mut cuts = Vec::with_capacity(cells + 1);
+    for i in 0..=cells {
+        let pos = (i as f64 * limit as f64 / cells as f64).round() as usize;
+        cuts.push(pos.min(limit));
+    }
+    cuts
+}
+
+/// Ensures cuts are monotonically strictly increasing, with cut[0] = 0 and cut[cells] = limit.
+pub fn sanitize_grid_cuts(cuts: &mut [usize], limit: usize, cells: usize) {
+    if cuts.len() != cells + 1 || cells == 0 {
+        return;
+    }
+    cuts[0] = 0;
+    cuts[cells] = limit;
+    for index in 1..cells {
+        let minimum = cuts[index - 1] + 1;
+        let maximum = limit.saturating_sub(cells - index);
+        if cuts[index] < minimum {
+            cuts[index] = minimum;
+        } else if cuts[index] > maximum {
+            cuts[index] = maximum;
+        }
+    }
+}
+
+/// Computes elastic grid cuts by searching for local gradient/edge peaks around expected cell boundaries.
+pub fn elastic_grid_cuts(
+    profile: &[f64],
+    limit: usize,
+    cells: usize,
+    origin: f64,
+    cell_size: f64,
+) -> Vec<usize> {
+    if cells == 0 || limit == 0 {
+        return vec![0];
+    }
+    let mut cuts = uniform_grid_cuts(limit, cells);
+    if profile.is_empty() {
+        return cuts;
+    }
+
+    let search_ratio = 0.35f64;
+    let min_window = 2.0f64;
+    let window = (cell_size * search_ratio).max(min_window);
+    let mean_strength = profile.iter().sum::<f64>() / profile.len() as f64;
+    let strength_gate = mean_strength * 0.50;
+
+    for index in 1..cells {
+        let target = origin + index as f64 * cell_size;
+        let fallback = (target.round() as usize).clamp(index, limit.saturating_sub(cells - index));
+        let start_cut = ((target - window).floor() as isize).max(index as isize) as usize;
+        let end_cut = ((target + window).ceil() as isize).min(limit.saturating_sub(cells - index) as isize) as usize;
+
+        if end_cut < start_cut {
+            cuts[index] = fallback;
+            continue;
+        }
+
+        let start_profile = start_cut.saturating_sub(1);
+        let end_profile = (end_cut.saturating_sub(1)).min(profile.len().saturating_sub(1));
+        if end_profile < start_profile {
+            cuts[index] = fallback;
+            continue;
+        }
+
+        let span = &profile[start_profile..=end_profile];
+        if span.is_empty() {
+            cuts[index] = fallback;
+            continue;
+        }
+
+        let mut best_offset = 0;
+        let mut best_value = span[0];
+        for (offset, &val) in span.iter().enumerate() {
+            if val > best_value {
+                best_value = val;
+                best_offset = offset;
+            }
+        }
+
+        cuts[index] = if best_value >= strength_gate {
+            start_profile + best_offset + 1
+        } else {
+            fallback
+        };
+    }
+
+    sanitize_grid_cuts(&mut cuts, limit, cells);
+    cuts
+}
+
+/// Stabilizes elastic grid cuts to prevent excessive cell size distortion.
+pub fn stabilize_grid_cuts(mut cuts: Vec<usize>, limit: usize, cells: usize) -> Vec<usize> {
+    sanitize_grid_cuts(&mut cuts, limit, cells);
+    if cells <= 1 {
+        return cuts;
+    }
+
+    let mut widths = Vec::with_capacity(cells);
+    for i in 0..cells {
+        widths.push((cuts[i + 1].saturating_sub(cuts[i])).max(1) as f64);
+    }
+
+    let min_w = widths.iter().cloned().fold(f64::INFINITY, f64::min);
+    let max_w = widths.iter().cloned().fold(0.0f64, f64::max);
+    let expected = limit as f64 / cells as f64;
+
+    let max_deviation = widths
+        .iter()
+        .map(|&w| (w - expected).abs() / expected.max(1.0))
+        .fold(0.0f64, f64::max);
+    let ratio = max_w / min_w.max(1.0);
+
+    // Conservative bounds (matching pixel-art-lab)
+    if ratio <= 1.80 && max_deviation <= 0.62 {
+        return cuts;
+    }
+
+    // Blend elastic with uniform if deviation is moderate, or fallback to uniform
+    let uniform = uniform_grid_cuts(limit, cells);
+    if ratio <= 2.25 && max_deviation <= 0.90 {
+        let mut blended = Vec::with_capacity(cells + 1);
+        for i in 0..=cells {
+            let b = (cuts[i] as f64 * 0.60 + uniform[i] as f64 * 0.40).round() as usize;
+            blended.push(b);
+        }
+        sanitize_grid_cuts(&mut blended, limit, cells);
+        return blended;
+    }
+
+    uniform
+}
+
+/// Computes horizontal and vertical cell indices and triangular center-weights
+/// for either a standard uniform grid or an elastic data-driven cut grid.
+pub fn compute_spatial_grid(
+    rgba: &[u8],
+    w: usize,
+    h: usize,
+    cols: usize,
+    rows: usize,
+    elastic: bool,
+) -> (Vec<usize>, Vec<f64>, Vec<usize>, Vec<f64>) {
+    if elastic {
+        let prof_x = axis_profile(rgba, w, h, 0);
+        let prof_y = axis_profile(rgba, w, h, 1);
+        let cell_w = w as f64 / cols as f64;
+        let cell_h = h as f64 / rows as f64;
+        let (origin_x, _) = comb_phase(&prof_x, cell_w);
+        let (origin_y, _) = comb_phase(&prof_y, cell_h);
+
+        let col_cuts = stabilize_grid_cuts(
+            elastic_grid_cuts(&prof_x, w, cols, origin_x, cell_w),
+            w,
+            cols,
+        );
+        let row_cuts = stabilize_grid_cuts(
+            elastic_grid_cuts(&prof_y, h, rows, origin_y, cell_h),
+            h,
+            rows,
+        );
+
+        let mut ixs = vec![0usize; w];
+        let mut wxs = vec![0f64; w];
+        for x in 0..w {
+            let mut ix = cols - 1;
+            for i in 0..cols {
+                if x < col_cuts[i + 1] {
+                    ix = i;
+                    break;
+                }
+            }
+            ixs[x] = ix;
+            let c0 = col_cuts[ix] as f64;
+            let c1 = col_cuts[ix + 1] as f64;
+            let span = (c1 - c0).max(1.0);
+            let fx = (x as f64 + 0.5 - c0) / span;
+            wxs[x] = 1.0 - 2.0 * (fx - 0.5).abs();
+        }
+
+        let mut iys = vec![0usize; h];
+        let mut wys = vec![0f64; h];
+        for y in 0..h {
+            let mut iy = rows - 1;
+            for i in 0..rows {
+                if y < row_cuts[i + 1] {
+                    iy = i;
+                    break;
+                }
+            }
+            iys[y] = iy;
+            let r0 = row_cuts[iy] as f64;
+            let r1 = row_cuts[iy + 1] as f64;
+            let span = (r1 - r0).max(1.0);
+            let fy = (y as f64 + 0.5 - r0) / span;
+            wys[y] = 1.0 - 2.0 * (fy - 0.5).abs();
+        }
+
+        (ixs, wxs, iys, wys)
+    } else {
+        let cw = w as f64 / cols as f64;
+        let ch = h as f64 / rows as f64;
+
+        let mut ixs = vec![0usize; w];
+        let mut wxs = vec![0f64; w];
+        for x in 0..w {
+            let ix = ((x * cols) / w).min(cols - 1);
+            ixs[x] = ix;
+            let fx = (x as f64 + 0.5 - ix as f64 * cw) / cw;
+            wxs[x] = 1.0 - 2.0 * (fx - 0.5).abs();
+        }
+        let mut iys = vec![0usize; h];
+        let mut wys = vec![0f64; h];
+        for y in 0..h {
+            let iy = ((y * rows) / h).min(rows - 1);
+            iys[y] = iy;
+            let fy = (y as f64 + 0.5 - iy as f64 * ch) / ch;
+            wys[y] = 1.0 - 2.0 * (fy - 0.5).abs();
+        }
+
+        (ixs, wxs, iys, wys)
+    }
+}
+
 /// detector.reconstruct.two_stage_pack).
 ///
 /// Stage 1 (STRUCTURE): quantise to a small palette (adaptive K) and let each
 /// cell vote among the clean quantised labels -> crisp placement.
 /// Stage 2 (COLOUR): colour each cell from the ORIGINAL pixels carrying the
 /// winning label -> crisp lines AND accurate, un-clamped colours.
-pub fn two_stage_pack(rgba: &[u8], w: usize, h: usize, cols: usize, rows: usize,
-                      k_colors: usize) -> ReconOut {
+pub fn two_stage_pack(
+    rgba: &[u8],
+    w: usize,
+    h: usize,
+    cols: usize,
+    rows: usize,
+    k_colors: usize,
+    elastic: bool,
+) -> ReconOut {
     let k_req = if k_colors > 0 {
         k_colors
     } else {
@@ -793,25 +1030,8 @@ pub fn two_stage_pack(rgba: &[u8], w: usize, h: usize, cols: usize, rows: usize,
     let (labels, kc) = crate::kmeans::kmeans_labels(rgba, w, h, k_req);
     let kc = kc.max(1);
     let n = cols * rows;
-    let cw = w as f64 / cols as f64;
-    let ch = h as f64 / rows as f64;
 
-    let mut ixs = vec![0usize; w];
-    let mut wxs = vec![0f64; w];
-    for x in 0..w {
-        let ix = ((x * cols) / w).min(cols - 1);
-        ixs[x] = ix;
-        let fx = (x as f64 + 0.5 - ix as f64 * cw) / cw;
-        wxs[x] = 1.0 - 2.0 * (fx - 0.5).abs();
-    }
-    let mut iys = vec![0usize; h];
-    let mut wys = vec![0f64; h];
-    for y in 0..h {
-        let iy = ((y * rows) / h).min(rows - 1);
-        iys[y] = iy;
-        let fy = (y as f64 + 0.5 - iy as f64 * ch) / ch;
-        wys[y] = 1.0 - 2.0 * (fy - 0.5).abs();
-    }
+    let (ixs, wxs, iys, wys) = compute_spatial_grid(rgba, w, h, cols, rows, elastic);
 
     // stage 1: winning label per cell (centre-weighted vote over labels)
     let mut wsum = vec![0f64; n * kc];
@@ -823,18 +1043,137 @@ pub fn two_stage_pack(rgba: &[u8], w: usize, h: usize, cols: usize, rows: usize,
             wsum[cell * kc + labels[i] as usize] += wgt;
         }
     }
+    // 1.1 Soft Voting / Relaxation Labeling:
+    // Convert wsum logits to probabilities and propagate neighbor consensus over 2 iterations
+    let mut probs = vec![0.0f64; n * kc];
+    for c in 0..n {
+        let base = c * kc;
+        let mut total_w = 0.0f64;
+        for l in 0..kc {
+            total_w += wsum[base + l];
+        }
+        if total_w > 1e-9 {
+            for l in 0..kc {
+                probs[base + l] = wsum[base + l] / total_w;
+            }
+        } else {
+            for l in 0..kc {
+                probs[base + l] = 1.0 / (kc as f64);
+            }
+        }
+    }
+
+    // Relaxation iterations: blend local cell prior with spatial neighbor consensus
+    for iter in 0..2 {
+        let mut next_probs = probs.clone();
+        let neighbor_w = if iter == 0 { 0.35 } else { 0.45 };
+        let local_w = 1.0 - neighbor_w;
+
+        for cy in 0..rows {
+            for cx in 0..cols {
+                let c = cy * cols + cx;
+                let base = c * kc;
+
+                let mut n_sum = vec![0.0f64; kc];
+                let mut n_count = 0.0f64;
+
+                let y_min = cy.saturating_sub(1);
+                let y_max = (cy + 1).min(rows - 1);
+                let x_min = cx.saturating_sub(1);
+                let x_max = (cx + 1).min(cols - 1);
+
+                for ny in y_min..=y_max {
+                    for nx in x_min..=x_max {
+                        if ny == cy && nx == cx {
+                            continue;
+                        }
+                        let nc = ny * cols + nx;
+                        let n_base = nc * kc;
+                        let weight = if ny == cy || nx == cx { 1.0 } else { 0.707 };
+                        for l in 0..kc {
+                            n_sum[l] += probs[n_base + l] * weight;
+                        }
+                        n_count += weight;
+                    }
+                }
+
+                if n_count > 0.0 {
+                    let mut norm = 0.0f64;
+                    for l in 0..kc {
+                        let combined = local_w * probs[base + l] + neighbor_w * (n_sum[l] / n_count);
+                        next_probs[base + l] = combined;
+                        norm += combined;
+                    }
+                    if norm > 1e-9 {
+                        for l in 0..kc {
+                            next_probs[base + l] /= norm;
+                        }
+                    }
+                }
+            }
+        }
+        probs = next_probs;
+    }
+
     let mut win = vec![0u32; n];
     for c in 0..n {
         let base = c * kc;
         let mut bi = 0usize;
-        let mut bv = wsum[base];
+        let mut bv = probs[base];
         for l in 1..kc {
-            if wsum[base + l] > bv {
-                bv = wsum[base + l];
+            if probs[base + l] > bv {
+                bv = probs[base + l];
                 bi = l;
             }
         }
         win[c] = bi as u32;
+    }
+
+    // 1.2 Spatial Total Variation (TV) Regularization:
+    // Remove isolated single-pixel salt-and-pepper noise surrounded by uniform neighbor clusters
+    if cols >= 3 && rows >= 3 {
+        let win_snapshot = win.clone();
+        for cy in 1..rows - 1 {
+            for cx in 1..cols - 1 {
+                let c = cy * cols + cx;
+                let cur_l = win_snapshot[c];
+
+                let up = win_snapshot[(cy - 1) * cols + cx];
+                let down = win_snapshot[(cy + 1) * cols + cx];
+                let left = win_snapshot[cy * cols + (cx - 1)];
+                let right = win_snapshot[cy * cols + (cx + 1)];
+
+                // Check 4-connected neighbors
+                let neighbors = [up, down, left, right];
+                let mut counts = [0usize; 4];
+                for i in 0..4 {
+                    for j in 0..4 {
+                        if neighbors[i] == neighbors[j] {
+                            counts[i] += 1;
+                        }
+                    }
+                }
+
+                // If 3 or 4 of 4-neighbors agree on a label distinct from cur_l
+                let mut dominant_label = None;
+                for i in 0..4 {
+                    if counts[i] >= 3 && neighbors[i] != cur_l {
+                        dominant_label = Some(neighbors[i]);
+                        break;
+                    }
+                }
+
+                if let Some(dom_l) = dominant_label {
+                    // Check probability of current label vs dominant:
+                    // If current cell is weak or borderline (prob < 0.65), regularize it to dominant cluster
+                    let cur_p = probs[c * kc + cur_l as usize];
+                    let dom_p = probs[c * kc + dom_l as usize];
+                    if cur_p < 0.65 || (dom_p / cur_p.max(1e-4)) > 0.4 {
+                        win[c] = dom_l;
+                    }
+                }
+            }
+        }
     }
 
     // stage 2: colour from original pixels carrying the winning label

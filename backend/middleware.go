@@ -83,7 +83,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
-		w.Header().Set("Access-Control-Expose-Headers", "X-Grid-Cols, X-Grid-Rows, X-Grid-StepX, X-Grid-StepY, X-Grid-Consensus, X-Grid-Candidates")
+		w.Header().Set("Access-Control-Expose-Headers", "X-Grid-Cols, X-Grid-Rows, X-Grid-StepX, X-Grid-StepY, X-Grid-Consensus, X-Grid-Candidates, X-Grid-Topology, X-Download-Url, X-Filename, X-Input-Filename, X-Cache, X-Reconstruct-Algo")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
 		if r.Method == "OPTIONS" {

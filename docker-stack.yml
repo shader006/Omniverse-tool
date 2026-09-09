@@ -113,7 +113,10 @@ services:
       resources:
         limits:
           memory: 1024M
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     environment:
+      - DOWNLOAD_DIR=/app/downloads
       - PORT=8004
       - RUST_LOG=info
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}

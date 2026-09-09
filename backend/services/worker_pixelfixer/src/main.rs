@@ -17,7 +17,7 @@ use std::{
 use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 
-use worker_pixelfixer::{core, reconstruct};
+use worker_pixelfixer::{advanced_refine, core, reconstruct, topological_engine};
 
 pub struct SpanEvent {
     pub name: String,
@@ -159,6 +159,12 @@ pub struct DetectResponse {
     pub secs: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -168,7 +174,8 @@ pub struct DetectParams {
 
 #[derive(Deserialize, Debug, Default)]
 pub struct FixParams {
-    pub mode: Option<String>, // "full", "fast", or "legacy"
+    pub mode: Option<String>, // "full", "fast", "elastic", or "legacy"
+    pub algo: Option<String>, // "sota" or "original"
     pub cols: Option<u32>,
     pub rows: Option<u32>,
     pub step_x: Option<f64>,
@@ -176,6 +183,54 @@ pub struct FixParams {
     pub auto_palette: Option<bool>,
     pub two_stage: Option<bool>,
     pub k_colors: Option<usize>,
+    pub elastic: Option<bool>,
+}
+
+fn fnv1a_hash(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &byte in data {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn compute_hash_10(data: &[u8]) -> String {
+    format!("{:016x}", fnv1a_hash(data))[..10].to_string()
+}
+
+fn sanitize_filename(name: &str) -> String {
+    let base = std::path::Path::new(name)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image");
+    let sanitized: String = base
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    if sanitized.is_empty() {
+        "image".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn get_download_dir() -> std::path::PathBuf {
+    let dir = std::env::var("DOWNLOAD_DIR").unwrap_or_else(|_| "/app/downloads".to_string());
+    let path = std::path::PathBuf::from(dir);
+    let _ = std::fs::create_dir_all(&path);
+    path
+}
+
+#[derive(Serialize, Deserialize)]
+struct CachedFixMeta {
+    cols: usize,
+    rows: usize,
+    step_x: f64,
+    step_y: f64,
+    consensus: String,
+    topology: String,
+    candidates_json: String,
 }
 
 fn collect_candidates(primary_step: f64, consensus_conf: u32) -> Vec<GridCandidate> {
@@ -228,11 +283,17 @@ async fn detect_handler(
 ) -> Result<Json<DetectResponse>, (StatusCode, Json<serde_json::Value>)> {
     let t0 = Instant::now();
     let mut image_bytes: Option<Vec<u8>> = None;
+    let mut original_filename = "source.png".to_string();
     let mut mode_override: Option<String> = query.mode;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         if name == "file" || name == "image" {
+            if let Some(fname) = field.file_name() {
+                if !fname.is_empty() {
+                    original_filename = fname.to_string();
+                }
+            }
             if let Ok(bytes) = field.bytes().await {
                 image_bytes = Some(bytes.to_vec());
             }
@@ -253,6 +314,39 @@ async fn detect_handler(
         }
     };
 
+    let base_name = sanitize_filename(&original_filename);
+    let in_hash = compute_hash_10(&bytes);
+    let in_filename = format!("{}_{}_input.png", in_hash, base_name);
+
+    let download_dir = get_download_dir();
+    let in_filepath = download_dir.join(&in_filename);
+    if !in_filepath.exists() {
+        let _ = std::fs::write(&in_filepath, &bytes);
+    }
+
+    let mode = mode_override.unwrap_or_else(|| "full".to_string());
+    let detect_cache_filename = format!("{}_{}_detect_{}.json", in_hash, base_name, mode);
+    let detect_cache_filepath = download_dir.join(&detect_cache_filename);
+
+    if detect_cache_filepath.exists() {
+        if let Ok(cached_str) = std::fs::read_to_string(&detect_cache_filepath) {
+            if let Ok(mut resp) = serde_json::from_str::<DetectResponse>(&cached_str) {
+                if resp.consensus != "fastmode:lowconf" && resp.confidence >= 70 {
+                    let dur_ms = t0.elapsed().as_secs_f64() * 1000.0;
+                    tracing::info!(
+                        "⚡ [DETECT CACHE HIT] {} | mode: {} in {:.2}ms",
+                        in_filename, mode, dur_ms
+                    );
+                    resp.cached = Some(true);
+                    resp.input_file = Some(in_filename.clone());
+                    resp.download_url = Some(format!("/api/file/{}", in_filename));
+                    resp.secs = dur_ms / 1000.0;
+                    return Ok(Json(resp));
+                }
+            }
+        }
+    }
+
     let dyn_img = match image::load_from_memory(&bytes) {
         Ok(img) => img,
         Err(e) => {
@@ -267,7 +361,6 @@ async fn detect_handler(
     let (w, h) = (rgba.width() as usize, rgba.height() as usize);
     let raw = rgba.as_raw();
 
-    let mode = mode_override.unwrap_or_else(|| "full".to_string());
     let res = if mode == "fast" {
         core::detect_fast(raw, w, h)
     } else {
@@ -305,7 +398,7 @@ async fn detect_handler(
     trace_attrs.insert("grid.consensus".to_string(), serde_json::json!(res.consensus));
     send_otlp_trace("pixelfixer.detect", dur_ms, trace_attrs, false);
 
-    Ok(Json(DetectResponse {
+    let resp = DetectResponse {
         success: true,
         width: w as u32,
         height: h as u32,
@@ -320,7 +413,18 @@ async fn detect_handler(
         candidates,
         secs,
         error: None,
-    }))
+        cached: Some(false),
+        input_file: Some(in_filename.clone()),
+        download_url: Some(format!("/api/file/{}", in_filename)),
+    };
+
+    if resp.consensus != "fastmode:lowconf" && resp.confidence >= 70 {
+        if let Ok(resp_json) = serde_json::to_string(&resp) {
+            let _ = std::fs::write(&detect_cache_filepath, resp_json);
+        }
+    }
+
+    Ok(Json(resp))
 }
 
 async fn fix_handler(
@@ -329,23 +433,33 @@ async fn fix_handler(
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
     let t0 = Instant::now();
     let mut image_bytes: Option<Vec<u8>> = None;
+    let mut original_filename = "source.png".to_string();
     let mut req_mode = query.mode;
+    let mut req_algo = query.algo;
     let mut req_cols = query.cols;
     let mut req_rows = query.rows;
     let mut req_step_x = query.step_x;
     let mut req_step_y = query.step_y;
-    let mut auto_palette = query.auto_palette.unwrap_or(true);
-    let mut req_two_stage = query.two_stage;
+    let mut _auto_palette = query.auto_palette.unwrap_or(true);
+    let mut _req_two_stage = query.two_stage;
     let mut req_k_colors = query.k_colors;
+    let mut req_elastic = query.elastic;
 
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         if name == "file" || name == "image" {
+            if let Some(fname) = field.file_name() {
+                if !fname.is_empty() {
+                    original_filename = fname.to_string();
+                }
+            }
             if let Ok(bytes) = field.bytes().await {
                 image_bytes = Some(bytes.to_vec());
             }
         } else if name == "mode" {
             if let Ok(txt) = field.text().await { req_mode = Some(txt); }
+        } else if name == "algo" {
+            if let Ok(txt) = field.text().await { req_algo = Some(txt); }
         } else if name == "cols" {
             if let Ok(txt) = field.text().await { req_cols = txt.parse().ok(); }
         } else if name == "rows" {
@@ -355,11 +469,13 @@ async fn fix_handler(
         } else if name == "step_y" {
             if let Ok(txt) = field.text().await { req_step_y = txt.parse().ok(); }
         } else if name == "auto_palette" {
-            if let Ok(txt) = field.text().await { auto_palette = txt == "true" || txt == "1"; }
+            if let Ok(txt) = field.text().await { _auto_palette = txt == "true" || txt == "1"; }
         } else if name == "two_stage" {
-            if let Ok(txt) = field.text().await { req_two_stage = Some(txt == "true" || txt == "1"); }
+            if let Ok(txt) = field.text().await { _req_two_stage = Some(txt == "true" || txt == "1"); }
         } else if name == "k_colors" {
             if let Ok(txt) = field.text().await { req_k_colors = txt.parse().ok(); }
+        } else if name == "elastic" {
+            if let Ok(txt) = field.text().await { req_elastic = Some(txt == "true" || txt == "1"); }
         }
     }
 
@@ -373,6 +489,88 @@ async fn fix_handler(
         }
     };
 
+    let base_name = sanitize_filename(&original_filename);
+    let in_hash = compute_hash_10(&bytes);
+    let in_filename = format!("{}_{}_input.png", in_hash, base_name);
+
+    let download_dir = get_download_dir();
+    let in_filepath = download_dir.join(&in_filename);
+    if !in_filepath.exists() {
+        let _ = std::fs::write(&in_filepath, &bytes);
+    }
+
+    // 1. Phân tích tham số phục chế (Cố định thuật toán Gốc của Pixel Art Fixer)
+    let algo_choice = "original";
+    let is_elastic = req_elastic.unwrap_or_else(|| req_mode.as_deref() == Some("elastic") || req_mode.as_deref() == Some("elastic_sota"));
+    let k_colors = req_k_colors.unwrap_or(0);
+
+    // 2. Tính toán Cache Key phân tách độc lập
+    let param_key = format!(
+        "{}_cols{:?}_rows{:?}_sx{:?}_sy{:?}_k{}_el{}",
+        in_hash, req_cols, req_rows, req_step_x, req_step_y, k_colors, is_elastic
+    );
+    let cache_key = compute_hash_10(param_key.as_bytes());
+    let out_filename = format!("{}_{}_pixel.png", cache_key, base_name);
+    let meta_filename = format!("{}_{}_pixel.meta.json", cache_key, base_name);
+    let out_filepath = download_dir.join(&out_filename);
+    let meta_filepath = download_dir.join(&meta_filename);
+
+    // 3. Kiểm tra CACHE HIT
+    if out_filepath.exists() && meta_filepath.exists() {
+        if let (Ok(out_bytes), Ok(meta_str)) = (std::fs::read(&out_filepath), std::fs::read_to_string(&meta_filepath)) {
+            if let Ok(meta) = serde_json::from_str::<CachedFixMeta>(&meta_str) {
+                let dur_ms = t0.elapsed().as_secs_f64() * 1000.0;
+                tracing::info!(
+                    "⚡ [FIX CACHE HIT] In: {} -> Out: {} ({} bytes, {}x{}, algo: original) in {:.2}ms",
+                    in_filename, out_filename, out_bytes.len(), meta.cols, meta.rows, dur_ms
+                );
+
+                let mut headers = HeaderMap::new();
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
+                headers.insert("X-Cache", HeaderValue::from_static("HIT"));
+                headers.insert("X-Reconstruct-Algo", HeaderValue::from_static("original"));
+                if let Ok(v) = HeaderValue::from_str(&format!("/api/file/{}", out_filename)) {
+                    headers.insert("X-Download-Url", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&out_filename) {
+                    headers.insert("X-Filename", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&in_filename) {
+                    headers.insert("X-Input-Filename", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&meta.cols.to_string()) {
+                    headers.insert("X-Grid-Cols", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&meta.rows.to_string()) {
+                    headers.insert("X-Grid-Rows", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", meta.step_x)) {
+                    headers.insert("X-Grid-StepX", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", meta.step_y)) {
+                    headers.insert("X-Grid-StepY", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&meta.consensus) {
+                    headers.insert("X-Grid-Consensus", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&meta.topology) {
+                    headers.insert("X-Grid-Topology", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&meta.candidates_json) {
+                    headers.insert("X-Grid-Candidates", v);
+                }
+
+                let mut trace_attrs = HashMap::new();
+                trace_attrs.insert("cache.hit".to_string(), serde_json::json!(true));
+                trace_attrs.insert("image.out_bytes".to_string(), serde_json::json!(out_bytes.len()));
+                send_otlp_trace("pixelfixer.fix", dur_ms, trace_attrs, false);
+
+                return Ok((headers, out_bytes).into_response());
+            }
+        }
+    }
+
+    // 4. CACHE MISS -> Tái tạo sprite pixel art
     let dyn_img = match image::load_from_memory(&bytes) {
         Ok(img) => img,
         Err(e) => {
@@ -387,12 +585,27 @@ async fn fix_handler(
     let (w, h) = (rgba.width() as usize, rgba.height() as usize);
     let raw = rgba.as_raw();
 
-    // 1. Nếu chưa có cols/rows/step, tự động chạy detect
+    // 5. Nếu chưa có cols/rows/step, tự động chạy detect (hỗ trợ nhập step_x/step_y số thập phân)
     let (step_x, step_y, cols, rows, consensus) = match (req_step_x, req_step_y, req_cols, req_rows) {
         (Some(sx), Some(sy), Some(c), Some(r)) => (sx, sy, c as usize, r as usize, "manual".to_string()),
+        (Some(sx), Some(sy), None, None) => {
+            let c = ((w as f64) / sx).round().max(1.0) as usize;
+            let r = ((h as f64) / sy).round().max(1.0) as usize;
+            (sx, sy, c, r, "manual_step".to_string())
+        }
+        (Some(sx), None, None, None) => {
+            let c = ((w as f64) / sx).round().max(1.0) as usize;
+            let r = ((h as f64) / sx).round().max(1.0) as usize;
+            (sx, sx, c, r, "manual_step".to_string())
+        }
+        (None, None, Some(c), Some(r)) => {
+            let sx = (w as f64) / (c as f64);
+            let sy = (h as f64) / (r as f64);
+            (sx, sy, c as usize, r as usize, "manual_cols_rows".to_string())
+        }
         _ => {
-            let mode = req_mode.as_deref().unwrap_or("full");
-            let d = if mode == "fast" {
+            let is_fast = req_mode.as_deref() == Some("fast");
+            let d = if is_fast {
                 core::detect_fast(raw, w, h)
             } else {
                 core::detect_full(raw, w, h)
@@ -401,34 +614,24 @@ async fn fix_handler(
         }
     };
 
-    // 2. Tái tạo sprite pixel art native (Mặc định: two_stage_pack chuẩn SOTA của Pixel Art Fixer)
-    let use_two_stage = req_two_stage.unwrap_or_else(|| req_mode.as_deref() != Some("legacy"));
-    let k_colors = req_k_colors.unwrap_or(0);
+    // 6. Tái tạo sprite pixel art bằng Thuật toán Gốc (Two-Stage K-Means của Pixel Art Fixer)
+    let out = reconstruct::two_stage_pack(
+        raw,
+        w,
+        h,
+        cols,
+        rows,
+        k_colors,
+        is_elastic,
+    );
+    let (recon_rgba, recon_cols, recon_rows, topology_label) = (
+        out.rgba,
+        out.cols,
+        out.rows,
+        if is_elastic { "elastic_original" } else { "uniform_original" }
+    );
 
-    let recon_out = if use_two_stage {
-        reconstruct::two_stage_pack(
-            raw,
-            w,
-            h,
-            cols,
-            rows,
-            k_colors,
-        )
-    } else {
-        reconstruct::reconstruct(
-            raw,
-            w,
-            h,
-            step_x,
-            step_y,
-            cols,
-            rows,
-            false,
-            auto_palette,
-        )
-    };
-
-    let out_img = match RgbaImage::from_raw(recon_out.cols as u32, recon_out.rows as u32, recon_out.rgba) {
+    let out_img = match RgbaImage::from_raw(recon_cols as u32, recon_rows as u32, recon_rgba) {
         Some(img) => DynamicImage::ImageRgba8(img),
         None => {
             return Err((
@@ -446,12 +649,44 @@ async fn fix_handler(
         ));
     }
 
+    let out_bytes = png_buf.into_inner();
+    let out_len = out_bytes.len();
+
+    // 7. Lưu file kết quả và metadata vào DOWNLOAD_DIR (dùng chung với Gateway và dọn dẹp bởi Pogocache)
+    let _ = std::fs::write(&out_filepath, &out_bytes);
+
+    let candidates = collect_candidates(step_x, 95);
+    let cand_json = serde_json::to_string(&candidates).unwrap_or_else(|_| "[]".to_string());
+
+    let meta = CachedFixMeta {
+        cols: recon_cols,
+        rows: recon_rows,
+        step_x,
+        step_y,
+        consensus: consensus.clone(),
+        topology: topology_label.to_string(),
+        candidates_json: cand_json.clone(),
+    };
+    if let Ok(meta_str) = serde_json::to_string(&meta) {
+        let _ = std::fs::write(&meta_filepath, meta_str);
+    }
+
     let mut headers = HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/png"));
-    if let Ok(v) = HeaderValue::from_str(&cols.to_string()) {
+    headers.insert("X-Cache", HeaderValue::from_static("MISS"));
+    if let Ok(v) = HeaderValue::from_str(&format!("/api/file/{}", out_filename)) {
+        headers.insert("X-Download-Url", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&out_filename) {
+        headers.insert("X-Filename", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&in_filename) {
+        headers.insert("X-Input-Filename", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&recon_cols.to_string()) {
         headers.insert("X-Grid-Cols", v);
     }
-    if let Ok(v) = HeaderValue::from_str(&rows.to_string()) {
+    if let Ok(v) = HeaderValue::from_str(&recon_rows.to_string()) {
         headers.insert("X-Grid-Rows", v);
     }
     if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", step_x)) {
@@ -463,31 +698,35 @@ async fn fix_handler(
     if let Ok(v) = HeaderValue::from_str(&consensus) {
         headers.insert("X-Grid-Consensus", v);
     }
-    let candidates = collect_candidates(step_x, 95);
-    if let Ok(cand_json) = serde_json::to_string(&candidates) {
-        if let Ok(v) = HeaderValue::from_str(&cand_json) {
-            headers.insert("X-Grid-Candidates", v);
-        }
+    if let Ok(v) = HeaderValue::from_str(&cand_json) {
+        headers.insert("X-Grid-Candidates", v);
     }
+    headers.insert(
+        "X-Grid-Topology",
+        HeaderValue::from_static(topology_label),
+    );
+    headers.insert(
+        "X-Reconstruct-Algo",
+        HeaderValue::from_static("original"),
+    );
 
     let dur_ms = t0.elapsed().as_secs_f64() * 1000.0;
-    let out_bytes = png_buf.into_inner();
-    let out_len = out_bytes.len();
 
     tracing::info!(
-        "🛠️ [FIX] In: {}x{} -> Out: {}x{} ({} bytes, grid: {:.2}x{:.2}) in {:.2}ms",
-        w, h, cols, rows, out_len, step_x, step_y, dur_ms
+        "🛠️ [FIX] In: {}x{} -> Out: {}x{} ({} bytes, grid: {:.2}x{:.2}, topology: {}, algo: original) in {:.2}ms [File: {}]",
+        w, h, recon_cols, recon_rows, out_len, step_x, step_y, if is_elastic { "elastic" } else { "uniform" }, dur_ms, out_filename
     );
 
     let mut trace_attrs = HashMap::new();
     trace_attrs.insert("image.in_width".to_string(), serde_json::json!(w));
     trace_attrs.insert("image.in_height".to_string(), serde_json::json!(h));
-    trace_attrs.insert("image.out_cols".to_string(), serde_json::json!(cols));
-    trace_attrs.insert("image.out_rows".to_string(), serde_json::json!(rows));
+    trace_attrs.insert("image.out_cols".to_string(), serde_json::json!(recon_cols));
+    trace_attrs.insert("image.out_rows".to_string(), serde_json::json!(recon_rows));
     trace_attrs.insert("grid.step_x".to_string(), serde_json::json!(step_x));
-    trace_attrs.insert("grid.step_y".to_string(), serde_json::json!(step_y));
-    trace_attrs.insert("reconstruct.two_stage".to_string(), serde_json::json!(use_two_stage));
+    trace_attrs.insert("reconstruct.algo".to_string(), serde_json::json!("original"));
+    trace_attrs.insert("reconstruct.elastic".to_string(), serde_json::json!(is_elastic));
     trace_attrs.insert("image.out_bytes".to_string(), serde_json::json!(out_len));
+    trace_attrs.insert("out.filename".to_string(), serde_json::json!(out_filename));
     send_otlp_trace("pixelfixer.fix", dur_ms, trace_attrs, false);
 
     Ok((headers, out_bytes).into_response())

@@ -1,4 +1,5 @@
 pub mod acf;
+pub mod advanced_refine;
 pub mod autocorr;
 pub mod core;
 pub mod fusionchan;
@@ -10,4 +11,5 @@ pub mod runlengths;
 pub mod selfsim;
 pub mod sigproc;
 pub mod varcontrast;
+pub mod topological_engine;
 pub mod wu;

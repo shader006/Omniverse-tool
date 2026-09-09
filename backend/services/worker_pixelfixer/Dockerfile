@@ -15,9 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+RUN mkdir -p /app/downloads
 COPY --from=builder /build/target/release/worker_pixelfixer /app/worker_pixelfixer
 
 ENV PORT=8004
+ENV DOWNLOAD_DIR=/app/downloads
 EXPOSE 8004
 
 CMD ["/app/worker_pixelfixer"]
