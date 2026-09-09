@@ -41,6 +41,9 @@ models/
 *.temp
 *.tmp
 *.log
+out.png
+scratch/
+data/
 
 # Environment & Secrets
 .env
