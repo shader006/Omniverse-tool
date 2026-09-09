@@ -885,12 +885,9 @@
       </div>
 
       <div class="card search-card file-conver-card pixel-studio-card">
-        <!-- Hidden input for file upload -->
-        <input type="file" id="pixel-file-input" class="file-input-hidden" accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" style="display: none;">
-        
         <!-- Studio Quick Bar: Tải ảnh, Chọn mẫu, Đảo bên Trái / Phải -->
         <div class="pixel-studio-topbar">
-          <label for="pixel-file-input" class="pixel-upload-quick-zone" id="pixel-quick-upload-trigger">
+          <label for="pixel-file-input" class="pixel-upload-quick-zone" id="pixel-quick-upload-trigger" title="Nhấn để tải ảnh lên hoặc kéo thả ảnh vào đây (Hỗ trợ Ctrl+V)">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="17 8 12 3 7 8"></polyline>
@@ -899,6 +896,9 @@
             <span><strong>Tải ảnh lên</strong> hoặc Kéo & thả ảnh vào đây (Hỗ trợ Ctrl+V)</span>
           </label>
           <div class="pixel-topbar-actions">
+            <button type="button" id="btn-load-pixel-sample" class="btn-studio-pill" title="Thử nhanh với ảnh sprite retro mẫu">
+              🧪 <span>Thử ảnh mẫu</span>
+            </button>
             <button type="button" id="btn-toggle-layout" class="btn-studio-pill" title="Đảo bên giữa Visualize và Setting">
               ⇄ <span>Đổi vị trí (Visualize ⇋ Setting)</span>
             </button>
@@ -907,6 +907,7 @@
 
         <!-- Dropzone Upload Area (Dự phòng cho drag & drop toàn màn hình) -->
         <div id="pixel-dropzone" class="file-dropzone">
+          <input type="file" id="pixel-file-input" class="file-input-hidden" accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp">
           <div id="pixel-dropzone-prompt" class="dropzone-prompt">
             <div class="dropzone-icon">
               <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -971,37 +972,75 @@
               <div class="options-grid">
                 <!-- 1. Grid Size -->
                 <div class="option-item" style="grid-column: 1 / -1; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 2px;">
-                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                    <label for="pixel-grid-select" class="option-label" style="font-size: 0.88rem; font-weight: 600; color: #e2e8f0; display: flex; align-items: center; gap: 6px; margin-bottom: 0;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <label class="option-label" style="font-size: 0.88rem; font-weight: 600; color: #e2e8f0; display: flex; align-items: center; gap: 6px; margin-bottom: 0;">
                       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#38bdf8" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M3 15h18M9 3v18M15 3v18"></path></svg>
-                      <span>1. Kích Thước Lưới Pixel (Bóc Tách Sprite Gốc):</span>
+                      <span>1. Kích Thước Lưới Pixel:</span>
                     </label>
-                    <span id="wasm-engine-status" class="pixel-tag" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Backend Rust Core ⚡</span>
+                    <span id="wasm-engine-status" class="pixel-tag" style="font-size: 0.72rem; padding: 2px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">Pixel Art Fixer ⚡</span>
                   </div>
-                  <select id="pixel-grid-select" class="form-select">
-                    <option value="auto" selected>⚡ Tự động nhận diện (Auto Grid)</option>
-                    <option value="custom">✏️ Tự điền ô lưới (Custom Grid)...</option>
-                    <option value="1">1:1 Native (Không đổi lưới)</option>
-                    <option value="2">2x2 Pixel Cells</option>
-                    <option value="3">3x3 Pixel Cells</option>
-                    <option value="4">4x4 Pixel Cells</option>
-                    <option value="5">5x5 Pixel Cells</option>
-                    <option value="6">6x6 Pixel Cells</option>
-                    <option value="8">8x8 Pixel Cells</option>
-                    <option value="10">10x10 Pixel Cells</option>
-                    <option value="12">12x12 Pixel Cells</option>
-                    <option value="16">16x16 Pixel Cells</option>
-                    <option value="24">24x24 Pixel Cells</option>
-                    <option value="32">32x32 Pixel Cells</option>
-                  </select>
-                  <!-- Custom Grid Input Row -->
-                  <div id="pixel-custom-grid-wrapper" class="hidden" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 0.8rem; color: #94a3b8;">Cỡ ô:</span>
-                    <input type="number" id="pixel-custom-grid-input" min="1" max="256" step="1" value="4" class="form-input" style="width: 76px; padding: 4px 8px; font-size: 0.84rem; text-align: center;">
-                    <span style="font-size: 0.8rem; color: #94a3b8;">px / cell</span>
+
+                  <!-- Grid Mode Toggle: Auto vs Manual Input -->
+                  <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 10px;">
+                    <button type="button" id="btn-grid-auto" class="pixel-mode-btn active" style="flex: 1; padding: 6px 10px; font-size: 0.82rem; font-weight: 600; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.3); background: rgba(56, 189, 248, 0.15); color: #38bdf8; cursor: pointer; transition: all 0.2s ease;">
+                      ⚡ Tự Động Nhận Diện (Auto)
+                    </button>
+                    <button type="button" id="btn-grid-manual" class="pixel-mode-btn" style="flex: 1; padding: 6px 10px; font-size: 0.82rem; font-weight: 500; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(15, 23, 42, 0.5); color: #94a3b8; cursor: pointer; transition: all 0.2s ease;">
+                      ✏️ Điền Ô Lưới (Số Thập Phân)
+                    </button>
                   </div>
-                  <!-- Interactive Grid Candidates Container -->
-                  <div id="pixel-grid-candidates-container" class="pixel-candidates-bar hidden"></div>
+
+                  <!-- Auto Detected Info Bar -->
+                  <div id="pixel-grid-auto-info" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: rgba(15, 23, 42, 0.4); border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.15); font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px;">
+                    <span style="display: flex; align-items: center; gap: 6px;">
+                      <span>Lưới tự động:</span>
+                      <strong id="pixel-auto-grid-label" style="color: #38bdf8; font-family: monospace;">Đang chờ ảnh...</strong>
+                    </span>
+                    <button type="button" id="btn-copy-to-manual" style="background: none; border: none; color: #38bdf8; font-size: 0.76rem; cursor: pointer; text-decoration: underline; padding: 0;">
+                      Chuyển sang điền tay
+                    </button>
+                  </div>
+
+                  <!-- Manual Grid Inputs (Cho phép điền số thập phân) -->
+                  <div id="pixel-manual-grid-container" class="hidden" style="display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; background: rgba(15, 23, 42, 0.5); border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2); margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                      <span style="font-size: 0.82rem; color: #cbd5e1; white-space: nowrap;">Cỡ ô (Step):</span>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <input type="number" id="pixel-grid-step-input" step="0.01" min="0.1" max="512" placeholder="vd: 6.28" class="form-input" style="width: 90px; padding: 4px 8px; font-size: 0.85rem; text-align: center; font-family: monospace; font-weight: 600; color: #38bdf8;">
+                        <span style="font-size: 0.78rem; color: #94a3b8;">px / cell</span>
+                      </div>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px dashed rgba(148, 163, 184, 0.15); padding-top: 6px;">
+                      <span style="font-size: 0.82rem; color: #cbd5e1; white-space: nowrap;">Sprite (Cột x Hàng):</span>
+                      <div style="display: flex; align-items: center; gap: 4px;">
+                        <input type="number" id="pixel-grid-cols-input" step="1" min="1" max="4096" placeholder="Cols" class="form-input" style="width: 65px; padding: 4px 6px; font-size: 0.85rem; text-align: center; font-family: monospace;">
+                        <span style="color: #64748b; font-size: 0.8rem;">x</span>
+                        <input type="number" id="pixel-grid-rows-input" step="1" min="1" max="4096" placeholder="Rows" class="form-input" style="width: 65px; padding: 4px 6px; font-size: 0.85rem; text-align: center; font-family: monospace;">
+                        <span style="font-size: 0.78rem; color: #94a3b8;">px</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Interactive Grid Candidates Container (Quick Chips) -->
+                  <div id="pixel-grid-candidates-container" class="pixel-candidates-bar hidden" style="margin-bottom: 8px;"></div>
+
+                  <!-- Grid Topology: Uniform vs Elastic -->
+                  <div style="margin-top: 6px; padding-top: 8px; border-top: 1px dashed rgba(148, 163, 184, 0.2); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <span style="font-size: 0.8rem; font-weight: 600; color: #94a3b8; display: flex; align-items: center; gap: 4px;">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M4 12h16M4 6h16M4 18h16"></path></svg>
+                        Kiểu Lưới:
+                      </span>
+                    </div>
+                    <div class="pixel-topology-toggle-group" style="display: inline-flex; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; padding: 2px;">
+                      <button type="button" id="btn-topology-uniform" class="pixel-topology-btn active" data-topology="uniform" title="Lưới thẳng đều chuẩn (Dành cho ảnh game retro hoặc sprite phóng to chuẩn)">
+                        📏 Thẳng Đều (Uniform)
+                      </button>
+                      <button type="button" id="btn-topology-elastic" class="pixel-topology-btn" data-topology="elastic" title="Lưới co dãn tự động uốn theo viền pixel AI bị trôi dạt (Grid Drift / Skew)">
+                        🧲 Co Dãn (Elastic)
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- 2. Sprite Detail Options Title -->
@@ -1045,20 +1084,30 @@
                   </select>
                 </div>
 
-                <!-- Max Colors Limiter (Quantization) -->
+                <!-- Palette Colors Control (Auto vs Manual Input) -->
                 <div class="option-item">
-                  <label for="pixel-max-colors-select" class="option-label">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                    <span>Giới hạn số màu (Quantize):</span>
-                  </label>
-                  <select id="pixel-max-colors-select" class="form-select">
-                    <option value="all" selected>Tất cả màu (Không giới hạn)</option>
-                    <option value="64">Tối đa 64 màu</option>
-                    <option value="32">Tối đa 32 màu</option>
-                    <option value="16">Tối đa 16 màu (Retro Low-color)</option>
-                    <option value="8">Tối đa 8 màu (Chunky retro)</option>
-                    <option value="4">Tối đa 4 màu (Ultra minimal)</option>
-                  </select>
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <label class="option-label" style="margin-bottom: 0;">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                      <span>Số lượng màu Palette:</span>
+                    </label>
+                  </div>
+
+                  <!-- Only 2 controls: Auto button showing detected count + Manual color count input -->
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <!-- Auto Button (Shows algorithm detected count) -->
+                    <button type="button" id="btn-palette-mode-auto" class="pixel-mode-btn active" style="flex: 1.15; padding: 7px 10px; font-size: 0.82rem; font-weight: 600; border-radius: 6px; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Bấm để dùng số màu tự động do thuật toán phân tích">
+                      <span>⚡ Auto:</span>
+                      <strong id="pixel-auto-palette-label" style="color: #38bdf8; font-family: monospace;">Đang tính...</strong>
+                    </button>
+
+                    <!-- Manual Input Box (User inputs desired color count) -->
+                    <div id="pixel-manual-palette-box" class="pixel-palette-input-box" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(15, 23, 42, 0.5); transition: all 0.2s ease;">
+                      <span style="font-size: 0.8rem; color: #94a3b8; white-space: nowrap;">✏️ Nhập:</span>
+                      <input type="number" id="pixel-manual-palette-input" min="2" max="256" step="1" value="16" placeholder="16" style="width: 50px; background: transparent; border: none; outline: none; font-size: 0.85rem; font-family: monospace; font-weight: 600; text-align: center; color: #f1f5f9; padding: 2px 0;" title="Nhập số lượng màu mong muốn (2 - 256)">
+                      <span style="font-size: 0.78rem; color: #64748b; white-space: nowrap;">màu</span>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Dithering -->
@@ -1365,7 +1414,7 @@
   </footer>
 
   <script src="/static/client/rmbg-client.js?v=1.0.0" defer></script>
-  <script src="/static/client/pixel-client.js?v=3.7.0" defer></script>
+  <script src="/static/client/pixel-client.js?v=3.8.2" defer></script>
   <script src="/static/client/app.js?v=5.3.0" defer></script>
 </body>
 </html>

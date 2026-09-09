@@ -106,7 +106,6 @@
     [15,  7, 13,  5]
   ];
 
-  // State
   const state = {
     sourceImage: null,
     sourceCanvas: null,
@@ -115,10 +114,17 @@
     originalHeight: 0,
     detectedGridSize: 1,
     gridCandidates: [],
+    gridMode: 'auto', // 'auto' | 'manual'
+    manualStep: null,
+    manualCols: null,
+    manualRows: null,
     currentGridSize: 'auto',
     antiAliasing: 'sharp',
     paletteKey: 'original',
-    maxColors: 'all',
+    paletteMode: 'auto', // 'auto' | 'manual'
+    manualColors: 16,
+    detectedPaletteK: 16,
+    cachedKColors: 0,
     dithering: 'none',
     transparencyMode: 'keep',
     bgScope: 'boundary', // 'boundary' (BFS Flood fill from edges) | 'all' (All matching)
@@ -136,6 +142,10 @@
     isEyedropperActive: false,
     ensembleGrid: null,
     sourceFile: null,
+    gridTopology: 'uniform',
+    cachedTopology: 'uniform',
+    reconstructAlgo: 'original', // 'original' (Two-Stage K-Means) | 'sota' (OKLab) | 'topological' (SLIC + Skeleton)
+    cachedAlgo: 'original',
     cachedSpriteCanvas: null,
     cachedCols: 0,
     cachedRows: 0,
@@ -148,7 +158,10 @@
   let wasmModule = null;
   let dropzone, fileInput, dropPrompt, fileInfoPreview, fileThumb, fileName, fileMeta, btnRemoveFile;
   let optionsPanel, progressCard, progressBar, progressText, resultCard, errorBox, errorMsg;
-  let selectGridSize, gridCandidatesContainer, customGridWrapper, customGridInput, selectAntiAliasing, selectPalette, selectMaxColors, selectDithering;
+  let btnGridAuto, btnGridManual, pixelGridAutoInfo, pixelAutoGridLabel, btnCopyToManual, pixelManualGridContainer;
+  let gridStepInput, gridColsInput, gridRowsInput, gridCandidatesContainer;
+  let selectAntiAliasing, selectPalette, selectDithering;
+  let btnPaletteAuto, btnPaletteManual, pixelAutoPaletteLabel, pixelManualPaletteContainer, pixelManualPaletteInput;
   let selectBgMode, selectBgScope, toleranceSlider, toleranceVal, customColorWrapper, customColorInput;
   let selectOutline, outlineColorInput, selectForcedSize, customSizeWrapper, customWidthInput, customHeightInput, btnLockRatio, lockIcon;
   let quickOutputInput, outputChips, studioWorkspace;
@@ -161,9 +174,9 @@
     studioWorkspace = document.getElementById('pixel-studio-workspace');
     dropzone = document.getElementById('pixel-dropzone');
     fileInput = document.getElementById('pixel-file-input');
-    dropPrompt = document.getElementById('pixel-dropzone-prompt');
-    fileInfoPreview = document.getElementById('pixel-file-info');
-    fileThumb = document.getElementById('pixel-source-thumb');
+    dropPrompt = document.getElementById('pixel-dropzone-prompt') || document.getElementById('pixel-drop-prompt');
+    fileInfoPreview = document.getElementById('pixel-file-info') || document.getElementById('pixel-file-info-preview');
+    fileThumb = document.getElementById('pixel-source-thumb') || document.getElementById('pixel-file-thumb');
     fileName = document.getElementById('pixel-file-name');
     fileMeta = document.getElementById('pixel-file-meta');
     btnRemoveFile = document.getElementById('btn-remove-pixel-file');
@@ -176,14 +189,24 @@
     errorBox = document.getElementById('pixel-error-box');
     errorMsg = document.getElementById('pixel-error-message');
 
-    selectGridSize = document.getElementById('pixel-grid-select');
+    btnGridAuto = document.getElementById('btn-grid-auto');
+    btnGridManual = document.getElementById('btn-grid-manual');
+    pixelGridAutoInfo = document.getElementById('pixel-grid-auto-info');
+    pixelAutoGridLabel = document.getElementById('pixel-auto-grid-label');
+    btnCopyToManual = document.getElementById('btn-copy-to-manual');
+    pixelManualGridContainer = document.getElementById('pixel-manual-grid-container');
+    gridStepInput = document.getElementById('pixel-grid-step-input');
+    gridColsInput = document.getElementById('pixel-grid-cols-input');
+    gridRowsInput = document.getElementById('pixel-grid-rows-input');
     gridCandidatesContainer = document.getElementById('pixel-grid-candidates-container');
-    customGridWrapper = document.getElementById('pixel-custom-grid-wrapper');
-    customGridInput = document.getElementById('pixel-custom-grid-input');
 
     selectAntiAliasing = document.getElementById('pixel-aa-select');
     selectPalette = document.getElementById('pixel-palette-select');
-    selectMaxColors = document.getElementById('pixel-max-colors-select');
+    btnPaletteAuto = document.getElementById('btn-palette-mode-auto');
+    btnPaletteManual = document.getElementById('btn-palette-mode-manual');
+    pixelAutoPaletteLabel = document.getElementById('pixel-auto-palette-label');
+    pixelManualPaletteContainer = document.getElementById('pixel-manual-palette-box') || document.getElementById('pixel-manual-palette-container');
+    pixelManualPaletteInput = document.getElementById('pixel-manual-palette-input');
     selectDithering = document.getElementById('pixel-dither-select');
     selectBgMode = document.getElementById('pixel-bg-mode-select');
     selectBgScope = document.getElementById('pixel-bg-scope-select');
@@ -369,7 +392,7 @@
       const fd = new FormData();
       fd.append('file', blob, 'image.png');
 
-      const res = await fetch('/api/pixel/detect?mode=fast', {
+      const res = await fetch('/api/pixel/detect?mode=full', {
         method: 'POST',
         body: fd,
       });
@@ -394,9 +417,13 @@
           statusEl.title = `Rust Core (${badge}): ${data.step_x.toFixed(2)}x${data.step_y.toFixed(2)}px (${data.cols}x${data.rows}), offset: (${data.offset_x.toFixed(2)}, ${data.offset_y.toFixed(2)}) - Tin cậy: ${data.confidence}% (${(data.secs * 1000).toFixed(1)}ms)`;
         }
 
-        if (selectGridSize && state.currentGridSize === 'auto') {
-          const autoOpt = selectGridSize.querySelector('option[value="auto"]');
-          if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đoán: ${state.detectedGridSize}x${state.detectedGridSize}px)`;
+        if (pixelAutoGridLabel) {
+          pixelAutoGridLabel.textContent = `${data.step_x.toFixed(2)}x${data.step_y.toFixed(2)} px (${data.cols}x${data.rows})`;
+        }
+        if (gridStepInput && !gridStepInput.value) {
+          gridStepInput.value = data.step_x.toFixed(2);
+          if (gridColsInput) gridColsInput.value = data.cols;
+          if (gridRowsInput) gridRowsInput.value = data.rows;
         }
 
         renderGridCandidates(state.gridCandidates);
@@ -576,12 +603,36 @@
   }
 
   /**
-   * Giới hạn số lượng màu (K-Means quantization đơn giản)
+   * Tính toán số lượng màu tự động (adaptive_k) chuẩn Pixel Art Fixer
+   */
+  function computeAdaptiveK(bytes, width, height) {
+    const cnt = new Uint32Array(4096);
+    let total = 0;
+    for (let i = 0; i < width * height; i++) {
+      if (bytes[i * 4 + 3] > 0) {
+        const k = (((bytes[i * 4] >> 4) & 0xF) << 8)
+                | (((bytes[i * 4 + 1] >> 4) & 0xF) << 4)
+                | ((bytes[i * 4 + 2] >> 4) & 0xF);
+        cnt[k]++;
+        total++;
+      }
+    }
+    if (total === 0) return 16;
+    let kCount = 0;
+    const thresh = total * 0.003;
+    for (let i = 0; i < 4096; i++) {
+      if (cnt[i] >= thresh) kCount++;
+    }
+    return Math.max(16, Math.min(48, kCount));
+  }
+
+  /**
+   * Giới hạn số lượng màu (Thuật toán Median Cut chuẩn bảo toàn màu sắc)
    */
   function quantizeColors(bytes, width, height, maxCount) {
     if (maxCount <= 0 || maxCount >= 256) return;
 
-    // Lấy danh sách mẫu màu hiện có
+    // 1. Thu thập danh sách màu độc nhất kèm tần suất xuất hiện
     const colorMap = {};
     for (let i = 0; i < width * height; i++) {
       const idx = i * 4;
@@ -590,24 +641,77 @@
       colorMap[key] = (colorMap[key] || 0) + 1;
     }
 
-    const unique = Object.keys(colorMap);
-    if (unique.length <= maxCount) return;
+    const uniqueKeys = Object.keys(colorMap);
+    if (uniqueKeys.length <= maxCount) return;
 
-    // Chọn top N màu phổ biến nhất làm palette đại diện
-    const sorted = unique
-      .map(k => {
-        const p = k.split('_').map(Number);
-        return { color: p, count: colorMap[k] };
-      })
-      .sort((a, b) => b.count - a.count)
-      .slice(0, maxCount)
-      .map(x => x.color);
+    // Tạo mảng các pixel RGB
+    const pixels = uniqueKeys.map(k => k.split('_').map(Number));
+    let boxes = [pixels];
 
-    // Gán lại màu gần nhất
+    // 2. Chia nhỏ các hộp màu theo trục có độ phân tán lớn nhất (Median Cut)
+    while (boxes.length < maxCount) {
+      let bestIdx = -1;
+      let maxRange = -1;
+      let splitAxis = 0;
+
+      for (let b = 0; b < boxes.length; b++) {
+        const box = boxes[b];
+        if (box.length <= 1) continue;
+
+        let minR = 255, maxR = 0;
+        let minG = 255, maxG = 0;
+        let minB = 255, maxB = 0;
+
+        for (let i = 0; i < box.length; i++) {
+          const p = box[i];
+          if (p[0] < minR) minR = p[0]; if (p[0] > maxR) maxR = p[0];
+          if (p[1] < minG) minG = p[1]; if (p[1] > maxG) maxG = p[1];
+          if (p[2] < minB) minB = p[2]; if (p[2] > maxB) maxB = p[2];
+        }
+
+        const rRange = maxR - minR;
+        const gRange = maxG - minG;
+        const bRange = maxB - minB;
+        const range = Math.max(rRange, gRange, bRange);
+
+        if (range > maxRange) {
+          maxRange = range;
+          bestIdx = b;
+          splitAxis = (rRange >= gRange && rRange >= bRange) ? 0 : (gRange >= bRange ? 1 : 2);
+        }
+      }
+
+      if (bestIdx === -1 || maxRange <= 0) break;
+
+      const targetBox = boxes[bestIdx];
+      targetBox.sort((a, b) => a[splitAxis] - b[splitAxis]);
+      const mid = Math.floor(targetBox.length / 2);
+      const box1 = targetBox.slice(0, mid);
+      const box2 = targetBox.slice(mid);
+
+      boxes.splice(bestIdx, 1, box1, box2);
+    }
+
+    // 3. Tính centroid đại diện cho từng cụm màu có xét tần suất
+    const palette = boxes.map(box => {
+      let r = 0, g = 0, b = 0, total = 0;
+      for (let i = 0; i < box.length; i++) {
+        const p = box[i];
+        const weight = colorMap[`${p[0]}_${p[1]}_${p[2]}`] || 1;
+        r += p[0] * weight;
+        g += p[1] * weight;
+        b += p[2] * weight;
+        total += weight;
+      }
+      total = Math.max(1, total);
+      return [Math.round(r / total), Math.round(g / total), Math.round(b / total)];
+    });
+
+    // 4. Gán lại màu gần nhất
     for (let i = 0; i < width * height; i++) {
       const idx = i * 4;
       if (bytes[idx + 3] === 0) continue;
-      const c = findClosestColor(bytes[idx], bytes[idx + 1], bytes[idx + 2], sorted);
+      const c = findClosestColor(bytes[idx], bytes[idx + 1], bytes[idx + 2], palette);
       bytes[idx] = c[0];
       bytes[idx + 1] = c[1];
       bytes[idx + 2] = c[2];
@@ -696,22 +800,38 @@
       if (rows) fd.append('rows', rows);
       if (stepX) fd.append('step_x', stepX);
       if (stepY) fd.append('step_y', stepY);
-      fd.append('mode', 'fast');
+      const isElastic = state.gridTopology === 'elastic';
+      const elasticParam = isElastic ? '&elastic=true' : '';
+      fd.append('mode', 'advanced');
+      fd.append('algo', 'original');
       if (autoPalette) fd.append('auto_palette', 'true');
+      if (isElastic) fd.append('elastic', 'true');
 
-      const res = await fetch('/api/pixel/fix?mode=fast', {
+      const effectiveK = state.paletteMode === 'manual' ? (parseInt(state.manualColors, 10) || 16) : 0;
+      if (effectiveK > 0) {
+        fd.append('k_colors', effectiveK);
+      }
+      const kColorsParam = effectiveK > 0 ? `&k_colors=${effectiveK}` : '';
+
+      const res = await fetch(`/api/pixel/fix?algo=original${elasticParam}${kColorsParam}`, {
         method: 'POST',
         body: fd,
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      // Đọc thông tin nhận diện ô lưới từ Headers của worker-pixelfixer
+      // Đọc thông tin nhận diện ô lưới và thuật toán từ Headers của worker-pixelfixer
       const headerCols = parseInt(res.headers.get('x-grid-cols'), 10);
       const headerRows = parseInt(res.headers.get('x-grid-rows'), 10);
       const headerStepX = parseFloat(res.headers.get('x-grid-stepx'));
       const headerStepY = parseFloat(res.headers.get('x-grid-stepy'));
       const headerConsensus = res.headers.get('x-grid-consensus') || 'fast';
+      const headerTopology = res.headers.get('x-grid-topology') || state.gridTopology;
+      const headerAlgo = res.headers.get('x-reconstruct-algo') || state.reconstructAlgo || 'original';
+      const headerDownloadUrl = res.headers.get('x-download-url');
+      const headerFilename = res.headers.get('x-filename');
+      const headerInputFilename = res.headers.get('x-input-filename');
+      const headerCache = res.headers.get('x-cache');
       const headerCandidatesStr = res.headers.get('x-grid-candidates');
       let headerCandidates = null;
       if (headerCandidatesStr) {
@@ -743,7 +863,13 @@
         stepX: headerStepX || stepX,
         stepY: headerStepY || stepY,
         consensus: headerConsensus,
+        topology: headerTopology,
+        algo: headerAlgo,
         candidates: headerCandidates,
+        downloadUrl: headerDownloadUrl,
+        filename: headerFilename,
+        inputFilename: headerInputFilename,
+        cache: headerCache,
       };
     } catch (err) {
       console.warn('⚠️ [Backend Rust Fix Fallback]:', err);
@@ -763,9 +889,9 @@
 
       // 1. Xác định Kích thước và Tọa độ Ô Lưới (Grid Cell & Native Geometry)
       let cols = null, rows = null, stepX = null, stepY = null, offsetX = 0, offsetY = 0;
-      let cellSizeLabel = 'auto';
+      let cellSizeLabel = '';
 
-      if (state.currentGridSize === 'auto') {
+      if (state.gridMode === 'auto') {
         if (state.ensembleGrid) {
           stepX = state.ensembleGrid.step_x;
           stepY = state.ensembleGrid.step_y;
@@ -773,30 +899,40 @@
           rows = Math.max(1, state.ensembleGrid.rows);
           offsetX = state.ensembleGrid.offset_x || 0;
           offsetY = state.ensembleGrid.offset_y || 0;
-          cellSizeLabel = `${stepX.toFixed(1)}x${stepY.toFixed(1)}`;
+          cellSizeLabel = `${stepX.toFixed(2)}x${stepY.toFixed(2)}`;
         }
-        // Nếu chưa có ensembleGrid, giữ cols/rows null để worker-pixelfixer tự detect trong 1 request
+        // Nếu chưa có ensembleGrid, giữ cols/rows null để worker tự detect
       } else {
-        let cellSize = 1;
-        if (state.currentGridSize === 'custom') {
-          cellSize = Math.max(1, parseInt(state.customGridSize, 10) || 4);
+        // Chế độ Manual: Điền số thập phân tùy ý
+        if (state.manualStep && state.manualStep > 0) {
+          stepX = state.manualStep;
+          stepY = state.manualStep;
+          cols = state.manualCols || Math.max(1, Math.round(srcW / stepX));
+          rows = state.manualRows || Math.max(1, Math.round(srcH / stepY));
+          cellSizeLabel = `${stepX.toFixed(2)}`;
+        } else if (state.manualCols && state.manualRows) {
+          cols = Math.max(1, state.manualCols);
+          rows = Math.max(1, state.manualRows);
+          stepX = srcW / cols;
+          stepY = srcH / rows;
+          cellSizeLabel = `${stepX.toFixed(2)}x${stepY.toFixed(2)}`;
         } else {
-          cellSize = Math.max(1, parseInt(state.currentGridSize, 10) || 1);
+          stepX = 4.0;
+          stepY = 4.0;
+          cols = Math.max(1, Math.round(srcW / 4.0));
+          rows = Math.max(1, Math.round(srcH / 4.0));
+          cellSizeLabel = '4.00';
         }
-        cellSizeLabel = `${cellSize}`;
-
-        cols = Math.max(1, Math.round(srcW / cellSize));
-        rows = Math.max(1, Math.round(srcH / cellSize));
-        stepX = srcW / cols;
-        stepY = srcH / rows;
       }
 
-      // 2. TÁI TẠO SPRITE: Ưu tiên Backend Rust Engine (/api/pixel/fix) chuẩn Pixel Art Fixer
+      // 2. TÁI TẠO SPRITE: Ưu tiên Backend Rust Engine (/api/pixel/fix)
       let spriteCanvas = null;
       let usedRustReconstruct = false;
 
-      // Kiểm tra cache nếu kích thước lưới cols x rows không đổi (khi chỉ chỉnh palette/outline/dither)
-      if (cols && rows && state.cachedSpriteCanvas && state.cachedCols === cols && state.cachedRows === rows) {
+      const effectiveK = state.paletteMode === 'manual' ? (parseInt(state.manualColors, 10) || 16) : 0;
+
+      // Kiểm tra cache nếu kích thước lưới cols x rows và topology không đổi
+      if (cols && rows && state.cachedSpriteCanvas && state.cachedCols === cols && state.cachedRows === rows && state.cachedTopology === state.gridTopology) {
         spriteCanvas = document.createElement('canvas');
         spriteCanvas.width = cols;
         spriteCanvas.height = rows;
@@ -823,29 +959,48 @@
           usedRustReconstruct = true;
 
           // Cập nhật thông tin nhận diện ô lưới tự động từ Backend
-          if (state.currentGridSize === 'auto') {
+          if (state.gridMode === 'auto') {
             state.ensembleGrid = {
               cols,
               rows,
               step_x: stepX,
               step_y: stepY,
-              consensus: backendResult.consensus || 'fast',
+              offset_x: 0,
+              offset_y: 0,
+              consensus: backendResult.consensus,
             };
-            state.detectedGridSize = Math.max(1, Math.round((stepX + stepY) / 2));
-            if (backendResult.candidates && backendResult.candidates.length > 0) {
-              state.gridCandidates = backendResult.candidates;
-              renderGridCandidates(state.gridCandidates);
-            }
-            if (selectGridSize) {
-              const autoOpt = selectGridSize.querySelector('option[value="auto"]');
-              if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đoán: ${state.detectedGridSize}x${state.detectedGridSize}px)`;
-            }
-            const statusEl = document.getElementById('wasm-engine-status');
-            if (statusEl) {
-              statusEl.textContent = `Rust: ${backendResult.consensus || 'fast'} ⚡`;
-              statusEl.style.color = '#34d399';
-            }
           }
+
+          state.detectedGridSize = Math.max(1, Math.round((stepX + stepY) / 2));
+          if (backendResult.candidates && backendResult.candidates.length > 0) {
+            state.gridCandidates = backendResult.candidates;
+            renderGridCandidates(state.gridCandidates);
+          }
+          if (pixelAutoGridLabel) {
+            pixelAutoGridLabel.textContent = `${stepX.toFixed(2)}x${stepY.toFixed(2)} px (${cols}x${rows})`;
+          }
+          if (gridStepInput && !gridStepInput.value) {
+            gridStepInput.value = stepX.toFixed(2);
+            if (gridColsInput) gridColsInput.value = cols;
+            if (gridRowsInput) gridRowsInput.value = rows;
+          }
+
+          const statusEl = document.getElementById('wasm-engine-status');
+          if (statusEl) {
+            let topoLabel = '';
+            if (backendResult.topology && backendResult.topology.includes('elastic')) {
+              topoLabel = ' 🧲 Co Dãn';
+            }
+            if (backendResult.cache === 'HIT') {
+              topoLabel += ' • ⚡ Cache Hit';
+            }
+            statusEl.textContent = `Pixel Art Fixer${topoLabel} ⚡`;
+            statusEl.style.color = '#38bdf8';
+          }
+
+          state.backendDownloadUrl = backendResult.downloadUrl;
+          state.backendFilename = backendResult.filename;
+          state.backendCacheHit = backendResult.cache === 'HIT';
 
           // Lưu cache bản dựng sạch
           const cacheC = document.createElement('canvas');
@@ -855,14 +1010,37 @@
           state.cachedSpriteCanvas = cacheC;
           state.cachedCols = cols;
           state.cachedRows = rows;
-          console.log(`🦀 [Rust Native Reconstruct]: Tái tạo thành công ${cols}x${rows} bằng two_stage_pack (Pixel Art Fixer Core).`);
+          state.cachedTopology = state.gridTopology;
+          state.cachedKColors = effectiveK;
+          console.log(`🦀 [Rust Native Reconstruct]: Tái tạo thành công ${cols}x${rows} (step: ${stepX.toFixed(2)}x${stepY.toFixed(2)}, topology: ${state.gridTopology}).`);
         } else {
           // Fallback Client nếu Backend ngắt kết nối
           console.warn('⚠️ [Client Fallback Reconstruct]: Đang lấy mẫu màu bằng Canvas 2D.');
-          cols = cols || Math.max(1, Math.round(srcW / (state.detectedGridSize || 4)));
-          rows = rows || Math.max(1, Math.round(srcH / (state.detectedGridSize || 4)));
-          stepX = stepX || (srcW / cols);
-          stepY = stepY || (srcH / rows);
+
+          if (state.gridMode === 'auto' && (!cols || !rows)) {
+            const srcCtx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
+            const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
+            const candidates = analyzeGridCandidates(srcImgData);
+            state.gridCandidates = candidates;
+            renderGridCandidates(candidates);
+
+            const bestSize = (candidates && candidates.length > 0) ? candidates[0].size : 4;
+            state.detectedGridSize = bestSize;
+            stepX = bestSize;
+            stepY = bestSize;
+            cols = Math.max(1, Math.round(srcW / stepX));
+            rows = Math.max(1, Math.round(srcH / stepY));
+            cellSizeLabel = `${stepX.toFixed(2)}x${stepY.toFixed(2)}`;
+            if (pixelAutoGridLabel) {
+              pixelAutoGridLabel.textContent = `${stepX.toFixed(2)}x${stepY.toFixed(2)} px (${cols}x${rows})`;
+            }
+          } else {
+            cols = cols || Math.max(1, Math.round(srcW / (state.detectedGridSize || 4)));
+            rows = rows || Math.max(1, Math.round(srcH / (state.detectedGridSize || 4)));
+            stepX = stepX || (srcW / cols);
+            stepY = stepY || (srcH / rows);
+            cellSizeLabel = `${stepX.toFixed(2)}x${stepY.toFixed(2)}`;
+          }
 
           const srcCtx = state.sourceCanvas.getContext('2d', { willReadFrequently: true });
           const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
@@ -894,11 +1072,10 @@
       }
 
       // 3. KIỂM TRA BỘ LỌC BỔ TRỢ (CHỈ CHẠY KHI NGƯỜI DÙNG BẬT)
-      // Nếu giữ nguyên thiết lập chuẩn (Keep background, No outline, Palette original):
-      // => KHÔNG CAN THIỆP BẤT KỲ PIXEL NÀO, GIỮ NGUYÊN 100% BIT-EXACT TỪ PIXEL ART FIXER RUST CORE
+      // Khi effectiveK > 0: Người dùng yêu cầu giới hạn số màu palette (4, 8, 16, 32, 64 hoặc Custom)
       const hasPostProcessing = (
         state.transparencyMode !== 'keep' ||
-        state.maxColors !== 'all' ||
+        effectiveK > 0 ||
         (state.paletteKey !== 'original' && RETRO_PALETTES[state.paletteKey]?.colors) ||
         state.outlineStyle !== 'none'
       );
@@ -934,12 +1111,9 @@
           }
         }
 
-        // B. Giới hạn số lượng màu (Max Colors)
-        if (state.maxColors !== 'all') {
-          const maxC = parseInt(state.maxColors, 10);
-          if (maxC > 0) {
-            quantizeColors(spriteBytes, cols, rows, maxC);
-          }
+        // B. Giới hạn số lượng màu (Quantize bằng Median Cut)
+        if (effectiveK > 0) {
+          quantizeColors(spriteBytes, cols, rows, effectiveK);
         }
 
         // C. Ép bảng màu Retro & Dithering
@@ -1100,6 +1274,12 @@
 
         state.processedCanvas = finalCanvas;
 
+        if (!cellSizeLabel || cellSizeLabel === 'auto') {
+          const cStepX = (srcW / (cols || 1)).toFixed(1);
+          const cStepY = (srcH / (rows || 1)).toFixed(1);
+          cellSizeLabel = `${cStepX}x${cStepY}`;
+        }
+
         displayRefinedResult(finalCanvas, spriteCanvas, cols, rows, cellSizeLabel);
         hideProgress();
 
@@ -1130,12 +1310,13 @@
     titleSpan.textContent = 'Gợi ý lưới:';
     gridCandidatesContainer.appendChild(titleSpan);
 
-    const activeSize = state.currentGridSize === 'auto' ? state.detectedGridSize : parseInt(state.currentGridSize, 10);
+    const activeSize = state.gridMode === 'auto' ? state.detectedGridSize : (state.manualStep || 1);
 
     candidates.forEach((cand, idx) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = `pixel-cand-btn ${cand.size === activeSize ? 'active' : ''}`;
+      const isCandActive = Math.abs(cand.size - activeSize) < 0.05;
+      btn.className = `pixel-cand-btn ${isCandActive ? 'active' : ''}`;
       btn.innerHTML = `<span>${cand.size}x${cand.size}px</span> <small>${cand.confidence}%</small>`;
       btn.title = `Chọn kích thước lưới ${cand.size}px (Độ tin cậy: ${cand.confidence}%)`;
 
@@ -1143,8 +1324,25 @@
         gridCandidatesContainer.querySelectorAll('.pixel-cand-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
-        state.currentGridSize = String(cand.size);
-        if (selectGridSize) selectGridSize.value = String(cand.size);
+        // Chuyển sang chế độ Manual
+        state.gridMode = 'manual';
+        state.manualStep = cand.size;
+        if (btnGridAuto) btnGridAuto.classList.remove('active');
+        if (btnGridManual) btnGridManual.classList.add('active');
+        if (pixelGridAutoInfo) pixelGridAutoInfo.classList.add('hidden');
+        if (pixelManualGridContainer) pixelManualGridContainer.classList.remove('hidden');
+
+        if (gridStepInput) gridStepInput.value = cand.size;
+        if (state.originalWidth && state.originalHeight) {
+          const cols = Math.max(1, Math.round(state.originalWidth / cand.size));
+          const rows = Math.max(1, Math.round(state.originalHeight / cand.size));
+          state.manualCols = cols;
+          state.manualRows = rows;
+          if (gridColsInput) gridColsInput.value = cols;
+          if (gridRowsInput) gridRowsInput.value = rows;
+        }
+
+        state.cachedSpriteCanvas = null;
         runPixelRefineProcess();
       });
 
@@ -1224,7 +1422,14 @@
       sizeDetail += ` (Từ lưới ${origCols}x${origRows} ➔ Phóng ${spriteW}x${spriteH})`;
     }
 
-    resultStatsText.textContent = `Ảnh gốc: ${state.originalWidth}x${state.originalHeight}px • Lưới pixel: ~${cellSize}px (${origCols}x${origRows}) • ${sizeDetail} • Nén: ${Math.round((1 - (spriteW*spriteH)/(state.originalWidth*state.originalHeight))*100)}%`;
+    const cacheLabel = state.backendCacheHit ? ' • ⚡ Cache Hit' : '';
+    let algoLabel = ' • 🏛️ Thuật toán Gốc (Pixel Art Fixer)';
+    if (state.reconstructAlgo === 'topological') {
+      algoLabel = ' • 🧬 Topological Engine (SLIC + Skeleton)';
+    } else if (state.reconstructAlgo === 'sota') {
+      algoLabel = ' • ✨ SOTA Engine';
+    }
+    resultStatsText.textContent = `Ảnh gốc: ${state.originalWidth}x${state.originalHeight}px • Lưới pixel: ~${cellSize}px (${origCols}x${origRows}) • ${sizeDetail} • Nén: ${Math.round((1 - (spriteW*spriteH)/(state.originalWidth*state.originalHeight))*100)}%${algoLabel}${cacheLabel}`;
 
     updateDownloadLinks(processedCanvas);
     initComparisonSlider();
@@ -1446,22 +1651,36 @@
     // Sync UI elements to state
     if (selectAntiAliasing) selectAntiAliasing.value = state.antiAliasing;
     if (selectPalette) selectPalette.value = state.paletteKey;
+    if (btnPaletteAuto) {
+      btnPaletteAuto.classList.toggle('active', state.paletteMode === 'auto');
+    }
+    if (btnPaletteManual) {
+      btnPaletteManual.classList.toggle('active', state.paletteMode === 'manual');
+    }
+    if (pixelManualPaletteContainer) {
+      pixelManualPaletteContainer.classList.toggle('active', state.paletteMode === 'manual');
+    }
+    if (pixelManualPaletteInput) {
+      pixelManualPaletteInput.value = state.manualColors;
+    }
     if (selectDithering) selectDithering.value = state.dithering;
     if (selectBgMode) selectBgMode.value = state.transparencyMode;
     if (selectBgScope) selectBgScope.value = state.bgScope;
     if (selectOutline) selectOutline.value = state.outlineStyle;
     if (checkboxAutoTrim) checkboxAutoTrim.checked = state.autoTrim;
-    if (selectMaxColors) selectMaxColors.value = state.maxColors;
-    if (selectGridSize) selectGridSize.value = state.currentGridSize;
-    if (selectForcedSize) selectForcedSize.value = state.forcedSize;
-
-    if (customGridWrapper) {
-      if (state.currentGridSize === 'custom') {
-        customGridWrapper.classList.remove('hidden');
-      } else {
-        customGridWrapper.classList.add('hidden');
-      }
+    if (state.gridMode === 'manual') {
+      if (btnGridManual) btnGridManual.classList.add('active');
+      if (btnGridAuto) btnGridAuto.classList.remove('active');
+      if (pixelGridAutoInfo) pixelGridAutoInfo.classList.add('hidden');
+      if (pixelManualGridContainer) pixelManualGridContainer.classList.remove('hidden');
+      if (gridStepInput && state.manualStep) gridStepInput.value = state.manualStep;
+    } else {
+      if (btnGridAuto) btnGridAuto.classList.add('active');
+      if (btnGridManual) btnGridManual.classList.remove('active');
+      if (pixelGridAutoInfo) pixelGridAutoInfo.classList.remove('hidden');
+      if (pixelManualGridContainer) pixelManualGridContainer.classList.add('hidden');
     }
+    if (selectForcedSize) selectForcedSize.value = state.forcedSize;
 
     if (customSizeWrapper) {
       if (state.forcedSize === 'custom') {
@@ -1499,7 +1718,11 @@
   // =========================================================================
 
   function handleFileSelected(file) {
-    if (!file || !file.type.startsWith('image/')) {
+    const isImage = file && (
+      (file.type && file.type.startsWith('image/')) ||
+      /\.(png|jpe?g|webp|bmp|gif|avif)$/i.test(file.name || '')
+    );
+    if (!isImage) {
       showError('Vui lòng chọn một file ảnh hợp lệ (PNG, JPG, WEBP, BMP).');
       return;
     }
@@ -1543,21 +1766,36 @@
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
       state.sourceCanvas = canvas;
+      try {
+        const srcData = ctx.getImageData(0, 0, state.originalWidth, state.originalHeight).data;
+        state.detectedPaletteK = computeAdaptiveK(srcData, state.originalWidth, state.originalHeight);
+        if (pixelAutoPaletteLabel) {
+          pixelAutoPaletteLabel.textContent = `${state.detectedPaletteK} màu`;
+        }
+      } catch (e) {
+        console.warn('Cannot compute adaptive K:', e);
+      }
 
       state.currentGridSize = 'auto';
+      state.forcedSize = 'auto';
+      syncOutputSizeUI();
 
-      if (fileName) fileName.textContent = file.name;
+      if (fileName) fileName.textContent = file.name || 'pixel_art.png';
       if (fileMeta) {
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        fileMeta.textContent = `${file.type.split('/')[1].toUpperCase()} • ${sizeMB} MB • ${state.originalWidth}x${state.originalHeight}px`;
+        const sizeMB = file.size ? (file.size / (1024 * 1024)).toFixed(2) : '0.00';
+        let ext = 'PNG';
+        if (file.type && file.type.includes('/')) {
+          ext = file.type.split('/')[1].toUpperCase();
+        } else if (file.name && file.name.includes('.')) {
+          ext = file.name.split('.').pop().toUpperCase();
+        }
+        fileMeta.textContent = `${ext} • ${sizeMB} MB • ${state.originalWidth}x${state.originalHeight}px`;
       }
       if (fileThumb) fileThumb.src = objectUrl;
       if (compareBeforeImg) compareBeforeImg.src = objectUrl;
 
-      if (selectGridSize) {
-        const autoOpt = selectGridSize.querySelector('option[value="auto"]');
-        if (autoOpt) autoOpt.textContent = `⚡ Tự động nhận diện (Đang tính toán...)`;
-        selectGridSize.value = 'auto';
+      if (pixelAutoGridLabel) {
+        pixelAutoGridLabel.textContent = 'Đang tự động nhận diện...';
       }
 
       if (state.isRatioLocked && state.originalWidth > 0 && state.originalHeight > 0) {
@@ -1572,6 +1810,11 @@
 
       // Tinh chỉnh ngay bằng Rust Core ⚡ trong 1 request duy nhất (tránh độ trễ gọi kép)
       runPixelRefineProcess();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      hideProgress();
+      showError('Không thể mở hoặc giải mã file ảnh này. Vui lòng thử lại với định dạng khác (PNG, JPG, WEBP, BMP).');
     };
     img.src = objectUrl;
   }
@@ -1603,7 +1846,10 @@
     if (dropPrompt) dropPrompt.classList.remove('hidden');
     if (errorBox) errorBox.classList.add('hidden');
     if (gridCandidatesContainer) gridCandidatesContainer.classList.add('hidden');
-    if (customGridWrapper) customGridWrapper.classList.add('hidden');
+    if (pixelManualGridContainer) pixelManualGridContainer.classList.add('hidden');
+    if (btnGridAuto) btnGridAuto.classList.add('active');
+    if (btnGridManual) btnGridManual.classList.remove('active');
+    state.gridMode = 'auto';
   }
 
   function loadSamplePixelSprite() {
@@ -1694,7 +1940,7 @@
     });
 
     dropzone.addEventListener('click', (e) => {
-      if (e.target.closest('#btn-remove-pixel-file')) return;
+      if (e.target === fileInput || e.target.closest('#btn-remove-pixel-file')) return;
       fileInput.click();
     });
 
@@ -1702,6 +1948,7 @@
       if (e.target.files && e.target.files[0]) {
         handleFileSelected(e.target.files[0]);
       }
+      fileInput.value = '';
     });
 
     if (btnRemoveFile) {
@@ -1746,34 +1993,102 @@
       }
     };
 
-    if (selectGridSize) {
-      selectGridSize.addEventListener('change', (e) => {
-        state.currentGridSize = e.target.value;
-        state.cachedSpriteCanvas = null; // xóa cache khi đổi cỡ lưới
-        if (customGridWrapper) {
-          if (state.currentGridSize === 'custom') {
-            customGridWrapper.classList.remove('hidden');
-          } else {
-            customGridWrapper.classList.add('hidden');
-          }
-        }
+    // Chuyển đổi chế độ Lưới Tự Động vs Điền Thủ Công (Hỗ trợ số thập phân)
+    if (btnGridAuto) {
+      btnGridAuto.addEventListener('click', () => {
+        if (state.gridMode === 'auto') return;
+        state.gridMode = 'auto';
+        btnGridAuto.classList.add('active');
+        if (btnGridManual) btnGridManual.classList.remove('active');
+        if (pixelGridAutoInfo) pixelGridAutoInfo.classList.remove('hidden');
+        if (pixelManualGridContainer) pixelManualGridContainer.classList.add('hidden');
+        state.cachedSpriteCanvas = null;
         triggerAutoRefine(0);
       });
     }
 
-    if (customGridInput) {
-      customGridInput.addEventListener('input', (e) => {
-        const val = parseInt(e.target.value, 10);
-        if (val && val > 0) {
-          state.customGridSize = val;
+    if (btnGridManual) {
+      btnGridManual.addEventListener('click', () => {
+        if (state.gridMode === 'manual') return;
+        state.gridMode = 'manual';
+        btnGridManual.classList.add('active');
+        if (btnGridAuto) btnGridAuto.classList.remove('active');
+        if (pixelGridAutoInfo) pixelGridAutoInfo.classList.add('hidden');
+        if (pixelManualGridContainer) pixelManualGridContainer.classList.remove('hidden');
+
+        // Nếu input chưa có giá trị, lấy từ auto-detect
+        if (gridStepInput && !gridStepInput.value && state.ensembleGrid) {
+          gridStepInput.value = state.ensembleGrid.step_x.toFixed(2);
+          state.manualStep = state.ensembleGrid.step_x;
+          if (gridColsInput) gridColsInput.value = state.ensembleGrid.cols;
+          if (gridRowsInput) gridRowsInput.value = state.ensembleGrid.rows;
+          state.manualCols = state.ensembleGrid.cols;
+          state.manualRows = state.ensembleGrid.rows;
+        }
+        state.cachedSpriteCanvas = null;
+        triggerAutoRefine(0);
+      });
+    }
+
+    if (btnCopyToManual) {
+      btnCopyToManual.addEventListener('click', () => {
+        if (btnGridManual) btnGridManual.click();
+        if (gridStepInput) gridStepInput.focus();
+      });
+    }
+
+    // Nhập Cỡ Ô (Step) số thập phân
+    if (gridStepInput) {
+      gridStepInput.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0.05) {
+          state.manualStep = val;
+          if (state.originalWidth && state.originalHeight) {
+            const cols = Math.max(1, Math.round(state.originalWidth / val));
+            const rows = Math.max(1, Math.round(state.originalHeight / val));
+            state.manualCols = cols;
+            state.manualRows = rows;
+            if (gridColsInput) gridColsInput.value = cols;
+            if (gridRowsInput) gridRowsInput.value = rows;
+          }
           state.cachedSpriteCanvas = null;
-          state.forcedSize = 'auto';
-          if (selectForcedSize) selectForcedSize.value = 'auto';
-          syncOutputSizeUI();
-          triggerAutoRefine(150);
+          triggerAutoRefine(300);
         }
       });
     }
+
+    // Nhập Số Cột và Số Hàng
+    const handleColsRowsChange = () => {
+      const c = parseInt(gridColsInput?.value, 10);
+      const r = parseInt(gridRowsInput?.value, 10);
+      if (c && c > 0 && r && r > 0) {
+        state.manualCols = c;
+        state.manualRows = r;
+        if (state.originalWidth) {
+          const step = parseFloat((state.originalWidth / c).toFixed(2));
+          state.manualStep = step;
+          if (gridStepInput) gridStepInput.value = step;
+        }
+        state.cachedSpriteCanvas = null;
+        triggerAutoRefine(300);
+      }
+    };
+    if (gridColsInput) gridColsInput.addEventListener('input', handleColsRowsChange);
+    if (gridRowsInput) gridRowsInput.addEventListener('input', handleColsRowsChange);
+
+    // Grid Topology Buttons (Uniform vs Elastic)
+    document.querySelectorAll('.pixel-topology-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const topo = btn.getAttribute('data-topology') || 'uniform';
+        if (state.gridTopology === topo) return;
+        state.gridTopology = topo;
+        document.querySelectorAll('.pixel-topology-btn').forEach((b) => {
+          b.classList.toggle('active', b.getAttribute('data-topology') === topo);
+        });
+        state.cachedSpriteCanvas = null;
+        triggerAutoRefine(0);
+      });
+    });
 
     if (selectAntiAliasing) {
       selectAntiAliasing.addEventListener('change', (e) => {
@@ -1789,10 +2104,66 @@
       });
     }
 
-    if (selectMaxColors) {
-      selectMaxColors.addEventListener('change', (e) => {
-        state.maxColors = e.target.value;
-        triggerAutoRefine();
+    if (btnPaletteAuto) {
+      btnPaletteAuto.addEventListener('click', () => {
+        if (state.paletteMode === 'auto') return;
+        state.paletteMode = 'auto';
+        btnPaletteAuto.classList.add('active');
+        if (btnPaletteManual) btnPaletteManual.classList.remove('active');
+        if (pixelManualPaletteContainer) pixelManualPaletteContainer.classList.remove('active');
+        triggerAutoRefine(0);
+      });
+    }
+
+    if (btnPaletteManual) {
+      btnPaletteManual.addEventListener('click', () => {
+        if (state.paletteMode === 'manual') return;
+        state.paletteMode = 'manual';
+        btnPaletteManual.classList.add('active');
+        if (btnPaletteAuto) btnPaletteAuto.classList.remove('active');
+        if (pixelManualPaletteContainer) pixelManualPaletteContainer.classList.add('active');
+        if (pixelManualPaletteInput) pixelManualPaletteInput.focus();
+        triggerAutoRefine(0);
+      });
+    }
+
+    if (pixelManualPaletteContainer) {
+      pixelManualPaletteContainer.addEventListener('click', () => {
+        if (pixelManualPaletteInput) pixelManualPaletteInput.focus();
+      });
+    }
+
+    if (pixelManualPaletteInput) {
+      const activateManual = () => {
+        if (state.paletteMode !== 'manual') {
+          state.paletteMode = 'manual';
+          if (btnPaletteAuto) btnPaletteAuto.classList.remove('active');
+          if (btnPaletteManual) btnPaletteManual.classList.add('active');
+          if (pixelManualPaletteContainer) pixelManualPaletteContainer.classList.add('active');
+        }
+      };
+
+      pixelManualPaletteInput.addEventListener('focus', () => {
+        activateManual();
+      });
+
+      pixelManualPaletteInput.addEventListener('input', (e) => {
+        activateManual();
+        const val = parseInt(e.target.value, 10);
+        if (!isNaN(val) && val >= 2) {
+          state.manualColors = Math.min(256, Math.max(2, val));
+          triggerAutoRefine(150);
+        }
+      });
+
+      pixelManualPaletteInput.addEventListener('change', (e) => {
+        activateManual();
+        let val = parseInt(e.target.value, 10);
+        if (isNaN(val) || val < 2) val = 2;
+        if (val > 256) val = 256;
+        e.target.value = val;
+        state.manualColors = val;
+        triggerAutoRefine(0);
       });
     }
 
@@ -2038,8 +2409,46 @@
 
     const quickUpload = document.getElementById('pixel-quick-upload-trigger');
     if (quickUpload) {
-      quickUpload.addEventListener('click', () => {
-        if (fileInput) fileInput.click();
+      quickUpload.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (fileInput) fileInput.click();
+        }
+      });
+      quickUpload.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        quickUpload.classList.add('dragover');
+      });
+      ['dragleave', 'dragend'].forEach(ev => {
+        quickUpload.addEventListener(ev, () => quickUpload.classList.remove('dragover'));
+      });
+      quickUpload.addEventListener('drop', (e) => {
+        e.preventDefault();
+        quickUpload.classList.remove('dragover');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleFileSelected(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    const btnLoadSample = document.getElementById('btn-load-pixel-sample');
+    if (btnLoadSample) {
+      btnLoadSample.addEventListener('click', () => {
+        loadSamplePixelSprite();
+      });
+    }
+
+    // Kéo thả ảnh trực tiếp vào toàn bộ khung Studio (ngay cả khi đã mở ảnh)
+    const studioCard = document.querySelector('.pixel-studio-card');
+    if (studioCard) {
+      studioCard.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      studioCard.addEventListener('drop', (e) => {
+        if (e.target.closest('#pixel-dropzone') || e.target.closest('#pixel-quick-upload-trigger')) return;
+        e.preventDefault();
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleFileSelected(e.dataTransfer.files[0]);
+        }
       });
     }
   }
@@ -2050,25 +2459,41 @@
   async function checkBackendEngine() {
     const statusEl = document.getElementById('wasm-engine-status');
     try {
-      const resp = await fetch('/api/pixel/detect', { method: 'OPTIONS' }).catch(() => null);
-      if (statusEl) {
-        statusEl.textContent = 'Backend Rust ⚡';
-        statusEl.style.color = '#34d399';
-        statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
-        statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
-        statusEl.title = 'Pixel Art Fixer Rust Backend (Rayon đa luồng) sẵn sàng phục vụ';
+      const resp = await fetch('/api/pixel/health').catch(() => null);
+      if (resp && resp.ok) {
+        if (statusEl) {
+          statusEl.textContent = 'Backend Rust ⚡';
+          statusEl.style.color = '#34d399';
+          statusEl.style.background = 'rgba(16, 185, 129, 0.15)';
+          statusEl.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          statusEl.title = 'Pixel Art Fixer Rust Backend (Rayon đa luồng) sẵn sàng phục vụ';
+        }
+      } else {
+        if (statusEl) {
+          statusEl.textContent = 'Client Engine (WASM/JS)';
+          statusEl.style.color = '#38bdf8';
+          statusEl.style.background = 'rgba(56, 189, 248, 0.15)';
+          statusEl.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+          statusEl.title = 'Trình duyệt đang tự động xử lý trực tiếp trên máy client';
+        }
       }
     } catch (_) {
       if (statusEl) {
-        statusEl.textContent = 'Client Engine';
+        statusEl.textContent = 'Client Engine (WASM/JS)';
       }
     }
   }
 
-  document.addEventListener('DOMContentLoaded', async () => {
+  const initPixelRefiner = async () => {
     initDOMElements();
     setupEventListeners();
     await checkBackendEngine();
-  });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPixelRefiner);
+  } else {
+    initPixelRefiner();
+  }
 
 })();
