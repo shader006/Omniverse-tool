@@ -167,25 +167,39 @@ def run_benchmark(limit: int = None, mode: str = "fast", url: str = None):
     # Real samples benchmark
     if os.path.exists(REAL_SAMPLES_DIR):
         print("\n" + "=" * 80)
-        print("REAL-WORLD HIGH-RES SAMPLES BENCHMARK (/fix Reconstruction)")
+        print("REAL-WORLD HIGH-RES SAMPLES BENCHMARK (/fix: Uniform vs Elastic)")
         print("=" * 80)
+        print(f"{'FILE':<20} | {'ORIG':<8} | {'TOPOLOGY':<8} | {'GRID':<10} | {'OUT SIZE':<9} | {'LATENCY'}")
+        print("-" * 80)
         for fname in sorted(os.listdir(REAL_SAMPLES_DIR)):
             if not fname.endswith(".png"):
                 continue
             path = os.path.join(REAL_SAMPLES_DIR, fname)
             size_mb = os.path.getsize(path) / (1024 * 1024)
-
-            t0 = time.perf_counter()
             with open(path, "rb") as f:
-                files = {"file": (fname, f, "image/png")}
-                res = requests.post(fix_url, files=files, params={"mode": "fast"}, timeout=30)
-            dur_ms = (time.perf_counter() - t0) * 1000.0
+                img_bytes = f.read()
 
-            if res.status_code == 200:
-                out_size_kb = len(res.content) / 1024
-                print(f"{fname:<24} ({size_mb:4.2f} MB) -> OK ({out_size_kb:6.1f} KB) in {dur_ms:7.2f}ms")
-            else:
-                print(f"{fname:<24} ({size_mb:4.2f} MB) -> HTTP {res.status_code} in {dur_ms:7.2f}ms")
+            for topology in ["uniform", "elastic", "advanced"]:
+                t0 = time.perf_counter()
+                files = {"file": (fname, img_bytes, "image/png")}
+                p = {"mode": "advanced"} if topology == "advanced" else {"mode": "fast", "elastic": "true" if topology == "elastic" else "false"}
+                res = requests.post(
+                    fix_url,
+                    files=files,
+                    params=p,
+                    timeout=30,
+                )
+                dur_ms = (time.perf_counter() - t0) * 1000.0
+
+                if res.status_code == 200:
+                    out_size_kb = len(res.content) / 1024
+                    cols = res.headers.get("X-Grid-Cols", "?")
+                    rows = res.headers.get("X-Grid-Rows", "?")
+                    grid_str = f"{cols}x{rows}"
+                    print(f"{fname:<20} | {size_mb:5.2f}MB | {topology:<8} | {grid_str:<10} | {out_size_kb:6.1f} KB | {dur_ms:6.2f}ms")
+                else:
+                    print(f"{fname:<20} | {size_mb:5.2f}MB | {topology:<8} | FAIL HTTP {res.status_code} | {dur_ms:6.2f}ms")
+            print("-" * 80)
         print("=" * 80)
 
 
