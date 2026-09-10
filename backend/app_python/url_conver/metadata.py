@@ -11,6 +11,8 @@ FAST_INFO_OPTS = {
     'extract_flat': False,
     'socket_timeout': 10,
     'noplaylist': True,
+    'playlist_items': '1',
+    'lazy_playlist': True,
 }
 
 

@@ -142,6 +142,11 @@ class DownloadRequest(BaseModel):
     quality: str = "320"
     download_dir: Optional[str] = None
 
+# In-memory metadata cache (1 giờ TTL, tối đa 500 mục)
+_INFO_CACHE: dict = {}
+_INFO_CACHE_LOCK = threading.Lock()
+_CACHE_TTL = 3600
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "worker-ytdlp"}
@@ -150,13 +155,43 @@ def health_check():
 def fetch_info(req: InfoRequest, request: Request):
     if not req.url:
         raise HTTPException(status_code=400, detail="URL không được để trống")
+    
     trace_id, parent_span_id = parse_traceparent(request.headers.get("traceparent"))
+    now = time.time()
+
+    # 1. Kiểm tra cache trong RAM (0.01 ms)
+    with _INFO_CACHE_LOCK:
+        if req.url in _INFO_CACHE:
+            cached_data, exp = _INFO_CACHE[req.url]
+            if now < exp:
+                send_otlp_trace(
+                    name=" └─ 🎬 [Xử lý (RAM Cache)] Trích xuất metadata video",
+                    duration_ms=0.5,
+                    attributes={
+                        "http.route": "/api/info",
+                        "http.method": "POST",
+                        "http.status_code": 200,
+                        "media.url": req.url,
+                        "cache.hit": True
+                    },
+                    trace_id=trace_id,
+                    parent_span_id=parent_span_id,
+                )
+                return {"success": True, "data": cached_data, "cached": True}
+
     start = time.perf_counter()
     try:
         data = get_media_info(req.url)
         proc_ms = (time.perf_counter() - start) * 1000.0
+
+        # Lưu cache trong bộ nhớ
+        with _INFO_CACHE_LOCK:
+            if len(_INFO_CACHE) > 500:
+                _INFO_CACHE.clear()
+            _INFO_CACHE[req.url] = (data, now + _CACHE_TTL)
+
         send_otlp_trace(
-            name="🎬 [YtDlp] Trích xuất metadata video",
+            name=" └─ 🎬 [Xử lý] Trích xuất metadata video",
             duration_ms=proc_ms,
             attributes={
                 "http.route": "/api/info",
@@ -173,7 +208,7 @@ def fetch_info(req: InfoRequest, request: Request):
     except Exception as e:
         logger.error(f"Error fetching info for {req.url}: {e}")
         send_otlp_trace(
-            name="🎬 [YtDlp] Trích xuất metadata video",
+            name=" └─ 🎬 [Xử lý] Trích xuất metadata video",
             duration_ms=50.0,
             attributes={"error": str(e), "http.status_code": 400},
             trace_id=trace_id,
@@ -222,7 +257,7 @@ def start_download(req: DownloadRequest, request: Request):
                         "download_url": f"/api/file/{final_filename}"
                     })
                     send_otlp_trace(
-                        name="⬇️ [YtDlp] Tải file & Gộp luồng media",
+                        name=" └─ ⬇️ [Xử lý] Tải file & Gộp luồng media",
                         duration_ms=duration_ms,
                         attributes={
                             "http.route": "/api/download",
@@ -243,7 +278,7 @@ def start_download(req: DownloadRequest, request: Request):
                         "error": "Không thể tải hoặc chuyển đổi file media từ liên kết."
                     })
                     send_otlp_trace(
-                        name="⬇️ [YtDlp] Tải file & Gộp luồng media",
+                        name=" └─ ⬇️ [Xử lý] Tải file & Gộp luồng media",
                         duration_ms=duration_ms,
                         attributes={"http.route": "/api/download", "http.status_code": 500, "error": "Download returned None"},
                         trace_id=trace_id,

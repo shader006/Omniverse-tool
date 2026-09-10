@@ -200,7 +200,7 @@ async def convert_pdf_to_docx(
         dur_pike = (time.perf_counter() - t_pike_start) * 1000.0
 
         send_otlp_trace(
-            name="📄 [PDF2DOCX] 1. Kiểm tra & Sửa lỗi PDF (pikepdf)",
+            name="    ├─ 📄 [1/3] Kiểm tra & Sửa lỗi PDF (pikepdf)",
             duration_ms=dur_pike,
             attributes={
                 "pdf.input_size_bytes": len(content),
@@ -228,7 +228,7 @@ async def convert_pdf_to_docx(
             )
 
         send_otlp_trace(
-            name="📑 [PDF2DOCX] 2. Phân tích layout & Chuyển đổi DOCX (pdf2docx)",
+            name="    ├─ 📑 [2/3] Phân tích layout & Chuyển đổi DOCX (pdf2docx)",
             duration_ms=dur_conv,
             attributes={
                 "docx.raw_size_bytes": os.path.getsize(output_docx_path),
@@ -249,7 +249,7 @@ async def convert_pdf_to_docx(
         dur_post = (time.perf_counter() - t_post_start) * 1000.0
 
         send_otlp_trace(
-            name="🎨 [PDF2DOCX] 3. Hậu xử lý Font & Màu chữ (python-docx)",
+            name="    └─ 🎨 [3/3] Hậu xử lý Font & Màu chữ (python-docx)",
             duration_ms=dur_post,
             attributes={
                 "target_font": target_font or "Keep Original",
@@ -264,7 +264,7 @@ async def convert_pdf_to_docx(
         logger.info(f"[{task_id}] Hoàn thành convert PDF -> DOCX ({doc_size} bytes) trong {total_duration_ms:.2f}ms")
 
         send_otlp_trace(
-            name="📦 [PDF2DOCX] Toàn trình Worker PDF-to-DOCX",
+            name=" └─ 📦 [Worker-PDF2DOCX] Chuyển đổi PDF sang DOCX",
             duration_ms=total_duration_ms,
             attributes={
                 "file.name": file.filename or "document.pdf",

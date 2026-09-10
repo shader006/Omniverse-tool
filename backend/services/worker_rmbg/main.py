@@ -304,7 +304,7 @@ async def remove_bg(
 
         duration_ms = (time.perf_counter() - req_start) * 1000.0
         send_otlp_trace(
-            name="🖼️ [RemoveBG] Tách nền ảnh AI (BiRefNet OpenVINO)",
+            name=" └─ 🖼️ [Xử lý AI] Tách nền ảnh BiRefNet (OpenVINO)",
             duration_ms=duration_ms,
             attributes={
                 "http.route": "/api/remove-bg",

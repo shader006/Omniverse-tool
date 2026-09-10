@@ -183,7 +183,7 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	sendCustomChildOTLPTrace(
 		r.Context(),
 		"gotenberg",
-		"📑 [Gotenberg] Chuyển đổi tài liệu (LibreOffice Engine)",
+		" └─ 📑 [Gotenberg] Chuyển đổi tài liệu (LibreOffice Engine)",
 		gotenbergDurMs,
 		map[string]string{
 			"http.route":  endpointSubpath,

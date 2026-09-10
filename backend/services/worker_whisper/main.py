@@ -333,7 +333,7 @@ async def transcribe_media(
                 out_f.write(text_content)
 
         send_otlp_trace(
-            name="🎙️ [Whisper] Nhận diện giọng nói (GGML C++ Engine)",
+            name=" └─ 🎙️ [Xử lý AI] Nhận diện giọng nói (Whisper C++)",
             duration_ms=proc_time * 1000.0,
             attributes={
                 "http.route": "/api/transcribe",

@@ -430,7 +430,7 @@ async fn detect_handler(
     send_otlp_trace(
         trace_id,
         parent_span_id,
-        "👾 [PixelFixer] Nhận diện lưới pixel (Detect Grid)",
+        " └─ 👾 [Xử lý Rust] Nhận diện lưới pixel (Detect Grid)",
         dur_ms,
         trace_attrs,
         false,
@@ -618,7 +618,7 @@ async fn fix_handler(
                 send_otlp_trace(
                     trace_id.clone(),
                     parent_span_id.clone(),
-                    "✨ [PixelFixer] Tái tạo Sprite Pixel Art (Cache Hit)",
+                    " └─ ✨ [Xử lý Rust] Tái tạo Sprite Pixel Art (Cache Hit)",
                     dur_ms,
                     trace_attrs,
                     false,
@@ -816,7 +816,7 @@ async fn fix_handler(
     send_otlp_trace(
         trace_id,
         parent_span_id,
-        "✨ [PixelFixer] Tái tạo Sprite Pixel Art (Reconstruct)",
+        " └─ ✨ [Xử lý Rust] Tái tạo Sprite Pixel Art (Reconstruct)",
         dur_ms,
         trace_attrs,
         false,

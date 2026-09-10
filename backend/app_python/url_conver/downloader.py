@@ -80,6 +80,9 @@ def run_download_task(
                 'preferredcodec': 'mp3',
                 'preferredquality': quality,
             }],
+            'postprocessor_args': {
+                'FFmpegExtractAudio': ['-threads', '0'],
+            },
         })
     elif media_format == "mp4":
         ydl_opts.update({
