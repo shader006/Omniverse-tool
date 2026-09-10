@@ -57,6 +57,7 @@ git\ pixel
 git\ pixel/
 malicious-pdf/
 semgrep_report*.json
+.serena/
 
 
 # IDE & System
