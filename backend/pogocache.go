@@ -60,7 +60,7 @@ func readRESPResponse(reader *bufio.Reader) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if length == -1 {
+		if length < 0 {
 			return nil, nil // Null
 		}
 		buf := make([]byte, length+2)
@@ -73,7 +73,7 @@ func readRESPResponse(reader *bufio.Reader) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if count == -1 {
+		if count < 0 {
 			return nil, nil
 		}
 		var arr []interface{}

@@ -34,8 +34,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
-	filename := strings.TrimPrefix(r.URL.Path, "/api/file/")
+	filename := filepath.Base(filepath.Clean(strings.TrimPrefix(r.URL.Path, "/api/file/")))
+	if filename == "" || filename == "." || filename == "/" {
+		http.Error(w, "Tên file không hợp lệ.", http.StatusBadRequest)
+		return
+	}
 	filePath := filepath.Join(s.downloadDir, filename)
+
+	relPath, relErr := filepath.Rel(s.downloadDir, filePath)
+	if relErr != nil || strings.HasPrefix(relPath, "..") {
+		http.Error(w, "Yêu cầu không hợp lệ.", http.StatusBadRequest)
+		return
+	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		http.Error(w, "File không tồn tại hoặc đã hết hạn.", http.StatusNotFound)

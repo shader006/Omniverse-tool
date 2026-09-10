@@ -50,7 +50,10 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	originalFilename := header.Filename
+	originalFilename := filepath.Base(filepath.Clean(header.Filename))
+	if originalFilename == "" || originalFilename == "." || originalFilename == "/" {
+		originalFilename = "media"
+	}
 	ext := strings.ToLower(filepath.Ext(originalFilename))
 	allowedExts := map[string]bool{
 		".mp3": true, ".mp4": true, ".wav": true, ".m4a": true,
@@ -230,7 +233,10 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 	}
 	defer file.Close()
 
-	originalFilename := header.Filename
+	originalFilename := filepath.Base(filepath.Clean(header.Filename))
+	if originalFilename == "" || originalFilename == "." || originalFilename == "/" {
+		originalFilename = "image"
+	}
 	ext := strings.ToLower(filepath.Ext(originalFilename))
 	allowedExts := map[string]bool{
 		".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".bmp": true,
@@ -359,7 +365,17 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 
 	// File kết quả lưu vào s.downloadDir
 	baseNameWithoutExt := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
-	outputFilename := fmt.Sprintf("%s_%s_nobg.png", id, baseNameWithoutExt)
+	safeBaseName := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			return r
+		}
+		return '_'
+	}, baseNameWithoutExt)
+	safeBaseName = strings.Trim(safeBaseName, "._- ")
+	if safeBaseName == "" {
+		safeBaseName = "image"
+	}
+	outputFilename := fmt.Sprintf("%s_%s_nobg.png", id, safeBaseName)
 	outputPath := filepath.Join(s.downloadDir, outputFilename)
 
 	// Giới hạn concurrency để tránh nghẽn CPU

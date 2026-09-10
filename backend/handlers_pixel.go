@@ -80,7 +80,18 @@ func (s *Server) handlePixelFix(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePixelHealth(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get(s.workerPixelfixerURL + "/health")
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.workerPixelfixerURL+"/health", nil)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "down",
+			"service": "worker-pixelfixer",
+			"error":   err.Error(),
+		})
+		return
+	}
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)

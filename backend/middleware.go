@@ -35,8 +35,9 @@ var (
 		return 60 // Mặc định 60 requests/phút cho các API nặng
 	}()
 
-	ipRateMap = make(map[string]*clientRateLimiter)
-	rateMu    sync.Mutex
+	ipRateMap       = make(map[string]*clientRateLimiter)
+	rateMu          sync.Mutex
+	rateCleanerOnce sync.Once
 )
 
 type clientRateLimiter struct {
@@ -95,20 +96,22 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func rateLimitMiddleware(next http.Handler) http.Handler {
-	// Cleanup định kỳ để tránh rò rỉ RAM
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		for range ticker.C {
-			rateMu.Lock()
-			now := time.Now()
-			for ip, lim := range ipRateMap {
-				if now.Sub(lim.lastRefill) > 10*time.Minute {
-					delete(ipRateMap, ip)
+	// Cleanup định kỳ để tránh rò rỉ RAM (chỉ chạy 1 goroutine duy nhất)
+	rateCleanerOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			for range ticker.C {
+				rateMu.Lock()
+				now := time.Now()
+				for ip, lim := range ipRateMap {
+					if now.Sub(lim.lastRefill) > 10*time.Minute {
+						delete(ipRateMap, ip)
+					}
 				}
+				rateMu.Unlock()
 			}
-			rateMu.Unlock()
-		}
-	}()
+		}()
+	})
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Chỉ áp dụng rate limit cho các API POST tiêu tốn nhiều tài nguyên

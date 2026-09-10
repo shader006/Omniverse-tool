@@ -74,7 +74,23 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	var req InfoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, `{"success":false,"detail":"URL không hợp lệ"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Dữ liệu yêu cầu không hợp lệ hoặc thiếu URL.",
+		})
+		return
+	}
+
+	req.URL = strings.TrimSpace(req.URL)
+	if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "URL không hợp lệ. Đường dẫn phải bắt đầu bằng http:// hoặc https://",
+		})
 		return
 	}
 
