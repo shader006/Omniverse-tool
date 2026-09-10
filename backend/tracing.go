@@ -205,7 +205,7 @@ func tracingMiddleware(next http.Handler) http.Handler {
 		srw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(srw, r)
 
-		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/health" && r.URL.Path != "/health" {
+		if strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasSuffix(r.URL.Path, "/health") && r.URL.Path != "/health" {
 			durationMs := float64(time.Since(start).Microseconds()) / 1000.0
 			clientIP := r.Header.Get("X-Forwarded-For")
 			if clientIP == "" {
