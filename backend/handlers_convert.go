@@ -42,28 +42,69 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	originalFilename := header.Filename
+	originalFilename := filepath.Base(filepath.Clean(header.Filename))
+	if originalFilename == "" || originalFilename == "." || originalFilename == "/" {
+		originalFilename = "document"
+	}
+
 	ext := strings.ToLower(filepath.Ext(originalFilename))
 	baseNameWithoutExt := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
 	if baseNameWithoutExt == "" {
 		baseNameWithoutExt = "document"
 	}
 
+	// 1. Kiểm tra kích thước file
+	if header.Size == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "File tải lên rỗng (0 bytes). Vui lòng chọn file có dữ liệu.",
+		})
+		return
+	}
+
+	// 2. Danh sách đuôi file được phép chuyển đổi (Whitelist: chỉ tài liệu văn phòng & PDF)
+	allowedConvertExts := map[string]bool{
+		".docx": true, ".doc": true,
+		".xlsx": true, ".xls": true,
+		".pptx": true, ".ppt": true,
+		".odt": true, ".ods": true, ".odp": true,
+		".rtf": true, ".txt": true, ".csv": true,
+		".pdf": true,
+	}
+
+	if !allowedConvertExts[ext] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Định dạng file '%s' không được hỗ trợ để chuyển đổi. Vui lòng chỉ tải lên tài liệu văn phòng hợp lệ (.pdf, .docx, .doc, .xlsx, .xls, .pptx, .ppt, .csv, .txt, .rtf, .odt...).", ext),
+		})
+		return
+	}
+
+	// 3. Kiểm tra Magic Bytes / Chống Extension Spoofing & Polyglot
+	headerBuf := make([]byte, 512)
+	n, _ := io.ReadFull(file, headerBuf)
+	headerBytes := headerBuf[:n]
+	_, _ = file.Seek(0, io.SeekStart)
+
+	if err := validateFileMagicBytes(ext, headerBytes); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Xác thực nội dung file thất bại: %s", err.Error()),
+		})
+		return
+	}
+
 	landscape := r.FormValue("landscape") == "true"
 	pdfa := r.FormValue("pdfa") // ví dụ: "PDF/A-1b", "PDF/A-2b", "PDF/A-3b"
 
-	// Quyết định endpoint Gotenberg dựa trên đuôi file
-	var endpointSubpath string
-	switch ext {
-	case ".html", ".htm":
-		endpointSubpath = "/forms/chromium/convert/html"
-	case ".md", ".markdown":
-		endpointSubpath = "/forms/libreoffice/convert"
-	default:
-		// Office formats (.docx, .doc, .xlsx, .xls, .pptx, .ppt, .odt, .ods, .odp, .rtf, .txt, .pdf)
-		endpointSubpath = "/forms/libreoffice/convert"
-	}
-
+	// Tất cả các tài liệu văn phòng hợp lệ được chuyển đổi an toàn qua LibreOffice Engine
+	endpointSubpath := "/forms/libreoffice/convert"
 	gotenbergEndpoint, finish := s.gotenbergLB.SelectEndpoint(endpointSubpath)
 
 	// Chuẩn bị multipart body gửi sang Gotenberg
@@ -80,11 +121,7 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 
 	// Thêm file vào form
 	targetFileName := originalFilename
-	if ext == ".html" || ext == ".htm" {
-		targetFileName = "index.html"
-	} else if ext == ".md" || ext == ".markdown" {
-		targetFileName = baseNameWithoutExt + ".txt"
-	}
+
 
 	part, err := bodyWriter.CreateFormFile("files", targetFileName)
 	if err != nil {
@@ -154,18 +191,54 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 
 	if resp.StatusCode != http.StatusOK {
 		respBytes, _ := io.ReadAll(resp.Body)
+		respStr := string(respBytes)
+		clientStatusCode := resp.StatusCode
+		detailMsg := "Gotenberg chuyển đổi thất bại: " + respStr
+
+		// Nếu lỗi do file tài liệu bị lỗi cấu trúc / không mở được
+		if strings.Contains(respStr, "failed to convert the document") ||
+			strings.Contains(respStr, "uno exception") ||
+			strings.Contains(respStr, "syntax error") {
+			clientStatusCode = http.StatusUnprocessableEntity
+			detailMsg = "Tài liệu không hợp lệ hoặc cấu trúc file bị lỗi/hỏng, không thể chuyển đổi sang PDF."
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(resp.StatusCode)
+		w.WriteHeader(clientStatusCode)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"detail":  "Gotenberg chuyển đổi thất bại: " + string(respBytes),
+			"detail":  detailMsg,
 		})
 		return
 	}
 
+	// Sanitize baseNameWithoutExt: loại bỏ mọi ký tự lạ, path traversal (.., /, \)
+	safeBaseName := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			return r
+		}
+		return '_'
+	}, baseNameWithoutExt)
+	safeBaseName = strings.Trim(safeBaseName, "._- ")
+	if safeBaseName == "" {
+		safeBaseName = "document"
+	}
+
 	// Tạo tên file output và lưu vào downloadDir
-	outFilename := fmt.Sprintf("%s_%s.pdf", randomID(), baseNameWithoutExt)
+	outFilename := fmt.Sprintf("%s_%s.pdf", randomID(), safeBaseName)
 	outPath := filepath.Join(s.downloadDir, outFilename)
+
+	// Đảm bảo tuyệt đối outPath nằm trong downloadDir
+	relPath, relErr := filepath.Rel(s.downloadDir, outPath)
+	if relErr != nil || strings.HasPrefix(relPath, "..") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Tên file không hợp lệ (nghi ngờ path traversal).",
+		})
+		return
+	}
 
 	outFile, err := os.Create(outPath)
 	if err != nil {
@@ -201,4 +274,56 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 		"size":              writtenBytes,
 		"size_str":          formatBytes(writtenBytes),
 	})
+}
+
+func validateFileMagicBytes(ext string, headerBytes []byte) error {
+	if len(headerBytes) == 0 {
+		return fmt.Errorf("file không có dữ liệu (0 bytes)")
+	}
+
+	switch ext {
+	case ".pdf":
+		// PDF specification: %PDF- xuất hiện ở đầu file (hoặc trong 1024 bytes đầu)
+		if !bytes.Contains(headerBytes, []byte("%PDF-")) {
+			return fmt.Errorf("thiếu header %%PDF- chuẩn (nghi ngờ giả mạo đuôi file)")
+		}
+		// Chặn polyglot nguy hiểm bắt đầu bằng XML/SVG/Script/HTML nhưng chèn đuôi .pdf
+		if bytes.HasPrefix(headerBytes, []byte("<svg")) ||
+			bytes.HasPrefix(headerBytes, []byte("<?xml")) ||
+			bytes.HasPrefix(headerBytes, []byte("<!DOCTYPE")) ||
+			bytes.HasPrefix(headerBytes, []byte("<html")) ||
+			bytes.HasPrefix(headerBytes, []byte("<script")) ||
+			bytes.HasPrefix(headerBytes, []byte("#!/bin")) ||
+			bytes.HasPrefix(headerBytes, []byte("\x7fELF")) ||
+			bytes.HasPrefix(headerBytes, []byte("MZ")) {
+			return fmt.Errorf("phát hiện định dạng polyglot nguy hiểm đội lốt file PDF")
+		}
+	case ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp":
+		// Các định dạng Office hiện đại là ZIP archive (bắt đầu bằng PK\x03\x04)
+		if len(headerBytes) < 4 || !bytes.Equal(headerBytes[:4], []byte("PK\x03\x04")) {
+			return fmt.Errorf("thiếu chữ ký ZIP container (PK) của tài liệu Office")
+		}
+	case ".doc", ".xls", ".ppt":
+		// Định dạng Office nhị phân cũ (OLE2 compound file)
+		oleMagic := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+		if len(headerBytes) < 8 || !bytes.Equal(headerBytes[:8], oleMagic) {
+			return fmt.Errorf("thiếu chữ ký OLE2 compound header của tài liệu Office cũ")
+		}
+	case ".rtf":
+		// Định dạng Rich Text Format bắt đầu bằng {\rtf
+		if !bytes.HasPrefix(headerBytes, []byte("{\\rtf")) {
+			return fmt.Errorf("thiếu chữ ký chuẩn của tài liệu Rich Text Format (RTF)")
+		}
+	case ".txt", ".csv":
+		// Chặn file thực thi binary (ELF, PE MZ) hoặc HTML/Script đội lốt .txt/.csv
+		if bytes.HasPrefix(headerBytes, []byte("MZ")) ||
+			bytes.HasPrefix(headerBytes, []byte("\x7fELF")) ||
+			bytes.HasPrefix(headerBytes, []byte("<!DOCTYPE")) ||
+			bytes.HasPrefix(headerBytes, []byte("<html")) ||
+			bytes.HasPrefix(headerBytes, []byte("<script")) ||
+			bytes.HasPrefix(headerBytes, []byte("<svg")) {
+			return fmt.Errorf("phát hiện nội dung mã thực thi hoặc HTML/Script trong file văn bản")
+		}
+	}
+	return nil
 }

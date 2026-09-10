@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -284,9 +284,9 @@ func (pe *PogocacheEngine) SetMetadata(key string, data map[string]interface{}, 
 
 func GenerateCacheKey(url, mediaFormat, quality string) string {
 	raw := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(url), strings.ToLower(mediaFormat), quality)
-	hasher := md5.New()
+	hasher := sha256.New()
 	hasher.Write([]byte(raw))
-	return hex.EncodeToString(hasher.Sum(nil))[:10]
+	return hex.EncodeToString(hasher.Sum(nil))[:12]
 }
 
 func (pe *PogocacheEngine) FindCachedFile(url, mediaFormat, quality string) (string, bool) {

@@ -130,13 +130,17 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		)
 		if callErr == nil && statusCode == http.StatusOK {
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.WriteHeader(http.StatusOK)
+			// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
 			_, _ = w.Write(respBody)
 			return
 		}
 		if callErr == nil && statusCode == http.StatusBadRequest {
 			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.WriteHeader(http.StatusBadRequest)
+			// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
 			_, _ = w.Write(respBody)
 			return
 		}
@@ -301,14 +305,18 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 			)
 			if callErr == nil && statusCode == http.StatusOK {
 				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				w.WriteHeader(http.StatusOK)
+				// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
 				_, _ = w.Write(respBody)
 				return
 			}
 			// Nếu worker trả 400 (ví dụ client gửi sai tham số hoặc ảnh lỗi), không retry vô ích
 			if callErr == nil && statusCode == http.StatusBadRequest {
 				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				w.WriteHeader(http.StatusBadRequest)
+				// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
 				_, _ = w.Write(respBody)
 				return
 			}

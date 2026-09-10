@@ -101,9 +101,13 @@ def get_birefnet_model_path() -> str:
         except Exception as e:
             logger.warning(f"Lỗi tải từ Hugging Face Hub: {e}. Thử tải URL trực tiếp...")
             try:
-                import urllib.request
+                import httpx
                 fallback_url = "https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/main/onnx/model.onnx"
-                urllib.request.urlretrieve(fallback_url, model_path)
+                with httpx.stream("GET", fallback_url, follow_redirects=True, timeout=180.0) as resp:
+                    resp.raise_for_status()
+                    with open(model_path, "wb") as f_out:
+                        for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
+                            f_out.write(chunk)
                 logger.info("✅ Tải BiRefNet-Lite qua URL dự phòng thành công.")
             except Exception as e_url:
                 logger.error(f"Không thể tải BiRefNet-Lite model: {e_url}")

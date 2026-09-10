@@ -24,7 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgomp1 \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -u 1000 -m appuser
 
 WORKDIR /app
 
@@ -39,6 +40,8 @@ COPY --from=whisper-builder /models/ /app/models/whisper/
 
 COPY services/worker_whisper/ /app/services/worker_whisper/
 
+RUN mkdir -p /app/downloads && chown -R appuser:appuser /app
+
 ENV PORT=8002
 ENV DOWNLOAD_DIR=/app/downloads
 ENV WHISPER_BIN=/usr/local/bin/whisper-cli
@@ -46,5 +49,7 @@ ENV WHISPER_MODEL_PATH=/app/models/whisper/ggml-small.bin
 ENV PYTHONPATH=/app
 
 EXPOSE 8002
+
+USER appuser
 
 CMD ["python3", "-m", "services.worker_whisper.main"]

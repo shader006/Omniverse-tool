@@ -465,10 +465,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return { text: 'EXCEL', bg: 'linear-gradient(135deg, #059669, #10b981)' };
       case 'pptx': case 'ppt': case 'odp':
         return { text: 'PPTX', bg: 'linear-gradient(135deg, #ea580c, #f97316)' };
-      case 'md': case 'markdown':
-        return { text: 'MD', bg: 'linear-gradient(135deg, #7c3aed, #8b5cf6)' };
-      case 'html': case 'htm':
-        return { text: 'HTML', bg: 'linear-gradient(135deg, #0891b2, #06b6d4)' };
+      case 'csv':
+        return { text: 'CSV', bg: 'linear-gradient(135deg, #059669, #10b981)' };
+      case 'pdf':
+        return { text: 'PDF', bg: 'linear-gradient(135deg, #dc2626, #ef4444)' };
       case 'txt': case 'rtf': case 'odt':
         return { text: 'TEXT', bg: 'linear-gradient(135deg, #475569, #64748b)' };
       default:
@@ -478,6 +478,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleFileSelect(file) {
     if (!file) return;
+
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    const allowedOfficeExts = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods', '.odp', '.rtf', '.txt', '.csv', '.pdf'];
+    if (!allowedOfficeExts.includes(ext)) {
+      showFileError(`Định dạng '${ext}' không được hỗ trợ. Vui lòng chỉ tải lên tài liệu văn phòng hợp lệ (.pdf, .docx, .doc, .xlsx, .xls, .pptx, .ppt, .csv, .txt, .rtf, .odt...).`);
+      return;
+    }
 
     if (file.size > 100 * 1024 * 1024) {
       showFileError('Dung lượng file vượt quá giới hạn 100MB!');

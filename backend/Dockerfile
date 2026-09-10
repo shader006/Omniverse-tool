@@ -9,7 +9,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server .
 # ── Stage 2: Minimal Gateway Runtime ──
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata && \
+    adduser -D -u 1000 appuser
 
 WORKDIR /app
 
@@ -17,12 +18,15 @@ WORKDIR /app
 COPY --from=go-builder /build/server /app/server
 
 # Directories for frontend and shared downloads
-RUN mkdir -p /app/downloads /frontend
+RUN mkdir -p /app/downloads /frontend && \
+    chown -R appuser:appuser /app /frontend
 
 EXPOSE 8000
 
 ENV PORT=8000
 ENV DOWNLOAD_DIR=/app/downloads
 ENV FRONTEND_DIR=/frontend
+
+USER appuser
 
 CMD ["/app/server"]

@@ -104,7 +104,10 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 				if result.Data != nil {
 					s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
 				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				w.WriteHeader(http.StatusOK)
+				// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing validated JSON payload
 				_, _ = w.Write(respBytes)
 				return
 			}
@@ -148,7 +151,10 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing validated JSON payload
 	_, _ = w.Write([]byte(jsonStr))
 }
 
@@ -488,6 +494,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	// Gửi ngay trạng thái ban đầu nếu có
 	if initialJob, exists := s.pogo.GetJob(jobID); exists {
 		data, _ := json.Marshal(initialJob)
+		// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 		_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
 		flusher.Flush()
 		if initialJob.Status == "completed" || initialJob.Status == "error" {
@@ -507,6 +514,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			data, _ := json.Marshal(job)
+			// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 			_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
 			flusher.Flush()
 			if job.Status == "completed" || job.Status == "error" {
@@ -516,6 +524,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			// Heartbeat và Polling an toàn
 			if currentJob, exists := s.pogo.GetJob(jobID); exists {
 				data, _ := json.Marshal(currentJob)
+				// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 				_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
 				flusher.Flush()
 				if currentJob.Status == "completed" || currentJob.Status == "error" {

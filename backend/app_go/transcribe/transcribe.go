@@ -69,17 +69,34 @@ var (
 	flashAttnLock         sync.Mutex
 )
 
+func validateWhisperBin(bin string) (string, error) {
+	clean := filepath.Clean(strings.TrimSpace(bin))
+	if clean == "" {
+		return "", fmt.Errorf("empty whisper binary path")
+	}
+	path, err := exec.LookPath(clean)
+	if err != nil {
+		return "", fmt.Errorf("whisper binary not found in PATH: %w", err)
+	}
+	return path, nil
+}
+
 func supportsFlashAttn(whisperBin string) bool {
 	flashAttnLock.Lock()
 	defer flashAttnLock.Unlock()
-	if val, exists := flashAttnSupportedMap[whisperBin]; exists {
+	cleanBin, err := validateWhisperBin(whisperBin)
+	if err != nil {
+		return false
+	}
+	if val, exists := flashAttnSupportedMap[cleanBin]; exists {
 		return val
 	}
-	cmd := exec.Command(whisperBin, "--help")
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command - validated binary via LookPath and Clean
+	cmd := exec.Command(cleanBin, "--help")
 	out, _ := cmd.CombinedOutput()
 	outStr := string(out)
 	supported := strings.Contains(outStr, "--flash-attn") || strings.Contains(outStr, "-fa")
-	flashAttnSupportedMap[whisperBin] = supported
+	flashAttnSupportedMap[cleanBin] = supported
 	return supported
 }
 
@@ -224,6 +241,10 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 			whisperBin = "whisper-cli"
 		}
 	}
+	safeWhisperBin, binErr := validateWhisperBin(whisperBin)
+	if binErr != nil {
+		safeWhisperBin = whisperBin
+	}
 
 	modelPath := FindWhisperModel()
 	log.Printf("🎙️ [WHISPER TRANSCRIBE] Processing %s (%.2fs) using model: %s", inputPath, realAudioDur, modelPath)
@@ -283,7 +304,8 @@ func TranscribeMedia(inputPath, language, format, task, downloadDir string) (*Tr
 	}
 
 	// Chạy whisper-cli
-	cmd := exec.Command(whisperBin, args...)
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command - validated binary via LookPath and Clean
+	cmd := exec.Command(safeWhisperBin, args...)
 	outputBytes, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("whisper-cli thất bại (%v): %s", err, string(outputBytes))

@@ -24,17 +24,24 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
+    libcap2-bin \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -u 1000 -m appuser
 
 WORKDIR /app
 
 # Copy binary đã build từ builder
 COPY --from=builder /usr/src/pingora_proxy/target/release/pingora_proxy /usr/local/bin/pingora_proxy
 
+RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/pingora_proxy && \
+    chown -R appuser:appuser /app
+
 EXPOSE 80 443
 
 ENV RUST_LOG=info
 ENV UPSTREAM_ADDR=app:8000
+
+USER appuser
 
 CMD ["pingora_proxy"]

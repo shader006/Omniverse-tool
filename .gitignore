@@ -55,6 +55,8 @@ hiai-observe/
 git_pixel/
 git\ pixel
 git\ pixel/
+malicious-pdf/
+semgrep_report*.json
 
 
 # IDE & System

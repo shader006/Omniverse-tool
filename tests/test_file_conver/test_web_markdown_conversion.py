@@ -35,55 +35,37 @@ def send_multipart_file(url, field_name, file_name, file_bytes, extra_fields=Non
         data=bytes(body),
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}
     )
-    with urllib.request.urlopen(req, timeout=30) as res:
-        status = res.status
-        content = res.read().decode("utf-8")
-        return status, json.loads(content)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            status = res.status
+            content = res.read().decode("utf-8")
+            return status, json.loads(content)
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode("utf-8"))
 
 
 class TestWebMarkdownConversion(unittest.TestCase):
 
-    def test_01_convert_html_to_pdf_chromium(self):
-        """Kiểm tra chuyển đổi HTML sang PDF qua Gotenberg Chromium Engine"""
+    def test_01_html_rejected_for_security(self):
+        """Kiểm tra hệ thống chặn file HTML (.html) vì lý do an toàn bảo mật SSRF/LFI"""
         sample_html = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body { font-family: sans-serif; padding: 40px; background: #fafafa; }
-        h1 { color: #2563eb; }
-        .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    </style>
-</head>
-<body>
-    <div class="box">
-        <h1>Báo Cáo Tự Động MediaFlow</h1>
-        <p>Tài liệu HTML được render chuẩn xác bằng Chromium Engine bên trong Gotenberg.</p>
-    </div>
-</body>
-</html>"""
+<html><body><h1>Blocked HTML</h1></body></html>"""
         status, data = send_multipart_file(
             f"{BASE_URL}/api/convert/file",
             "file",
             "report.html",
             sample_html.encode("utf-8")
         )
-        self.assertEqual(status, 200)
-        self.assertTrue(data.get("success"))
-        self.assertTrue(data.get("filename", "").endswith(".pdf"))
-        self.assertGreater(data.get("size", 0), 1000)
-        print(f" [PASS] test_01_convert_html_chromium: Output PDF={data.get('filename')}, Size={data.get('size_str')}")
+        self.assertEqual(status, 400)
+        self.assertFalse(data.get("success"))
+        self.assertIn("không được hỗ trợ", data.get("detail", ""))
+        print(f" [PASS] test_01_html_rejected_for_security: Chặn thành công file HTML: {data.get('detail')}")
 
-    def test_02_convert_markdown_to_pdf(self):
-        """Kiểm tra chuyển đổi Markdown (.md) sang PDF"""
+    def test_02_markdown_rejected(self):
+        """Kiểm tra file Markdown (.md) bị từ chối vì hệ thống chỉ cho phép tài liệu văn phòng"""
         sample_md = """# MediaFlow Architecture
-
 ## Core Components
-- **Golang Native API Gateway**: High concurrency, low latency.
-- **Gotenberg v8 Microservice**: Document-to-PDF engine.
-- **Pingora Reverse Proxy**: Cloudflare Rust engine for L4/L7 routing.
-
-> Converted successfully via Gotenberg!
+- **Golang Native API Gateway**
 """
         status, data = send_multipart_file(
             f"{BASE_URL}/api/convert/file",
@@ -91,11 +73,9 @@ class TestWebMarkdownConversion(unittest.TestCase):
             "README.md",
             sample_md.encode("utf-8")
         )
-        self.assertEqual(status, 200)
-        self.assertTrue(data.get("success"))
-        self.assertTrue(data.get("filename", "").endswith(".pdf"))
-        self.assertGreater(data.get("size", 0), 1000)
-        print(f" [PASS] test_02_convert_markdown: Output PDF={data.get('filename')}, Size={data.get('size_str')}")
+        self.assertEqual(status, 400)
+        self.assertFalse(data.get("success"))
+        print(f" [PASS] test_02_markdown_rejected: Chặn thành công file .md: {data.get('detail')}")
 
 
 if __name__ == "__main__":

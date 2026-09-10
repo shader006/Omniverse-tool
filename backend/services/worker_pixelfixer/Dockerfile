@@ -12,14 +12,17 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -u 1000 -m appuser
 
 WORKDIR /app
-RUN mkdir -p /app/downloads
+RUN mkdir -p /app/downloads && chown -R appuser:appuser /app
 COPY --from=builder /build/target/release/worker_pixelfixer /app/worker_pixelfixer
 
 ENV PORT=8004
 ENV DOWNLOAD_DIR=/app/downloads
 EXPOSE 8004
+
+USER appuser
 
 CMD ["/app/worker_pixelfixer"]

@@ -12,10 +12,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /autoscaler main.go
 # Stage 2: Runtime Image siêu nhẹ (< 10MB)
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates && adduser -D -u 1000 appuser
 
 WORKDIR /app
 
 COPY --from=builder /autoscaler /app/autoscaler
+
+USER appuser
 
 CMD ["/app/autoscaler"]

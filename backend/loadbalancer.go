@@ -1,9 +1,10 @@
 package main
 
 import (
+	cryptoRand "crypto/rand"
 	"fmt"
 	"log"
-	mathRand "math/rand"
+	"math/big"
 	"net"
 	"net/url"
 	"strings"
@@ -11,6 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+func cryptoRandInt(max int) int {
+	if max <= 1 {
+		return 0
+	}
+	nBig, err := cryptoRand.Int(cryptoRand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0
+	}
+	return int(nBig.Int64())
+}
 
 type NodeStats struct {
 	activeConns         int64
@@ -126,10 +138,10 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 	var selectedAddr string
 	if len(eligibleAddrs) >= 2 {
 		// 3. Thuật toán P2C: Bốc ngẫu nhiên 2 node ứng viên từ tập eligible
-		idx1 := mathRand.Intn(len(eligibleAddrs))
-		idx2 := mathRand.Intn(len(eligibleAddrs))
+		idx1 := cryptoRandInt(len(eligibleAddrs))
+		idx2 := cryptoRandInt(len(eligibleAddrs))
 		for idx2 == idx1 {
-			idx2 = mathRand.Intn(len(eligibleAddrs))
+			idx2 = cryptoRandInt(len(eligibleAddrs))
 		}
 
 		a1 := eligibleAddrs[idx1]

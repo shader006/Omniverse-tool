@@ -43,9 +43,12 @@ HIAI_OBSERVE_API_KEY = os.environ.get("HIAI_OBSERVE_API_KEY", "")  # Không hard
 def _send_otlp_http(payload: dict):
     if not HIAI_OBSERVE_API_KEY or not HIAI_OBSERVE_URL:
         return
+    url = f"{HIAI_OBSERVE_URL.rstrip('/')}/v1/traces"
+    if not url.startswith(("http://", "https://")):
+        return
     try:
         req = urllib.request.Request(
-            f"{HIAI_OBSERVE_URL}/v1/traces",
+            url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {HIAI_OBSERVE_API_KEY}",
@@ -53,6 +56,7 @@ def _send_otlp_http(payload: dict):
             },
             method="POST"
         )
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected - URL scheme validated to http/https
         with urllib.request.urlopen(req, timeout=2) as resp:
             pass
     except Exception:

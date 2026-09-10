@@ -5,7 +5,7 @@
 ## Tính Năng Chính
 
 - [URL to MP3 / MP4](https://www.omniversetool.online/): Tải và chuyển đổi video từ YouTube, TikTok, Facebook sang định dạng MP3 (320kbps) và MP4 (1080p Full HD).
-- [File to PDF Converter](https://www.omniversetool.online/): Chuyển đổi tài liệu Word (DOCX/DOC), Excel (XLSX/XLS), PowerPoint (PPTX/PPT), Markdown (.md), HTML sang định dạng PDF chuẩn in ấn qua Gotenberg v8.
+- [File to PDF Converter](https://www.omniversetool.online/): Chuyển đổi tài liệu văn phòng Word (DOCX/DOC), Excel (XLSX/XLS), PowerPoint (PPTX/PPT), CSV, Text sang định dạng PDF chuẩn in ấn qua Gotenberg v8.
 - [Whisper AI Transcribe](https://www.omniversetool.online/): Tự động nhận diện và chuyển đổi giọng nói trong video/audio thành phụ đề văn bản (SRT, VTT, TXT).
 - [AI Background Remover](https://www.omniversetool.online/): Xóa nền ảnh chân dung và sản phẩm với mô hình BiRefNet SOTA (OpenVINO), xuất ra file PNG nền trong suốt chất lượng cao.
 

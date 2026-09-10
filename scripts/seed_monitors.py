@@ -46,6 +46,7 @@ def get_project_id():
         f"{API_BASE}/api/projects",
         headers={"Authorization": f"Bearer {API_KEY}"}
     )
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected - internal script
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read().decode())
         projects = data.get("projects", [])
@@ -58,6 +59,7 @@ def get_existing_monitors():
         f"{API_BASE}/api/monitors",
         headers={"Authorization": f"Bearer {API_KEY}"}
     )
+    # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected - internal script
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read().decode())
         return {m["url"]: m for m in data.get("monitors", [])}
@@ -96,6 +98,7 @@ def seed():
             method="POST"
         )
         try:
+            # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected - internal script
             with urllib.request.urlopen(req) as resp:
                 print(f"   ✅ Đã thêm Monitor: {name} ➔ {url}")
         except urllib.error.HTTPError as e:

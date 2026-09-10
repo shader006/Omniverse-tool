@@ -3,6 +3,8 @@ version: '3.8'
 services:
   gateway:
     image: omniversetool-gateway:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -40,6 +42,8 @@ services:
 
   worker-ytdlp:
     image: omniversetool-worker-ytdlp:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -60,6 +64,8 @@ services:
 
   worker-whisper:
     image: omniversetool-worker-whisper:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -80,6 +86,8 @@ services:
 
   worker-rmbg:
     image: omniversetool-worker-rmbg:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -92,18 +100,20 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
-      - BIREFNET_CACHE_DIR=/root/.cache/birefnet
+      - BIREFNET_CACHE_DIR=/home/appuser/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=300
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
-      - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet
+      - ${WORKSPACE_DIR:-.}/models/birefnet:/home/appuser/.cache/birefnet
     networks:
       - omniverse_net
 
   worker-pixelfixer:
     image: omniversetool-worker-pixelfixer:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -126,6 +136,8 @@ services:
 
   pogocache:
     image: pogocache/pogocache:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -139,6 +151,8 @@ services:
 
   gotenberg:
     image: gotenberg/gotenberg:8
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -156,6 +170,8 @@ services:
 
   pingora:
     image: omniversetool-pingora:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:
@@ -174,6 +190,8 @@ services:
   tunnel:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:
@@ -183,6 +201,8 @@ services:
 
   autoscaler:
     image: omniversetool-autoscaler:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:

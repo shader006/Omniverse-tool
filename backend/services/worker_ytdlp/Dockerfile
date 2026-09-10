@@ -7,7 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && curl -fsSL https://deno.land/install.sh | sh \
-    && cp /root/.deno/bin/deno /usr/local/bin/deno
+    && cp /root/.deno/bin/deno /usr/local/bin/deno \
+    && useradd -u 1000 -m appuser
 
 WORKDIR /app
 
@@ -23,10 +24,14 @@ RUN pip install --no-cache-dir \
 COPY app_python/ /app/app/
 COPY services/worker_ytdlp/ /app/services/worker_ytdlp/
 
+RUN mkdir -p /app/downloads && chown -R appuser:appuser /app /home/appuser
+
 ENV PORT=8001
 ENV DOWNLOAD_DIR=/app/downloads
 ENV PYTHONPATH=/app
 
 EXPOSE 8001
+
+USER appuser
 
 CMD ["python3", "-m", "services.worker_ytdlp.main"]
