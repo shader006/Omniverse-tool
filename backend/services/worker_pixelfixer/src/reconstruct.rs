@@ -3,6 +3,7 @@
 //! ported - the server API default is palette_snap=False).
 
 use rayon::prelude::*;
+use crate::advanced_refine::oklab::{oklab_distance_sq, rgb_to_oklab};
 
 /// python/np.round banker's rounding
 fn pyround(v: f64) -> f64 {
@@ -925,14 +926,16 @@ pub fn compute_spatial_grid(
     cols: usize,
     rows: usize,
     elastic: bool,
+    offset_x: f64,
+    offset_y: f64,
 ) -> (Vec<usize>, Vec<f64>, Vec<usize>, Vec<f64>) {
     if elastic {
         let prof_x = axis_profile(rgba, w, h, 0);
         let prof_y = axis_profile(rgba, w, h, 1);
         let cell_w = w as f64 / cols as f64;
         let cell_h = h as f64 / rows as f64;
-        let (origin_x, _) = comb_phase(&prof_x, cell_w);
-        let (origin_y, _) = comb_phase(&prof_y, cell_h);
+        let origin_x = if offset_x.abs() > 1e-4 { offset_x } else { comb_phase(&prof_x, cell_w).0 };
+        let origin_y = if offset_y.abs() > 1e-4 { offset_y } else { comb_phase(&prof_y, cell_h).0 };
 
         let col_cuts = stabilize_grid_cuts(
             elastic_grid_cuts(&prof_x, w, cols, origin_x, cell_w),
@@ -985,22 +988,28 @@ pub fn compute_spatial_grid(
     } else {
         let cw = w as f64 / cols as f64;
         let ch = h as f64 / rows as f64;
+        let off_x = offset_x.rem_euclid(cw);
+        let off_y = offset_y.rem_euclid(ch);
 
         let mut ixs = vec![0usize; w];
         let mut wxs = vec![0f64; w];
         for x in 0..w {
-            let ix = ((x * cols) / w).min(cols - 1);
+            let fx_coord = (x as f64 - off_x) / cw;
+            let ix = (fx_coord.floor() as isize).clamp(0, (cols - 1) as isize) as usize;
             ixs[x] = ix;
-            let fx = (x as f64 + 0.5 - ix as f64 * cw) / cw;
-            wxs[x] = 1.0 - 2.0 * (fx - 0.5).abs();
+            let center_x = off_x + (ix as f64 + 0.5) * cw;
+            let fx = 0.5 + (x as f64 + 0.5 - center_x) / cw;
+            wxs[x] = (1.0 - 2.0 * (fx - 0.5).abs()).max(0.0);
         }
         let mut iys = vec![0usize; h];
         let mut wys = vec![0f64; h];
         for y in 0..h {
-            let iy = ((y * rows) / h).min(rows - 1);
+            let fy_coord = (y as f64 - off_y) / ch;
+            let iy = (fy_coord.floor() as isize).clamp(0, (rows - 1) as isize) as usize;
             iys[y] = iy;
-            let fy = (y as f64 + 0.5 - iy as f64 * ch) / ch;
-            wys[y] = 1.0 - 2.0 * (fy - 0.5).abs();
+            let center_y = off_y + (iy as f64 + 0.5) * ch;
+            let fy = 0.5 + (y as f64 + 0.5 - center_y) / ch;
+            wys[y] = (1.0 - 2.0 * (fy - 0.5).abs()).max(0.0);
         }
 
         (ixs, wxs, iys, wys)
@@ -1009,73 +1018,242 @@ pub fn compute_spatial_grid(
 
 /// detector.reconstruct.two_stage_pack).
 ///
-/// Stage 1 (STRUCTURE): quantise to a small palette (adaptive K) and let each
-/// cell vote among the clean quantised labels -> crisp placement.
-/// Stage 2 (COLOUR): colour each cell from the ORIGINAL pixels carrying the
-/// winning label -> crisp lines AND accurate, un-clamped colours.
-pub fn two_stage_pack(
+/// Cell features computed from raw spatial sampling.
+#[derive(Clone, Debug)]
+pub struct CellFeatures {
+    pub cell_lab: Vec<[f64; 3]>,
+    pub probs: Vec<f64>,
+    pub confidences: Vec<f64>,
+}
+
+/// Precomputed directional edge gates between neighboring cells.
+#[derive(Clone, Debug)]
+pub struct DirectionalEdgeGates {
+    pub h_gates: Vec<f64>,
+    pub v_gates: Vec<f64>,
+    pub cols: usize,
+    pub rows: usize,
+}
+
+impl DirectionalEdgeGates {
+    #[inline]
+    pub fn get_h(&self, cx: usize, cy: usize) -> f64 {
+        if cx + 1 < self.cols && cy < self.rows {
+            self.h_gates[cy * (self.cols - 1) + cx]
+        } else {
+            0.0
+        }
+    }
+
+    #[inline]
+    pub fn get_v(&self, cx: usize, cy: usize) -> f64 {
+        if cx < self.cols && cy + 1 < self.rows {
+            self.v_gates[cy * self.cols + cx]
+        } else {
+            0.0
+        }
+    }
+
+    #[inline]
+    pub fn get_gate(
+        &self,
+        cx: usize,
+        cy: usize,
+        nx: usize,
+        ny: usize,
+        cell_lab: &[[f64; 3]],
+        edge_k: f64,
+    ) -> f64 {
+        if cx == nx && cy == ny {
+            return 1.0;
+        }
+        if cy == ny {
+            let x_left = cx.min(nx);
+            self.get_h(x_left, cy)
+        } else if cx == nx {
+            let y_top = cy.min(ny);
+            self.get_v(cx, y_top)
+        } else {
+            let c_idx = cy * self.cols + cx;
+            let n_idx = ny * self.cols + nx;
+            let d_direct = oklab_distance_sq(cell_lab[c_idx], cell_lab[n_idx]).sqrt();
+            let g_direct = (-edge_k * d_direct).exp();
+
+            let g_ortho1 = if nx > cx {
+                self.get_h(cx, cy)
+            } else {
+                self.get_h(nx, cy)
+            };
+            let g_ortho2 = if ny > cy {
+                self.get_v(cx, cy)
+            } else {
+                self.get_v(cx, ny)
+            };
+
+            g_direct * g_ortho1.max(g_ortho2)
+        }
+    }
+}
+
+pub fn compute_cell_features(
     rgba: &[u8],
     w: usize,
     h: usize,
     cols: usize,
     rows: usize,
-    k_colors: usize,
-    elastic: bool,
-) -> ReconOut {
-    let k_req = if k_colors > 0 {
-        k_colors
-    } else {
-        crate::kmeans::adaptive_k(rgba, w, h, 16, 48, 0.003)
-    };
-    let (labels, kc) = crate::kmeans::kmeans_labels(rgba, w, h, k_req);
-    let kc = kc.max(1);
+    labels: &[u32],
+    kc: usize,
+    ixs: &[usize],
+    wxs: &[f64],
+    iys: &[usize],
+    wys: &[f64],
+) -> CellFeatures {
     let n = cols * rows;
-
-    let (ixs, wxs, iys, wys) = compute_spatial_grid(rgba, w, h, cols, rows, elastic);
-
-    // stage 1: winning label per cell (centre-weighted vote over labels)
     let mut wsum = vec![0f64; n * kc];
+    let mut lab_sum = vec![[0f64; 3]; n];
+    let mut lab_wsum = vec![0f64; n];
+
     for y in 0..h {
         for x in 0..w {
             let i = y * w + x;
+            let p = i * 4;
             let cell = iys[y] * cols + ixs[x];
-            let wgt = wys[y] * wxs[x] + 1e-4;
-            wsum[cell * kc + labels[i] as usize] += wgt;
+            let wgt = wys[y] * wxs[x];
+
+            if wgt > 0.0 {
+                wsum[cell * kc + labels[i] as usize] += wgt;
+                if rgba[p + 3] > 10 {
+                    let lab = rgb_to_oklab([rgba[p], rgba[p + 1], rgba[p + 2]]);
+                    lab_sum[cell][0] += lab[0] * wgt;
+                    lab_sum[cell][1] += lab[1] * wgt;
+                    lab_sum[cell][2] += lab[2] * wgt;
+                    lab_wsum[cell] += wgt;
+                }
+            }
         }
     }
-    // 1.1 Soft Voting / Relaxation Labeling:
-    // Convert wsum logits to probabilities and propagate neighbor consensus over 2 iterations
+
+    let mut cell_lab = vec![[0.0, 0.0, 0.0]; n];
+    for c in 0..n {
+        if lab_wsum[c] > 1e-6 {
+            cell_lab[c] = [
+                lab_sum[c][0] / lab_wsum[c],
+                lab_sum[c][1] / lab_wsum[c],
+                lab_sum[c][2] / lab_wsum[c],
+            ];
+        }
+    }
+
     let mut probs = vec![0.0f64; n * kc];
+    let mut confidences = vec![0.0f64; n];
+
     for c in 0..n {
         let base = c * kc;
         let mut total_w = 0.0f64;
         for l in 0..kc {
             total_w += wsum[base + l];
         }
-        if total_w > 1e-9 {
+
+        if total_w > 1e-6 {
             for l in 0..kc {
                 probs[base + l] = wsum[base + l] / total_w;
             }
+            let mut p1 = 0.0f64;
+            let mut p2 = 0.0f64;
+            for l in 0..kc {
+                let p = probs[base + l];
+                if p > p1 {
+                    p2 = p1;
+                    p1 = p;
+                } else if p > p2 {
+                    p2 = p;
+                }
+            }
+            confidences[c] = (p1 - p2).clamp(0.0, 1.0);
         } else {
             for l in 0..kc {
                 probs[base + l] = 1.0 / (kc as f64);
             }
+            confidences[c] = 0.0;
         }
     }
 
-    // Relaxation iterations: blend local cell prior with spatial neighbor consensus
-    for iter in 0..2 {
+    CellFeatures {
+        cell_lab,
+        probs,
+        confidences,
+    }
+}
+
+pub fn compute_edge_gates(
+    cell_lab: &[[f64; 3]],
+    cols: usize,
+    rows: usize,
+    edge_k: f64,
+) -> DirectionalEdgeGates {
+    let h_len = cols.saturating_sub(1) * rows;
+    let v_len = cols * rows.saturating_sub(1);
+    let mut h_gates = vec![1.0f64; h_len];
+    let mut v_gates = vec![1.0f64; v_len];
+
+    if cols > 1 {
+        for cy in 0..rows {
+            for cx in 0..cols - 1 {
+                let c1 = cy * cols + cx;
+                let c2 = cy * cols + (cx + 1);
+                let d = oklab_distance_sq(cell_lab[c1], cell_lab[c2]).sqrt();
+                h_gates[cy * (cols - 1) + cx] = (-edge_k * d).exp();
+            }
+        }
+    }
+
+    if rows > 1 {
+        for cy in 0..rows - 1 {
+            for cx in 0..cols {
+                let c1 = cy * cols + cx;
+                let c2 = (cy + 1) * cols + cx;
+                let d = oklab_distance_sq(cell_lab[c1], cell_lab[c2]).sqrt();
+                v_gates[cy * cols + cx] = (-edge_k * d).exp();
+            }
+        }
+    }
+
+    DirectionalEdgeGates {
+        h_gates,
+        v_gates,
+        cols,
+        rows,
+    }
+}
+
+pub fn edge_aware_relaxation(
+    mut probs: Vec<f64>,
+    mut confidences: Vec<f64>,
+    cell_lab: &[[f64; 3]],
+    gates: &DirectionalEdgeGates,
+    cols: usize,
+    rows: usize,
+    kc: usize,
+    iterations: usize,
+    lambda_max: f64,
+    gamma: f64,
+    edge_k: f64,
+) -> (Vec<f64>, Vec<f64>) {
+    let n = cols * rows;
+
+    for _iter in 0..iterations {
         let mut next_probs = probs.clone();
-        let neighbor_w = if iter == 0 { 0.35 } else { 0.45 };
-        let local_w = 1.0 - neighbor_w;
 
         for cy in 0..rows {
             for cx in 0..cols {
                 let c = cy * cols + cx;
                 let base = c * kc;
+                let conf = confidences[c];
 
-                let mut n_sum = vec![0.0f64; kc];
-                let mut n_count = 0.0f64;
+                let lambda_i = lambda_max * (1.0 - conf).powf(gamma);
+
+                let mut s_sum = vec![0.0f64; kc];
+                let mut s_weight = 0.0f64;
 
                 let y_min = cy.saturating_sub(1);
                 let y_max = (cy + 1).min(rows - 1);
@@ -1089,32 +1267,187 @@ pub fn two_stage_pack(
                         }
                         let nc = ny * cols + nx;
                         let n_base = nc * kc;
-                        let weight = if ny == cy || nx == cx { 1.0 } else { 0.707 };
-                        for l in 0..kc {
-                            n_sum[l] += probs[n_base + l] * weight;
+
+                        let base_w = if ny == cy || nx == cx { 1.0 } else { 0.707 };
+                        let gate = gates.get_gate(cx, cy, nx, ny, cell_lab, edge_k);
+                        let w_eff = base_w * gate;
+
+                        if w_eff > 1e-6 {
+                            for l in 0..kc {
+                                s_sum[l] += probs[n_base + l] * w_eff;
+                            }
+                            s_weight += w_eff;
                         }
-                        n_count += weight;
                     }
                 }
 
-                if n_count > 0.0 {
-                    let mut norm = 0.0f64;
+                if s_weight > 1e-6 {
                     for l in 0..kc {
-                        let combined = local_w * probs[base + l] + neighbor_w * (n_sum[l] / n_count);
-                        next_probs[base + l] = combined;
-                        norm += combined;
-                    }
-                    if norm > 1e-9 {
-                        for l in 0..kc {
-                            next_probs[base + l] /= norm;
-                        }
+                        let s_i = s_sum[l] / s_weight;
+                        next_probs[base + l] = (1.0 - lambda_i) * probs[base + l] + lambda_i * s_i;
                     }
                 }
             }
         }
+
         probs = next_probs;
+        for c in 0..n {
+            let base = c * kc;
+            let mut p1 = 0.0f64;
+            let mut p2 = 0.0f64;
+            for l in 0..kc {
+                let p = probs[base + l];
+                if p > p1 {
+                    p2 = p1;
+                    p1 = p;
+                } else if p > p2 {
+                    p2 = p;
+                }
+            }
+            confidences[c] = (p1 - p2).clamp(0.0, 1.0);
+        }
     }
 
+    (probs, confidences)
+}
+
+pub fn edge_aware_tv(
+    win: &mut [u32],
+    probs: &[f64],
+    confidences: &[f64],
+    cell_lab: &[[f64; 3]],
+    cols: usize,
+    rows: usize,
+    kc: usize,
+) {
+    if cols < 3 || rows < 3 {
+        return;
+    }
+
+    let win_snapshot = win.to_vec();
+    for cy in 1..rows - 1 {
+        for cx in 1..cols - 1 {
+            let c = cy * cols + cx;
+            let cur_l = win_snapshot[c];
+
+            let up_idx = (cy - 1) * cols + cx;
+            let down_idx = (cy + 1) * cols + cx;
+            let left_idx = cy * cols + (cx - 1);
+            let right_idx = cy * cols + (cx + 1);
+
+            let neighbors = [
+                win_snapshot[up_idx],
+                win_snapshot[down_idx],
+                win_snapshot[left_idx],
+                win_snapshot[right_idx],
+            ];
+            let neighbor_indices = [up_idx, down_idx, left_idx, right_idx];
+
+            let mut counts = [0usize; 4];
+            for i in 0..4 {
+                for j in 0..4 {
+                    if neighbors[i] == neighbors[j] {
+                        counts[i] += 1;
+                    }
+                }
+            }
+
+            let mut dominant_label = None;
+            for i in 0..4 {
+                if counts[i] >= 3 && neighbors[i] != cur_l {
+                    dominant_label = Some(neighbors[i]);
+                    break;
+                }
+            }
+
+            if let Some(dom_l) = dominant_label {
+                let cur_p = probs[c * kc + cur_l as usize];
+                let dom_p = probs[c * kc + dom_l as usize];
+                let conf = confidences[c];
+
+                let mut var_lab = 0.0f64;
+                let mut agree_count = 0usize;
+                for i in 0..4 {
+                    if neighbors[i] == dom_l {
+                        for j in (i + 1)..4 {
+                            if neighbors[j] == dom_l {
+                                var_lab += oklab_distance_sq(
+                                    cell_lab[neighbor_indices[i]],
+                                    cell_lab[neighbor_indices[j]],
+                                );
+                                agree_count += 1;
+                            }
+                        }
+                    }
+                }
+                let avg_dist = if agree_count > 0 {
+                    (var_lab / agree_count as f64).sqrt()
+                } else {
+                    0.0
+                };
+
+                let is_flat_surrounding = avg_dist < 0.15;
+                let is_weak_current = cur_p < 0.70 || conf < 0.45 || (dom_p / cur_p.max(1e-4)) > 0.35;
+
+                if is_flat_surrounding && is_weak_current {
+                    win[c] = dom_l;
+                }
+            }
+        }
+    }
+}
+
+/// Stage 1 (STRUCTURE): quantise to a small palette (adaptive K) and let each
+/// cell vote among the clean quantised labels -> crisp placement.
+/// Stage 2 (COLOUR): colour each cell from the ORIGINAL pixels carrying the
+/// winning label -> crisp lines AND accurate, un-clamped colours.
+pub fn two_stage_pack(
+    rgba: &[u8],
+    w: usize,
+    h: usize,
+    cols: usize,
+    rows: usize,
+    k_colors: usize,
+    elastic: bool,
+    offset_x: f64,
+    offset_y: f64,
+) -> ReconOut {
+    let k_req = if k_colors > 0 {
+        k_colors
+    } else {
+        crate::kmeans::adaptive_k(rgba, w, h, 16, 48, 0.003)
+    };
+    let (labels, kc) = crate::kmeans::kmeans_labels(rgba, w, h, k_req);
+    let kc = kc.max(1);
+    let n = cols * rows;
+
+    let (ixs, wxs, iys, wys) = compute_spatial_grid(rgba, w, h, cols, rows, elastic, offset_x, offset_y);
+
+    // stage 1: compute cell features (OKLab mean, soft votes without +1e-4, margin confidence)
+    let features = compute_cell_features(
+        rgba, w, h, cols, rows, &labels, kc, &ixs, &wxs, &iys, &wys,
+    );
+
+    // 1.1 Precompute Directional Edge Gates in OKLab space
+    let edge_k = 5.0f64;
+    let gates = compute_edge_gates(&features.cell_lab, cols, rows, edge_k);
+
+    // 1.2 Edge-Aware Relaxation Labeling (2 iterations)
+    let (probs, confidences) = edge_aware_relaxation(
+        features.probs,
+        features.confidences,
+        &features.cell_lab,
+        &gates,
+        cols,
+        rows,
+        kc,
+        2,
+        0.35,
+        2.0,
+        edge_k,
+    );
+
+    // 1.3 Determine winning label per cell
     let mut win = vec![0u32; n];
     for c in 0..n {
         let base = c * kc;
@@ -1129,52 +1462,8 @@ pub fn two_stage_pack(
         win[c] = bi as u32;
     }
 
-    // 1.2 Spatial Total Variation (TV) Regularization:
-    // Remove isolated single-pixel salt-and-pepper noise surrounded by uniform neighbor clusters
-    if cols >= 3 && rows >= 3 {
-        let win_snapshot = win.clone();
-        for cy in 1..rows - 1 {
-            for cx in 1..cols - 1 {
-                let c = cy * cols + cx;
-                let cur_l = win_snapshot[c];
-
-                let up = win_snapshot[(cy - 1) * cols + cx];
-                let down = win_snapshot[(cy + 1) * cols + cx];
-                let left = win_snapshot[cy * cols + (cx - 1)];
-                let right = win_snapshot[cy * cols + (cx + 1)];
-
-                // Check 4-connected neighbors
-                let neighbors = [up, down, left, right];
-                let mut counts = [0usize; 4];
-                for i in 0..4 {
-                    for j in 0..4 {
-                        if neighbors[i] == neighbors[j] {
-                            counts[i] += 1;
-                        }
-                    }
-                }
-
-                // If 3 or 4 of 4-neighbors agree on a label distinct from cur_l
-                let mut dominant_label = None;
-                for i in 0..4 {
-                    if counts[i] >= 3 && neighbors[i] != cur_l {
-                        dominant_label = Some(neighbors[i]);
-                        break;
-                    }
-                }
-
-                if let Some(dom_l) = dominant_label {
-                    // Check probability of current label vs dominant:
-                    // If current cell is weak or borderline (prob < 0.65), regularize it to dominant cluster
-                    let cur_p = probs[c * kc + cur_l as usize];
-                    let dom_p = probs[c * kc + dom_l as usize];
-                    if cur_p < 0.65 || (dom_p / cur_p.max(1e-4)) > 0.4 {
-                        win[c] = dom_l;
-                    }
-                }
-            }
-        }
-    }
+    // 1.4 Edge-Aware Spatial Total Variation (TV) Regularization
+    edge_aware_tv(&mut win, &probs, &confidences, &features.cell_lab, cols, rows, kc);
 
     // stage 2: colour from original pixels carrying the winning label
     let mut csum = vec![[0f64; 3]; n];
@@ -1237,3 +1526,132 @@ pub fn find_grid_phase(rgba: &[u8], w: usize, h: usize, step_x: f64, step_y: f64
     let (py, _) = comb_phase(&prof_y, step_y);
     (px, py)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_edge_gates_preserves_sharp_boundary() {
+        // Black: [0.0, 0.0, 0.0], White: [1.0, 0.0, 0.0] in OKLab
+        let black = [0.0, 0.0, 0.0];
+        let white = [1.0, 0.0, 0.0];
+        let cell_lab = vec![black, white];
+        let gates = compute_edge_gates(&cell_lab, 2, 1, 5.0);
+
+        let g = gates.get_gate(0, 0, 1, 0, &cell_lab, 5.0);
+        // exp(-5.0 * 1.0) = exp(-5) ≈ 0.006738 -> very small gate blocking diffusion
+        assert!(g < 0.01, "Gate between black and white should be < 0.01, got {}", g);
+
+        // Two identical cells
+        let cell_lab_same = vec![white, white];
+        let gates_same = compute_edge_gates(&cell_lab_same, 2, 1, 5.0);
+        let g_same = gates_same.get_gate(0, 0, 1, 0, &cell_lab_same, 5.0);
+        assert!((g_same - 1.0).abs() < 1e-6, "Gate between same colors should be 1.0");
+    }
+
+    #[test]
+    fn test_edge_relaxation_no_bleed_across_edge() {
+        // 2x2 grid:
+        // Col 0: black (label 0)
+        // Col 1: cyan/blue (label 1)
+        let black = rgb_to_oklab([0, 0, 0]);
+        let blue = rgb_to_oklab([0, 200, 255]);
+        let cell_lab = vec![black, blue, black, blue];
+        let cols = 2;
+        let rows = 2;
+        let kc = 2;
+        let edge_k = 5.0;
+
+        let gates = compute_edge_gates(&cell_lab, cols, rows, edge_k);
+
+        // Initial probs: Col 0 has label 0 with 90%, Col 1 has label 1 with 90%
+        let probs = vec![
+            0.9, 0.1, // (0, 0)
+            0.1, 0.9, // (1, 0)
+            0.9, 0.1, // (0, 1)
+            0.1, 0.9, // (1, 1)
+        ];
+        let confidences = vec![0.8, 0.8, 0.8, 0.8];
+
+        let (next_probs, _) = edge_aware_relaxation(
+            probs,
+            confidences,
+            &cell_lab,
+            &gates,
+            cols,
+            rows,
+            kc,
+            2,
+            0.35,
+            2.0,
+            edge_k,
+        );
+
+        // Ensure col 0 (cells 0 and 2) didn't get corrupted by col 1
+        assert!(next_probs[0 * kc + 0] > 0.85, "Cell (0,0) label 0 prob should remain high");
+        assert!(next_probs[2 * kc + 0] > 0.85, "Cell (0,1) label 0 prob should remain high");
+        // Ensure col 1 (cells 1 and 3) didn't get corrupted by col 0
+        assert!(next_probs[1 * kc + 1] > 0.85, "Cell (1,0) label 1 prob should remain high");
+        assert!(next_probs[3 * kc + 1] > 0.85, "Cell (1,1) label 1 prob should remain high");
+    }
+
+    #[test]
+    fn test_edge_aware_tv_noise_removal() {
+        // 3x3 grid: surrounding cells all label 0 (white), center is label 1 (black) with weak prob
+        let white = rgb_to_oklab([255, 255, 255]);
+        let black = rgb_to_oklab([0, 0, 0]);
+        let mut cell_lab = vec![white; 9];
+        cell_lab[4] = black; // center
+
+        let mut win = vec![0u32; 9];
+        win[4] = 1; // noisy center
+
+        let mut probs = vec![0.0f64; 18];
+        for c in 0..9 {
+            if c == 4 {
+                probs[c * 2] = 0.45;     // dom label prob
+                probs[c * 2 + 1] = 0.55; // weak cur label prob
+            } else {
+                probs[c * 2] = 0.95;
+                probs[c * 2 + 1] = 0.05;
+            }
+        }
+        let mut confidences = vec![0.9f64; 9];
+        confidences[4] = 0.1; // weak margin confidence
+
+        edge_aware_tv(&mut win, &probs, &confidences, &cell_lab, 3, 3, 2);
+
+        assert_eq!(win[4], 0, "Noisy weak center cell should be regularized to dominant label 0");
+    }
+
+    #[test]
+    fn test_edge_aware_tv_preserves_strong_detail() {
+        // 3x3 grid: center is a strong intentional 1px dot (e.g. eye)
+        let white = rgb_to_oklab([255, 255, 255]);
+        let black = rgb_to_oklab([0, 0, 0]);
+        let mut cell_lab = vec![white; 9];
+        cell_lab[4] = black;
+
+        let mut win = vec![0u32; 9];
+        win[4] = 1; // intentional dot
+
+        let mut probs = vec![0.0f64; 18];
+        for c in 0..9 {
+            if c == 4 {
+                probs[c * 2] = 0.1;
+                probs[c * 2 + 1] = 0.90; // strong confidence
+            } else {
+                probs[c * 2] = 0.95;
+                probs[c * 2 + 1] = 0.05;
+            }
+        }
+        let mut confidences = vec![0.9f64; 9];
+        confidences[4] = 0.8; // strong margin confidence
+
+        edge_aware_tv(&mut win, &probs, &confidences, &cell_lab, 3, 3, 2);
+
+        assert_eq!(win[4], 1, "Intentional high-confidence dot should NOT be overwritten by TV");
+    }
+}
+

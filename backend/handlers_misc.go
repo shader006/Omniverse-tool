@@ -81,6 +81,12 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		mimeType = "image/webp"
 	case ".pdf":
 		mimeType = "application/pdf"
+	case ".docx":
+		mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xlsx":
+		mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".pptx":
+		mimeType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 	}
 	w.Header().Set("Content-Type", mimeType)
 

@@ -180,6 +180,8 @@ pub struct FixParams {
     pub rows: Option<u32>,
     pub step_x: Option<f64>,
     pub step_y: Option<f64>,
+    pub offset_x: Option<f64>,
+    pub offset_y: Option<f64>,
     pub auto_palette: Option<bool>,
     pub two_stage: Option<bool>,
     pub k_colors: Option<usize>,
@@ -228,6 +230,10 @@ struct CachedFixMeta {
     rows: usize,
     step_x: f64,
     step_y: f64,
+    #[serde(default)]
+    offset_x: f64,
+    #[serde(default)]
+    offset_y: f64,
     consensus: String,
     topology: String,
     candidates_json: String,
@@ -440,6 +446,8 @@ async fn fix_handler(
     let mut req_rows = query.rows;
     let mut req_step_x = query.step_x;
     let mut req_step_y = query.step_y;
+    let mut req_offset_x = query.offset_x;
+    let mut req_offset_y = query.offset_y;
     let mut _auto_palette = query.auto_palette.unwrap_or(true);
     let mut _req_two_stage = query.two_stage;
     let mut req_k_colors = query.k_colors;
@@ -468,6 +476,10 @@ async fn fix_handler(
             if let Ok(txt) = field.text().await { req_step_x = txt.parse().ok(); }
         } else if name == "step_y" {
             if let Ok(txt) = field.text().await { req_step_y = txt.parse().ok(); }
+        } else if name == "offset_x" {
+            if let Ok(txt) = field.text().await { req_offset_x = txt.parse().ok(); }
+        } else if name == "offset_y" {
+            if let Ok(txt) = field.text().await { req_offset_y = txt.parse().ok(); }
         } else if name == "auto_palette" {
             if let Ok(txt) = field.text().await { _auto_palette = txt == "true" || txt == "1"; }
         } else if name == "two_stage" {
@@ -506,8 +518,8 @@ async fn fix_handler(
 
     // 2. Tính toán Cache Key phân tách độc lập
     let param_key = format!(
-        "{}_cols{:?}_rows{:?}_sx{:?}_sy{:?}_k{}_el{}",
-        in_hash, req_cols, req_rows, req_step_x, req_step_y, k_colors, is_elastic
+        "{}_cols{:?}_rows{:?}_sx{:?}_sy{:?}_ox{:?}_oy{:?}_k{}_el{}",
+        in_hash, req_cols, req_rows, req_step_x, req_step_y, req_offset_x, req_offset_y, k_colors, is_elastic
     );
     let cache_key = compute_hash_10(param_key.as_bytes());
     let out_filename = format!("{}_{}_pixel.png", cache_key, base_name);
@@ -550,6 +562,12 @@ async fn fix_handler(
                 if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", meta.step_y)) {
                     headers.insert("X-Grid-StepY", v);
                 }
+                if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", meta.offset_x)) {
+                    headers.insert("X-Grid-OffsetX", v);
+                }
+                if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", meta.offset_y)) {
+                    headers.insert("X-Grid-OffsetY", v);
+                }
                 if let Ok(v) = HeaderValue::from_str(&meta.consensus) {
                     headers.insert("X-Grid-Consensus", v);
                 }
@@ -586,22 +604,22 @@ async fn fix_handler(
     let raw = rgba.as_raw();
 
     // 5. Nếu chưa có cols/rows/step, tự động chạy detect (hỗ trợ nhập step_x/step_y số thập phân)
-    let (step_x, step_y, cols, rows, consensus) = match (req_step_x, req_step_y, req_cols, req_rows) {
-        (Some(sx), Some(sy), Some(c), Some(r)) => (sx, sy, c as usize, r as usize, "manual".to_string()),
+    let (step_x, step_y, cols, rows, consensus, auto_offset_x, auto_offset_y) = match (req_step_x, req_step_y, req_cols, req_rows) {
+        (Some(sx), Some(sy), Some(c), Some(r)) => (sx, sy, c as usize, r as usize, "manual".to_string(), 0.0, 0.0),
         (Some(sx), Some(sy), None, None) => {
             let c = ((w as f64) / sx).round().max(1.0) as usize;
             let r = ((h as f64) / sy).round().max(1.0) as usize;
-            (sx, sy, c, r, "manual_step".to_string())
+            (sx, sy, c, r, "manual_step".to_string(), 0.0, 0.0)
         }
         (Some(sx), None, None, None) => {
             let c = ((w as f64) / sx).round().max(1.0) as usize;
             let r = ((h as f64) / sx).round().max(1.0) as usize;
-            (sx, sx, c, r, "manual_step".to_string())
+            (sx, sx, c, r, "manual_step".to_string(), 0.0, 0.0)
         }
         (None, None, Some(c), Some(r)) => {
             let sx = (w as f64) / (c as f64);
             let sy = (h as f64) / (r as f64);
-            (sx, sy, c as usize, r as usize, "manual_cols_rows".to_string())
+            (sx, sy, c as usize, r as usize, "manual_cols_rows".to_string(), 0.0, 0.0)
         }
         _ => {
             let is_fast = req_mode.as_deref() == Some("fast");
@@ -610,9 +628,24 @@ async fn fix_handler(
             } else {
                 core::detect_full(raw, w, h)
             };
-            (d.step_x, d.step_y, d.cols.max(1) as usize, d.rows.max(1) as usize, d.consensus)
+            (d.step_x, d.step_y, d.cols.max(1) as usize, d.rows.max(1) as usize, d.consensus, d.offset_x, d.offset_y)
         }
     };
+
+    let offset_x = req_offset_x.unwrap_or_else(|| {
+        if auto_offset_x != 0.0 {
+            auto_offset_x
+        } else {
+            reconstruct::find_grid_phase(raw, w, h, step_x, step_y).0
+        }
+    });
+    let offset_y = req_offset_y.unwrap_or_else(|| {
+        if auto_offset_y != 0.0 {
+            auto_offset_y
+        } else {
+            reconstruct::find_grid_phase(raw, w, h, step_x, step_y).1
+        }
+    });
 
     // 6. Tái tạo sprite pixel art bằng Thuật toán Gốc (Two-Stage K-Means của Pixel Art Fixer)
     let out = reconstruct::two_stage_pack(
@@ -623,6 +656,8 @@ async fn fix_handler(
         rows,
         k_colors,
         is_elastic,
+        offset_x,
+        offset_y,
     );
     let (recon_rgba, recon_cols, recon_rows, topology_label) = (
         out.rgba,
@@ -663,6 +698,8 @@ async fn fix_handler(
         rows: recon_rows,
         step_x,
         step_y,
+        offset_x,
+        offset_y,
         consensus: consensus.clone(),
         topology: topology_label.to_string(),
         candidates_json: cand_json.clone(),
@@ -695,6 +732,12 @@ async fn fix_handler(
     if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", step_y)) {
         headers.insert("X-Grid-StepY", v);
     }
+    if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", offset_x)) {
+        headers.insert("X-Grid-OffsetX", v);
+    }
+    if let Ok(v) = HeaderValue::from_str(&format!("{:.2}", offset_y)) {
+        headers.insert("X-Grid-OffsetY", v);
+    }
     if let Ok(v) = HeaderValue::from_str(&consensus) {
         headers.insert("X-Grid-Consensus", v);
     }
@@ -713,8 +756,8 @@ async fn fix_handler(
     let dur_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
     tracing::info!(
-        "🛠️ [FIX] In: {}x{} -> Out: {}x{} ({} bytes, grid: {:.2}x{:.2}, topology: {}, algo: original) in {:.2}ms [File: {}]",
-        w, h, recon_cols, recon_rows, out_len, step_x, step_y, if is_elastic { "elastic" } else { "uniform" }, dur_ms, out_filename
+        "🛠️ [FIX] In: {}x{} -> Out: {}x{} ({} bytes, grid: {:.2}x{:.2}, offset: {:.2}x{:.2}, topology: {}, algo: original) in {:.2}ms [File: {}]",
+        w, h, recon_cols, recon_rows, out_len, step_x, step_y, offset_x, offset_y, if is_elastic { "elastic" } else { "uniform" }, dur_ms, out_filename
     );
 
     let mut trace_attrs = HashMap::new();
@@ -723,6 +766,8 @@ async fn fix_handler(
     trace_attrs.insert("image.out_cols".to_string(), serde_json::json!(recon_cols));
     trace_attrs.insert("image.out_rows".to_string(), serde_json::json!(recon_rows));
     trace_attrs.insert("grid.step_x".to_string(), serde_json::json!(step_x));
+    trace_attrs.insert("grid.offset_x".to_string(), serde_json::json!(offset_x));
+    trace_attrs.insert("grid.offset_y".to_string(), serde_json::json!(offset_y));
     trace_attrs.insert("reconstruct.algo".to_string(), serde_json::json!("original"));
     trace_attrs.insert("reconstruct.elastic".to_string(), serde_json::json!(is_elastic));
     trace_attrs.insert("image.out_bytes".to_string(), serde_json::json!(out_len));

@@ -316,12 +316,12 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 		req, reqErr := http.NewRequest("POST", s.workerYtdlpURL+"/api/download", bytes.NewReader(bodyBytes))
 		if reqErr == nil {
 			req.Header.Set("Content-Type", "application/json")
+			var receivedFinal bool
 			client := &http.Client{Timeout: 900 * time.Second}
 			resp, callErr := client.Do(req)
 			if callErr == nil && resp.StatusCode == http.StatusOK {
 				defer resp.Body.Close()
 				scanner := bufio.NewScanner(resp.Body)
-				receivedFinal := false
 				for scanner.Scan() {
 					line := strings.TrimSpace(scanner.Text())
 					if line == "" {
@@ -338,23 +338,28 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 					}
 					if err := json.Unmarshal([]byte(line), &event); err == nil {
 						if event.Status == "downloading" {
-							if j, ok := s.pogo.GetJob(jobID); ok {
-								j.Percent = event.Percent
-								if event.Speed != "" {
-									j.Speed = event.Speed
-								}
-								s.pogo.PublishJobUpdate(j)
+							j, ok := s.pogo.GetJob(jobID)
+							if !ok {
+								j = Job{JobID: jobID, URL: url, Format: mediaFormat, Quality: quality}
 							}
+							j.Status = "downloading"
+							j.Percent = event.Percent
+							if event.Speed != "" {
+								j.Speed = event.Speed
+							}
+							s.pogo.PublishJobUpdate(j)
 						} else if event.Status == "completed" {
-							if j, ok := s.pogo.GetJob(jobID); ok {
-								j.Status = "completed"
-								j.Percent = 100.0
-								j.Filename = event.Filename
-								j.DownloadURL = fmt.Sprintf("/api/file/%s", event.Filename)
-								s.pogo.PublishJobUpdate(j)
-								receivedFinal = true
-								return
+							j, ok := s.pogo.GetJob(jobID)
+							if !ok {
+								j = Job{JobID: jobID, URL: url, Format: mediaFormat, Quality: quality}
 							}
+							j.Status = "completed"
+							j.Percent = 100.0
+							j.Filename = event.Filename
+							j.DownloadURL = fmt.Sprintf("/api/file/%s", event.Filename)
+							s.pogo.PublishJobUpdate(j)
+							receivedFinal = true
+							return
 						} else if event.Status == "error" {
 							errText := event.Error
 							if errText == "" {
@@ -363,18 +368,41 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 							s.failJob(jobID, errText)
 							receivedFinal = true
 							return
+						} else if event.Status == "queued" {
+							if j, ok := s.pogo.GetJob(jobID); ok {
+								j.Status = "queued"
+								s.pogo.PublishJobUpdate(j)
+							}
 						}
 					}
 				}
 				if receivedFinal {
 					return
 				}
+				if scanErr := scanner.Err(); scanErr != nil {
+					log.Printf("⚠️ [WORKER YT-DLP] Scanner stream error: %v", scanErr)
+				}
 			}
 			if resp != nil {
 				_ = resp.Body.Close()
 			}
-			log.Printf("⚠️ [WORKER YT-DLP] Gọi worker /api/download thất bại (%v)", callErr)
+			log.Printf("⚠️ [WORKER YT-DLP] Kết thúc stream worker /api/download (callErr=%v, receivedFinal=%v)", callErr, receivedFinal)
 		}
+	}
+
+	// 1.5. Kiểm tra nếu Worker đã tải xong file vào thư mục dùng chung trước khi báo lỗi
+	if cachedFile, found := s.pogo.FindCachedFile(url, mediaFormat, quality); found {
+		log.Printf("✅ [WORKER YT-DLP RECOVERY] Tìm thấy file đã tải thành công trong downloadDir: %s", cachedFile)
+		j, ok := s.pogo.GetJob(jobID)
+		if !ok {
+			j = Job{JobID: jobID, URL: url, Format: mediaFormat, Quality: quality}
+		}
+		j.Status = "completed"
+		j.Percent = 100.0
+		j.Filename = cachedFile
+		j.DownloadURL = fmt.Sprintf("/api/file/%s", cachedFile)
+		s.pogo.PublishJobUpdate(j)
+		return
 	}
 
 	// 2. Fallback sang CLI cục bộ (chỉ khi có sẵn python3 trên hệ thống)

@@ -102,6 +102,20 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 
 	landscape := r.FormValue("landscape") == "true"
 	pdfa := r.FormValue("pdfa") // ví dụ: "PDF/A-1b", "PDF/A-2b", "PDF/A-3b"
+	targetFormat := strings.ToLower(strings.TrimSpace(r.FormValue("target_format")))
+	if targetFormat == "" {
+		if ext == ".pdf" && pdfa == "" && !landscape {
+			targetFormat = "docx"
+		} else {
+			targetFormat = "pdf"
+		}
+	}
+
+	// Nếu file đầu vào là PDF và định dạng đích là Word DOCX
+	if ext == ".pdf" && targetFormat == "docx" {
+		s.handlePdfToDocx(w, r, file, originalFilename, baseNameWithoutExt)
+		return
+	}
 
 	// Tất cả các tài liệu văn phòng hợp lệ được chuyển đổi an toàn qua LibreOffice Engine
 	endpointSubpath := "/forms/libreoffice/convert"
@@ -327,3 +341,136 @@ func validateFileMagicBytes(ext string, headerBytes []byte) error {
 	}
 	return nil
 }
+
+func (s *Server) handlePdfToDocx(w http.ResponseWriter, r *http.Request, file multipart.File, originalFilename, baseNameWithoutExt string) {
+	workerEndpoint := fmt.Sprintf("%s/convert", strings.TrimRight(s.workerPdf2docxURL, "/"))
+
+	bodyBuf := &bytes.Buffer{}
+	bodyWriter := multipart.NewWriter(bodyBuf)
+
+	targetFont := r.FormValue("target_font")
+	if targetFont != "" {
+		_ = bodyWriter.WriteField("target_font", targetFont)
+	}
+
+	part, err := bodyWriter.CreateFormFile("file", originalFilename)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi xử lý file stream: " + err.Error(),
+		})
+		return
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi sao chép file dữ liệu: " + err.Error(),
+		})
+		return
+	}
+	_ = bodyWriter.Close()
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, workerEndpoint, bodyBuf)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi kết nối tới PDF2DOCX worker: " + err.Error(),
+		})
+		return
+	}
+	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
+
+	startReq := time.Now()
+	resp, err := s.httpClient.Do(req)
+	durMs := float64(time.Since(startReq).Microseconds()) / 1000.0
+
+	sendCustomOTLPTrace(
+		"worker_pdf2docx",
+		"POST /convert",
+		durMs,
+		map[string]string{
+			"file.name": originalFilename,
+			"target":    "docx",
+		},
+		err != nil || (resp != nil && resp.StatusCode != http.StatusOK),
+	)
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không thể kết nối tới dịch vụ chuyển đổi PDF sang Word (worker_pdf2docx).",
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBytes, _ := io.ReadAll(resp.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Chuyển đổi PDF sang Word thất bại: " + string(respBytes),
+		})
+		return
+	}
+
+	safeBaseName := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.' {
+			return r
+		}
+		return '_'
+	}, baseNameWithoutExt)
+	safeBaseName = strings.Trim(safeBaseName, "._- ")
+	if safeBaseName == "" {
+		safeBaseName = "document"
+	}
+
+	outFilename := fmt.Sprintf("%s_%s.docx", randomID(), safeBaseName)
+	outPath := filepath.Join(s.downloadDir, outFilename)
+
+	outFile, err := os.Create(outPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Không thể lưu file Word sau khi chuyển đổi: " + err.Error(),
+		})
+		return
+	}
+	defer outFile.Close()
+
+	writtenBytes, err := io.Copy(outFile, resp.Body)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Lỗi ghi dữ liệu DOCX: " + err.Error(),
+		})
+		return
+	}
+
+	downloadURL := fmt.Sprintf("/api/file/%s", outFilename)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":           true,
+		"filename":          outFilename,
+		"original_filename": originalFilename,
+		"output_filename":   baseNameWithoutExt + ".docx",
+		"download_url":      downloadURL,
+		"size":              writtenBytes,
+		"size_str":          formatBytes(writtenBytes),
+	})
+}
+

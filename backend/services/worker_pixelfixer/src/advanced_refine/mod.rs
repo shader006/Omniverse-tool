@@ -43,6 +43,9 @@ pub fn advanced_pixel_refine(
     assert!(cols > 0 && rows > 0, "Grid cols and rows must be positive");
 
     // 1. Precompute spatial grid (Uniform or Elastic cuts)
+    let step_x = w as f64 / cols as f64;
+    let step_y = h as f64 / rows as f64;
+    let (offset_x, offset_y) = crate::reconstruct::find_grid_phase(raw_rgba, w, h, step_x, step_y);
     let (ixs, wxs, iys, wys) = crate::reconstruct::compute_spatial_grid(
         raw_rgba,
         w,
@@ -50,6 +53,8 @@ pub fn advanced_pixel_refine(
         cols,
         rows,
         elastic,
+        offset_x,
+        offset_y,
     );
 
     // 2. SOURCE -> Linear RGB -> OKLab

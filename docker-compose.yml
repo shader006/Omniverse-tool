@@ -19,6 +19,7 @@ services:
       - WORKER_WHISPER_URL=http://worker-whisper:8002
       - WORKER_RMBG_URL=http://worker-rmbg:8003
       - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
+      - WORKER_PDF2DOCX_URL=http://worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
     depends_on:
       - gotenberg
@@ -27,6 +28,7 @@ services:
       - worker-whisper
       - worker-rmbg
       - worker-pixelfixer
+      - worker-pdf2docx
 
   worker-ytdlp:
     build:
@@ -85,6 +87,20 @@ services:
       - RUST_LOG=info
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+
+  worker-pdf2docx:
+    build:
+      context: ./backend
+      dockerfile: services/worker_pdf2docx/Dockerfile
+    container_name: mediaflow_worker_pdf2docx
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8005
 
   pogocache:
     image: pogocache/pogocache:latest

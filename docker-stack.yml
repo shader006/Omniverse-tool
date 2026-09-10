@@ -31,6 +31,7 @@ services:
       - WORKER_WHISPER_URL=http://tasks.worker-whisper:8002
       - WORKER_RMBG_URL=http://tasks.worker-rmbg:8003
       - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
+      - WORKER_PDF2DOCX_URL=http://tasks.worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
@@ -131,6 +132,26 @@ services:
       - RUST_LOG=info
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+    networks:
+      - omniverse_net
+
+  worker-pdf2docx:
+    image: omniversetool-worker-pdf2docx:latest
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 1024M
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8005
     networks:
       - omniverse_net
 

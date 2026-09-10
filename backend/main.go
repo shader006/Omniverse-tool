@@ -49,6 +49,11 @@ func main() {
 		workerPixelfixerURL = "http://worker-pixelfixer:8004"
 	}
 
+	workerPdf2docxURL := os.Getenv("WORKER_PDF2DOCX_URL")
+	if workerPdf2docxURL == "" {
+		workerPdf2docxURL = "http://worker-pdf2docx:8005"
+	}
+
 	server := &Server{
 		pogo:                NewPogocacheEngine(pogoAddr, downloadDir),
 		mediaLimiter:        make(chan struct{}, maxMediaJobs),
@@ -59,6 +64,7 @@ func main() {
 		workerWhisperURL:    workerWhisperURL,
 		workerRmbgURL:       workerRmbgURL,
 		workerPixelfixerURL: workerPixelfixerURL,
+		workerPdf2docxURL:   workerPdf2docxURL,
 		httpClient: &http.Client{
 			Timeout: 180 * time.Second,
 		},

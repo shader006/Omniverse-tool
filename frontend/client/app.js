@@ -429,9 +429,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRemoveFile = document.getElementById('btn-remove-file');
 
   const fileOptionsPanel = document.getElementById('file-options-panel');
+  const targetFormatSelect = document.getElementById('target-format');
+  const targetFormatField = document.getElementById('target-format-field');
+  const orientationField = document.getElementById('orientation-field');
+  const pdfaField = document.getElementById('pdfa-field');
   const pageOrientationSelect = document.getElementById('page-orientation');
   const pdfaFormatSelect = document.getElementById('pdfa-format');
   const btnConvertFile = document.getElementById('btn-convert-file');
+  const btnConvertText = document.getElementById('btn-convert-text');
 
   const fileErrorBox = document.getElementById('file-error-box');
   const fileErrorMessage = document.getElementById('file-error-message');
@@ -447,6 +452,34 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnConvertAnother = document.getElementById('btn-convert-another');
 
   let selectedFileObj = null;
+
+  function updateConversionMode() {
+    if (!selectedFileObj) return;
+    const isPdf = selectedFileObj.name.toLowerCase().endsWith('.pdf');
+
+    if (isPdf) {
+      if (targetFormatField) targetFormatField.classList.remove('hidden');
+      const target = targetFormatSelect ? targetFormatSelect.value : 'docx';
+      if (target === 'docx') {
+        if (orientationField) orientationField.classList.add('hidden');
+        if (pdfaField) pdfaField.classList.add('hidden');
+        if (btnConvertText) btnConvertText.textContent = 'Chuyển Đổi Sang Word (.docx)';
+      } else {
+        if (orientationField) orientationField.classList.remove('hidden');
+        if (pdfaField) pdfaField.classList.remove('hidden');
+        if (btnConvertText) btnConvertText.textContent = 'Chuyển Đổi Sang PDF (Gotenberg)';
+      }
+    } else {
+      if (targetFormatField) targetFormatField.classList.add('hidden');
+      if (orientationField) orientationField.classList.remove('hidden');
+      if (pdfaField) pdfaField.classList.remove('hidden');
+      if (btnConvertText) btnConvertText.textContent = 'Chuyển Đổi Sang PDF (Gotenberg)';
+    }
+  }
+
+  if (targetFormatSelect) {
+    targetFormatSelect.addEventListener('change', updateConversionMode);
+  }
 
   function formatFileBytes(bytes) {
     if (bytes === 0) return '0 Bytes';
@@ -507,6 +540,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fileOptionsPanel) fileOptionsPanel.classList.remove('hidden');
     if (fileResultCard) fileResultCard.classList.add('hidden');
     if (fileProgressBanner) fileProgressBanner.classList.add('hidden');
+
+    if (ext === '.pdf') {
+      if (targetFormatSelect) targetFormatSelect.value = 'docx';
+    } else {
+      if (targetFormatSelect) targetFormatSelect.value = 'pdf';
+    }
+    updateConversionMode();
   }
 
   function resetFileSelection() {
@@ -526,9 +566,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fileProgressBanner) fileProgressBanner.classList.add('hidden');
     if (btnConvertFile) {
       btnConvertFile.disabled = false;
+      const isPdf = selectedFileObj && selectedFileObj.name.toLowerCase().endsWith('.pdf');
+      const isDocx = targetFormatSelect && targetFormatSelect.value === 'docx';
+      const label = (isPdf && isDocx) ? 'Chuyển Đổi Sang Word (.docx)' : 'Chuyển Đổi Sang PDF (Gotenberg)';
       btnConvertFile.innerHTML = `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-        <span>Chuyển Đổi Sang PDF (Gotenberg)</span>
+        <span id="btn-convert-text">${label}</span>
       `;
     }
   }
@@ -594,19 +637,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       hideFileError();
+      const targetFormat = targetFormatSelect ? targetFormatSelect.value : 'pdf';
+      const isDocxTarget = targetFormat === 'docx';
+
       btnConvertFile.disabled = true;
       btnConvertFile.innerHTML = `
         <div class="spinner" style="width:16px;height:16px;border-width:2px;"></div>
-        <span>Đang gửi sang Gotenberg Engine...</span>
+        <span>${isDocxTarget ? 'Đang gửi sang PDF-to-Word Engine...' : 'Đang gửi sang Gotenberg Engine...'}</span>
       `;
 
       if (fileProgressBanner) fileProgressBanner.classList.remove('hidden');
       if (fileProgressBar) fileProgressBar.style.width = '30%';
       if (filePercentText) filePercentText.textContent = '30%';
-      if (fileStatusText) fileStatusText.textContent = 'Đang tải file lên và kết nối LibreOffice / Chromium...';
+      if (fileStatusText) fileStatusText.textContent = isDocxTarget ? 'Đang tải file PDF và khởi động engine...' : 'Đang tải file lên và kết nối LibreOffice / Chromium...';
 
       const formData = new FormData();
       formData.append('file', selectedFileObj);
+      formData.append('target_format', targetFormat);
       if (pageOrientationSelect) {
         formData.append('landscape', pageOrientationSelect.value === 'landscape' ? 'true' : 'false');
       }
@@ -619,7 +666,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (fileProgressBar) {
             fileProgressBar.style.width = '70%';
             filePercentText.textContent = '70%';
-            fileStatusText.textContent = 'Gotenberg đang xử lý và xuất file PDF...';
+            fileStatusText.textContent = isDocxTarget ? 'pikepdf & pdf2docx đang trích xuất layout & tạo file Word...' : 'Gotenberg đang xử lý và xuất file PDF...';
           }
         }, 600);
 
@@ -630,18 +677,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.detail || 'Quá trình chuyển đổi thất bại qua Gotenberg Engine.');
+          throw new Error(data.detail || 'Quá trình chuyển đổi thất bại.');
         }
 
         if (fileProgressBar) fileProgressBar.style.width = '100%';
         if (filePercentText) filePercentText.textContent = '100%';
-        if (fileStatusText) fileStatusText.textContent = 'Chuyển đổi PDF thành công!';
+        if (fileStatusText) fileStatusText.textContent = isDocxTarget ? 'Chuyển đổi sang Word (.docx) thành công!' : 'Chuyển đổi PDF thành công!';
 
-        if (resultPdfFilename) resultPdfFilename.textContent = data.output_filename || 'document.pdf';
+        const isDocxResult = (data.output_filename || '').toLowerCase().endsWith('.docx');
+        const defaultOutName = isDocxResult ? 'document.docx' : 'document.pdf';
+        if (resultPdfFilename) resultPdfFilename.textContent = data.output_filename || defaultOutName;
         if (resultPdfFilesize) resultPdfFilesize.textContent = data.size_str || formatFileBytes(data.size || 0);
         if (btnDownloadPdf) {
           btnDownloadPdf.href = data.download_url;
-          btnDownloadPdf.setAttribute('download', data.output_filename || 'document.pdf');
+          btnDownloadPdf.setAttribute('download', data.output_filename || defaultOutName);
+        }
+
+        const resultFileTag = document.querySelector('.result-tag');
+        if (resultFileTag) {
+          resultFileTag.textContent = isDocxResult ? 'WORD CHUYỂN ĐỔI THÀNH CÔNG' : 'CONVERT HOÀN TẤT';
         }
 
         if (fileResultCard) {

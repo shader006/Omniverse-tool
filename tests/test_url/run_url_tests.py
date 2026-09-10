@@ -7,6 +7,19 @@ import unittest
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+app_python_dir = os.path.join(backend_dir, "app_python")
+if os.path.exists(app_python_dir) and "app" not in sys.modules:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("app", os.path.join(app_python_dir, "__init__.py") if os.path.exists(os.path.join(app_python_dir, "__init__.py")) else None)
+    if spec:
+        app_mod = importlib.util.module_from_spec(spec)
+        sys.modules["app"] = app_mod
+    else:
+        sys.path.insert(0, os.path.join(backend_dir, "app_python"))
+        import types
+        app_mod = types.ModuleType("app")
+        app_mod.__path__ = [app_python_dir]
+        sys.modules["app"] = app_mod
 
 def main():
     print("=" * 65)
