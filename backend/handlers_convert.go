@@ -121,8 +121,8 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	endpointSubpath := "/forms/libreoffice/convert"
 	gotenbergEndpoint, finish := s.gotenbergLB.SelectEndpoint(endpointSubpath)
 
-	// Chuẩn bị multipart body gửi sang Gotenberg
-	bodyBuf := &bytes.Buffer{}
+	// Chuẩn bị multipart body gửi sang Gotenberg với dung lượng cấp phát trước
+	bodyBuf := bytes.NewBuffer(make([]byte, 0, header.Size+2048))
 	bodyWriter := multipart.NewWriter(bodyBuf)
 
 	// Thêm các option nếu có
@@ -174,9 +174,8 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
 	InjectTraceparent(r.Context(), req)
 
-	client := &http.Client{Timeout: 120 * time.Second}
 	startGotenberg := time.Now()
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	gotenbergDurMs := float64(time.Since(startGotenberg).Microseconds()) / 1000.0
 	finish(err)
 

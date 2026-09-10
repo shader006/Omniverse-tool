@@ -219,24 +219,39 @@ async def transcribe_media(
         with open(temp_in_path, "wb") as f_out:
             shutil.copyfileobj(file.file, f_out)
 
-        # 1. Convert media sang 16kHz 16-bit Mono WAV cho Whisper
+        # 1. Convert media sang 16kHz 16-bit Mono WAV cho Whisper (đa luồng -threads 0, bỏ qua video stream -vn)
+        t_ff_start = time.perf_counter()
         cmd_ffmpeg = [
-            "ffmpeg", "-y", "-i", temp_in_path,
+            "ffmpeg", "-y", "-threads", "0", "-vn", "-i", temp_in_path,
             "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
             wav_path
         ]
         res_ff = subprocess.run(cmd_ffmpeg, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_ff.returncode != 0:
             raise HTTPException(status_code=500, detail=f"FFmpeg chuyển đổi âm thanh thất bại: {res_ff.stderr}")
+        dur_ffmpeg_ms = (time.perf_counter() - t_ff_start) * 1000.0
 
-        # Lấy thời lượng audio
-        cmd_dur = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", wav_path]
-        res_dur = subprocess.run(cmd_dur, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # Lấy thời lượng audio tức thì bằng module wave chuẩn (0.05 ms thay vì gọi ffprobe subprocess tốn 250ms)
         duration_sec = 0.0
         try:
-            duration_sec = float(res_dur.stdout.strip())
+            with wave.open(wav_path, "rb") as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                if rate > 0:
+                    duration_sec = round(float(frames) / float(rate), 2)
         except Exception:
-            pass
+            duration_sec = 0.0
+
+        send_otlp_trace(
+            name="    ├─ 🎵 [1/2] Chuẩn hóa âm thanh WAV 16kHz (FFmpeg)",
+            duration_ms=dur_ffmpeg_ms,
+            attributes={
+                "audio.duration_sec": duration_sec,
+                "file.name": file.filename or "media",
+            },
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
+        )
 
         # [Issue 4] Giới hạn thời lượng tối đa 10 phút (600s)
         if duration_sec > 600.0:
@@ -247,12 +262,13 @@ async def transcribe_media(
                 detail=f"Thời lượng audio ({mins} phút {secs} giây) vượt quá giới hạn tối đa cho phép là 10 phút. Vui lòng chọn file ngắn hơn."
             )
 
-        # 2. Chạy whisper-cli tối ưu tốc độ, phân bổ 12 core và chống nuốt lời khi nhạc to
+        # 2. Chạy whisper-cli tối ưu tốc độ, phân bổ tối đa 16 core CPU
+        cpu_threads = str(min(os.cpu_count() or 16, 16))
         cmd_whisper = [
             WHISPER_BIN,
             "-m", WHISPER_MODEL_PATH,
             "-f", wav_path,
-            "-t", str(min(os.cpu_count() or 12, 12)),
+            "-t", cpu_threads,
             "-bs", "1",
             "-bo", "1",
             "-nf",
@@ -333,7 +349,7 @@ async def transcribe_media(
                 out_f.write(text_content)
 
         send_otlp_trace(
-            name=" └─ 🎙️ [Xử lý AI] Nhận diện giọng nói (Whisper C++)",
+            name="    └─ 🎙️ [2/2] Nhận diện giọng nói AI (Whisper C++)",
             duration_ms=proc_time * 1000.0,
             attributes={
                 "http.route": "/api/transcribe",

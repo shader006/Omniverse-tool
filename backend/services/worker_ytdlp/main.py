@@ -17,6 +17,7 @@ import uvicorn
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from app.url_conver.metadata import get_media_info
 from app.url_conver.downloader import run_download_task, DEFAULT_DOWNLOAD_DIR
+from app.url_conver.utils import clean_url_key
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("worker_ytdlp")
@@ -159,10 +160,12 @@ def fetch_info(req: InfoRequest, request: Request):
     trace_id, parent_span_id = parse_traceparent(request.headers.get("traceparent"))
     now = time.time()
 
+    cache_key = clean_url_key(req.url)
+
     # 1. Kiểm tra cache trong RAM (0.01 ms)
     with _INFO_CACHE_LOCK:
-        if req.url in _INFO_CACHE:
-            cached_data, exp = _INFO_CACHE[req.url]
+        if cache_key in _INFO_CACHE:
+            cached_data, exp = _INFO_CACHE[cache_key]
             if now < exp:
                 send_otlp_trace(
                     name=" └─ 🎬 [Xử lý (RAM Cache)] Trích xuất metadata video",
@@ -184,11 +187,11 @@ def fetch_info(req: InfoRequest, request: Request):
         data = get_media_info(req.url)
         proc_ms = (time.perf_counter() - start) * 1000.0
 
-        # Lưu cache trong bộ nhớ
+        # Lưu cache trong bộ nhớ theo cache_key chuẩn hoá
         with _INFO_CACHE_LOCK:
             if len(_INFO_CACHE) > 500:
                 _INFO_CACHE.clear()
-            _INFO_CACHE[req.url] = (data, now + _CACHE_TTL)
+            _INFO_CACHE[cache_key] = (data, now + _CACHE_TTL)
 
         send_otlp_trace(
             name=" └─ 🎬 [Xử lý] Trích xuất metadata video",
@@ -292,7 +295,7 @@ def start_download(req: DownloadRequest, request: Request):
                     "error": str(e)
                 })
                 send_otlp_trace(
-                    name="⬇️ [YtDlp] Tải file & Gộp luồng media",
+                    name=" └─ ⬇️ [Xử lý] Tải file & Gộp luồng media",
                     duration_ms=duration_ms,
                     attributes={"http.route": "/api/download", "http.status_code": 500, "error": str(e)},
                     trace_id=trace_id,

@@ -90,19 +90,16 @@ def run_download_task(
             'merge_output_format': 'mp4',
         })
 
+    def duration_filter(info_dict, *, incomplete):
+        dur = info_dict.get('duration') or 0
+        if dur > 3 * 3600:
+            return "Thời lượng video/audio vượt quá giới hạn tối đa 3 giờ."
+        return None
+
+    ydl_opts['match_filter'] = duration_filter
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # 1. Trích xuất metadata trước để kiểm tra thời lượng < 3 giờ
-            pre_info = ydl.extract_info(cleaned_url, download=False)
-            if pre_info:
-                if 'entries' in pre_info and pre_info['entries']:
-                    pre_info = pre_info['entries'][0]
-                dur = pre_info.get('duration', 0) or 0
-                if dur > 3 * 3600:
-                    if progress_callback:
-                        progress_callback(0.0, "Lỗi: Thời lượng video/audio vượt quá giới hạn tối đa 3 giờ.")
-                    return None
-
             info = ydl.extract_info(cleaned_url, download=True)
             if not info:
                 return None
@@ -115,12 +112,28 @@ def run_download_task(
             final_path = os.path.join(output_dir, final_filename)
 
             if not os.path.exists(final_path):
-                # Quét file khớp với prefix
+                # Quét file khớp với prefix và đúng định dạng đích trước
                 for fname in os.listdir(output_dir):
-                    if fname.startswith(cache_prefix):
+                    if fname.startswith(cache_prefix) and fname.endswith(f".{media_format}"):
                         final_filename = fname
                         final_path = os.path.join(output_dir, fname)
                         break
+                else:
+                    for fname in os.listdir(output_dir):
+                        if fname.startswith(cache_prefix):
+                            final_filename = fname
+                            final_path = os.path.join(output_dir, fname)
+                            break
+
+            # Tự động dọn dẹp các file rác trung gian (ví dụ container video gốc .webm khi bóc tách MP3)
+            try:
+                for fname in os.listdir(output_dir):
+                    if fname.startswith(cache_prefix) and fname != final_filename:
+                        trash_path = os.path.join(output_dir, fname)
+                        if os.path.isfile(trash_path):
+                            os.remove(trash_path)
+            except Exception:
+                pass
 
             if progress_callback:
                 progress_callback(100.0, "Hoàn tất chuyển đổi!")

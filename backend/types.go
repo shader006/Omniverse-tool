@@ -44,6 +44,7 @@ type Server struct {
 	workerPixelfixerURL string
 	workerPdf2docxURL   string
 	httpClient          *http.Client
+	httpLongClient      *http.Client
 }
 
 func randomID() string {

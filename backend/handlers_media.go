@@ -37,7 +37,7 @@ func (s *Server) callWorkerJSON(ctx context.Context, workerBaseURL string, path 
 }
 
 func (s *Server) forwardMultipartToWorker(ctx context.Context, workerBaseURL string, path string, fileBytes []byte, filename string, fieldName string, formValues map[string]string) ([]byte, int, error) {
-	bodyBuf := &bytes.Buffer{}
+	bodyBuf := bytes.NewBuffer(make([]byte, 0, len(fileBytes)+2048))
 	writer := multipart.NewWriter(bodyBuf)
 	part, err := writer.CreateFormFile(fieldName, filename)
 	if err != nil {
@@ -321,8 +321,7 @@ func (s *Server) processDownloadJob(ctx context.Context, jobID, url, mediaFormat
 			req.Header.Set("Content-Type", "application/json")
 			InjectTraceparent(ctx, req)
 			var receivedFinal bool
-			client := &http.Client{Timeout: 900 * time.Second}
-			resp, callErr := client.Do(req)
+			resp, callErr := s.httpLongClient.Do(req)
 			if callErr == nil && resp.StatusCode == http.StatusOK {
 				defer resp.Body.Close()
 				scanner := bufio.NewScanner(resp.Body)
@@ -539,8 +538,13 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	jobCh, cleanup := s.pogo.SubscribeJob(r.Context(), jobID)
 	defer cleanup()
 
+	var lastSentStatus string
+	var lastSentPercent float64 = -1
+
 	// Gửi ngay trạng thái ban đầu nếu có
 	if initialJob, exists := s.pogo.GetJob(jobID); exists {
+		lastSentStatus = initialJob.Status
+		lastSentPercent = initialJob.Percent
 		data, _ := json.Marshal(initialJob)
 		// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 		_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
@@ -561,6 +565,8 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			lastSentStatus = job.Status
+			lastSentPercent = job.Percent
 			data, _ := json.Marshal(job)
 			// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 			_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
@@ -569,16 +575,24 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-ticker.C:
-			// Heartbeat và Polling an toàn
+			// Heartbeat và Polling an toàn khi có thay đổi trạng thái
 			if currentJob, exists := s.pogo.GetJob(jobID); exists {
-				data, _ := json.Marshal(currentJob)
-				// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
-				_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
-				flusher.Flush()
-				if currentJob.Status == "completed" || currentJob.Status == "error" {
-					return
+				if currentJob.Status != lastSentStatus || currentJob.Percent != lastSentPercent {
+					lastSentStatus = currentJob.Status
+					lastSentPercent = currentJob.Percent
+					data, _ := json.Marshal(currentJob)
+					// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
+					_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
+					flusher.Flush()
+					if currentJob.Status == "completed" || currentJob.Status == "error" {
+						return
+					}
+					continue
 				}
 			}
+			// SSE Keep-Alive Ping chuẩn (giữ kết nối qua Cloudflare/proxy mà không gây re-render client)
+			_, _ = fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
 		}
 	}
 }

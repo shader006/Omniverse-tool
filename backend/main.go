@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,6 +56,20 @@ func main() {
 		workerPdf2docxURL = "http://worker-pdf2docx:8005"
 	}
 
+	sharedTransport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          200,
+		MaxIdleConnsPerHost:   50,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
 	server := &Server{
 		pogo:                NewPogocacheEngine(pogoAddr, downloadDir),
 		mediaLimiter:        make(chan struct{}, maxMediaJobs),
@@ -67,7 +82,12 @@ func main() {
 		workerPixelfixerURL: workerPixelfixerURL,
 		workerPdf2docxURL:   workerPdf2docxURL,
 		httpClient: &http.Client{
-			Timeout: 180 * time.Second,
+			Transport: sharedTransport,
+			Timeout:   180 * time.Second,
+		},
+		httpLongClient: &http.Client{
+			Transport: sharedTransport,
+			Timeout:   900 * time.Second,
 		},
 	}
 
