@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,7 +12,43 @@ import (
 	"time"
 )
 
+type contextKey string
+
+const traceCtxKey contextKey = "traceInfo"
+
+type TraceInfo struct {
+	TraceID string
+	SpanID  string
+}
+
+// GetTraceInfo lấy thông tin trace (TraceID, SpanID) từ Context
+func GetTraceInfo(ctx context.Context) *TraceInfo {
+	if ctx == nil {
+		return nil
+	}
+	if ti, ok := ctx.Value(traceCtxKey).(*TraceInfo); ok {
+		return ti
+	}
+	return nil
+}
+
+// InjectTraceparent tự động gắn header W3C traceparent vào request gửi sang worker
+func InjectTraceparent(ctx context.Context, req *http.Request) {
+	if req == nil {
+		return
+	}
+	ti := GetTraceInfo(ctx)
+	if ti == nil && req.Context() != nil {
+		ti = GetTraceInfo(req.Context())
+	}
+	if ti != nil && ti.TraceID != "" && ti.SpanID != "" {
+		req.Header.Set("traceparent", fmt.Sprintf("00-%s-%s-01", ti.TraceID, ti.SpanID))
+	}
+}
+
 type otlpSpanItem struct {
+	TraceID    string
+	SpanID     string
 	Name       string
 	Route      string
 	Method     string
@@ -45,12 +82,47 @@ func generateHexID(n int) string {
 	return randomID() + randomID()
 }
 
+func getFriendlySpanName(method, path string) string {
+	switch {
+	case path == "/api/convert/file":
+		return "🌐 [Gateway] Chuyển đổi tài liệu (/api/convert/file)"
+	case path == "/api/download":
+		return "🌐 [Gateway] Tải Media (/api/download)"
+	case path == "/api/info":
+		return "🌐 [Gateway] Lấy thông tin Media (/api/info)"
+	case path == "/api/remove-bg":
+		return "🌐 [Gateway] Tách nền ảnh AI (/api/remove-bg)"
+	case path == "/api/transcribe":
+		return "🌐 [Gateway] Nhận diện giọng nói (/api/transcribe)"
+	case path == "/api/pixel/detect":
+		return "🌐 [Gateway] Nhận diện lưới pixel (/api/pixel/detect)"
+	case path == "/api/pixel/fix":
+		return "🌐 [Gateway] Tái tạo Pixel Art (/api/pixel/fix)"
+	case strings.HasPrefix(path, "/api/file/"):
+		return fmt.Sprintf("🌐 [Gateway] Tải file kết quả (%s)", path)
+	case strings.HasPrefix(path, "/api/status/"):
+		return fmt.Sprintf("🌐 [Gateway] Kiểm tra tiến độ (%s)", path)
+	case strings.HasPrefix(path, "/api/cancel/"):
+		return fmt.Sprintf("🌐 [Gateway] Hủy tiến trình (%s)", path)
+	case strings.HasPrefix(path, "/api/stream/"):
+		return fmt.Sprintf("🌐 [Gateway] Stream tiến độ (%s)", path)
+	default:
+		return fmt.Sprintf("🌐 [Gateway] %s %s", method, path)
+	}
+}
+
 func sendGatewayOTLPTrace(item *otlpSpanItem) {
 	if hiaiObserveKey == "" {
 		return
 	}
-	traceID := randomID() + randomID() + randomID() + randomID()
-	spanID := randomID() + randomID()
+	traceID := item.TraceID
+	if traceID == "" {
+		traceID = randomID() + randomID() + randomID() + randomID()
+	}
+	spanID := item.SpanID
+	if spanID == "" {
+		spanID = randomID() + randomID()
+	}
 	startNano := item.StartTime.UnixNano()
 	endNano := item.StartTime.Add(time.Duration(item.DurationMs * float64(time.Millisecond))).UnixNano()
 
@@ -189,6 +261,91 @@ func sendCustomOTLPTrace(serviceName, name string, durationMs float64, attribute
 	}()
 }
 
+func sendCustomChildOTLPTrace(ctx context.Context, serviceName, name string, durationMs float64, attributes map[string]string, isError bool) {
+	if hiaiObserveKey == "" {
+		return
+	}
+	var traceID, parentSpanID string
+	if ti := GetTraceInfo(ctx); ti != nil {
+		traceID = ti.TraceID
+		parentSpanID = ti.SpanID
+	}
+	if traceID == "" {
+		traceID = randomID() + randomID() + randomID() + randomID()
+	}
+	spanID := randomID() + randomID()
+	go func() {
+		now := time.Now()
+		endNano := now.UnixNano()
+		startNano := now.Add(-time.Duration(durationMs * float64(time.Millisecond))).UnixNano()
+
+		attrsList := []map[string]interface{}{
+			{"key": "service.name", "value": map[string]interface{}{"stringValue": serviceName}},
+			{"key": "deployment.environment", "value": map[string]interface{}{"stringValue": "production"}},
+		}
+		for k, v := range attributes {
+			attrsList = append(attrsList, map[string]interface{}{
+				"key":   k,
+				"value": map[string]interface{}{"stringValue": v},
+			})
+		}
+
+		spanObj := map[string]interface{}{
+			"traceId":           traceID,
+			"spanId":            spanID,
+			"name":              name,
+			"kind":              1,
+			"startTimeUnixNano": strconv.FormatInt(startNano, 10),
+			"endTimeUnixNano":   strconv.FormatInt(endNano, 10),
+			"attributes":        attrsList,
+			"status": map[string]interface{}{
+				"code": func() int {
+					if isError {
+						return 2
+					}
+					return 1
+				}(),
+			},
+		}
+		if parentSpanID != "" {
+			spanObj["parentSpanId"] = parentSpanID
+		}
+
+		payload := map[string]interface{}{
+			"resourceSpans": []map[string]interface{}{
+				{
+					"resource": map[string]interface{}{
+						"attributes": attrsList[:2],
+					},
+					"scopeSpans": []map[string]interface{}{
+						{
+							"scope": map[string]interface{}{"name": serviceName + "-tracer", "version": "1.0.0"},
+							"spans": []map[string]interface{}{spanObj},
+						},
+					},
+				},
+			},
+		}
+
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return
+		}
+
+		req, err := http.NewRequest("POST", hiaiObserveURL+"/v1/traces", bytes.NewReader(body))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+hiaiObserveKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := traceHTTPClient.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+}
+
 type statusResponseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -203,7 +360,31 @@ func tracingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		srw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-		next.ServeHTTP(srw, r)
+
+		// Tạo hoặc kế thừa trace_id và span_id theo chuẩn W3C TraceContext
+		var traceID string
+		rawTP := r.Header.Get("traceparent")
+		if strings.HasPrefix(rawTP, "00-") {
+			parts := strings.Split(rawTP, "-")
+			if len(parts) >= 3 && len(parts[1]) == 32 {
+				traceID = parts[1]
+			}
+		}
+		if traceID == "" {
+			traceID = randomID() + randomID() + randomID() + randomID()
+		}
+		spanID := randomID() + randomID()
+
+		// Lưu vào Context để các outbound HTTP call tới worker tự động kế thừa
+		ctx := context.WithValue(r.Context(), traceCtxKey, &TraceInfo{
+			TraceID: traceID,
+			SpanID:  spanID,
+		})
+
+		// Gắn traceparent vào response header để client/browser có thể đọc nếu cần
+		w.Header().Set("traceparent", fmt.Sprintf("00-%s-%s-01", traceID, spanID))
+
+		next.ServeHTTP(srw, r.WithContext(ctx))
 
 		if strings.HasPrefix(r.URL.Path, "/api/") && !strings.HasSuffix(r.URL.Path, "/health") && r.URL.Path != "/health" {
 			durationMs := float64(time.Since(start).Microseconds()) / 1000.0
@@ -212,7 +393,9 @@ func tracingMiddleware(next http.Handler) http.Handler {
 				clientIP = r.RemoteAddr
 			}
 			item := &otlpSpanItem{
-				Name:       fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+				TraceID:    traceID,
+				SpanID:     spanID,
+				Name:       getFriendlySpanName(r.Method, r.URL.Path),
 				Route:      r.URL.Path,
 				Method:     r.Method,
 				StatusCode: srw.statusCode,

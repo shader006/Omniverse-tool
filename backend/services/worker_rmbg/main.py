@@ -5,8 +5,8 @@ import io
 import base64
 import logging
 import queue
-from typing import Optional, Union
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from typing import Optional, Union, Tuple
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from PIL import Image
 import uvicorn
 
@@ -75,14 +75,28 @@ def _telemetry_worker():
         finally:
             _TRACE_QUEUE.task_done()
 
-def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
+def parse_traceparent(tp_header: Optional[str]) -> Tuple[str, Optional[str]]:
+    """Phân tích header W3C traceparent (00-{trace_id}-{span_id}-01)."""
+    if tp_header and tp_header.startswith("00-"):
+        parts = tp_header.split("-")
+        if len(parts) >= 3 and len(parts[1]) == 32:
+            return parts[1], parts[2]
+    return uuid.uuid4().hex, None
+
+def send_otlp_trace(
+    name: str,
+    duration_ms: float,
+    attributes: dict,
+    trace_id: Optional[str] = None,
+    parent_span_id: Optional[str] = None,
+    is_error: bool = False
+):
     """Đẩy trace vào hàng đợi Queue để 1 worker thread duy nhất xử lý phi tập trung."""
     if not HIAI_OBSERVE_API_KEY:
         return
 
     now_ns = int(time.time() * 1e9)
     start_ns = now_ns - int(duration_ms * 1e6)
-    trace_id = uuid.uuid4().hex
     span_id = uuid.uuid4().hex[:16]
 
     attrs_list = [
@@ -92,8 +106,23 @@ def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: b
     for k, v in attributes.items():
         if isinstance(v, (int, float)):
             attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
+        elif isinstance(v, bool):
+            attrs_list.append({"key": str(k), "value": {"boolValue": v}})
         else:
             attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
+
+    span_obj = {
+        "traceId": trace_id or uuid.uuid4().hex,
+        "spanId": span_id,
+        "name": name,
+        "kind": 1,
+        "startTimeUnixNano": str(start_ns),
+        "endTimeUnixNano": str(now_ns),
+        "attributes": attrs_list,
+        "status": {"code": 2 if is_error else 1}
+    }
+    if parent_span_id:
+        span_obj["parentSpanId"] = parent_span_id
 
     payload = {
         "resourceSpans": [
@@ -102,18 +131,7 @@ def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: b
                 "scopeSpans": [
                     {
                         "scope": {"name": "birefnet-tracer", "version": "1.0.0"},
-                        "spans": [
-                            {
-                                "traceId": trace_id,
-                                "spanId": span_id,
-                                "name": name,
-                                "kind": 1,
-                                "startTimeUnixNano": str(start_ns),
-                                "endTimeUnixNano": str(now_ns),
-                                "attributes": attrs_list,
-                                "status": {"code": 2 if is_error else 1}
-                            }
-                        ]
+                        "spans": [span_obj]
                     }
                 ]
             }
@@ -193,6 +211,7 @@ def liveness_check():
 
 @app.post("/api/remove-bg")
 async def remove_bg(
+    request: Request,
     file: UploadFile = File(...),
     model: str = Form("birefnet-lite"),
     bg_color: Optional[str] = Form(None),
@@ -200,6 +219,8 @@ async def remove_bg(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Tên file không hợp lệ")
+
+    trace_id, parent_span_id = parse_traceparent(request.headers.get("traceparent"))
 
     # Validate model parameter (hỗ trợ các alias tương thích ngược như bria-rmbg, isnet-general-use)
     clean_model = str(model).strip().lower()
@@ -283,7 +304,7 @@ async def remove_bg(
 
         duration_ms = (time.perf_counter() - req_start) * 1000.0
         send_otlp_trace(
-            name="POST /api/remove-bg",
+            name="🖼️ [RemoveBG] Tách nền ảnh AI (BiRefNet OpenVINO)",
             duration_ms=duration_ms,
             attributes={
                 "http.route": "/api/remove-bg",
@@ -295,7 +316,9 @@ async def remove_bg(
                 "ai.postprocess_ms": metadata.get("timing_ms", {}).get("postprocess", 0),
                 "image.width": metadata.get("input_size", {}).get("width", 0),
                 "image.height": metadata.get("input_size", {}).get("height", 0),
-            }
+            },
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
         )
 
         with _STATE_LOCK:
@@ -320,9 +343,11 @@ async def remove_bg(
 
         duration_ms = (time.perf_counter() - req_start) * 1000.0
         send_otlp_trace(
-            name="POST /api/remove-bg",
+            name="🖼️ [RemoveBG] Tách nền ảnh AI (BiRefNet OpenVINO)",
             duration_ms=duration_ms,
             attributes={"error": "internal_inference_error", "http.status_code": 500},
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
             is_error=True
         )
 

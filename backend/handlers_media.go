@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,17 +15,18 @@ import (
 	"time"
 )
 
-func (s *Server) callWorkerJSON(workerBaseURL string, path string, payload interface{}) ([]byte, int, error) {
+func (s *Server) callWorkerJSON(ctx context.Context, workerBaseURL string, path string, payload interface{}) ([]byte, int, error) {
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 	targetURL := strings.TrimRight(workerBaseURL, "/") + path
-	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(jsonBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(jsonBytes))
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	InjectTraceparent(ctx, req)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, http.StatusBadGateway, err
@@ -34,7 +36,7 @@ func (s *Server) callWorkerJSON(workerBaseURL string, path string, payload inter
 	return respBody, resp.StatusCode, err
 }
 
-func (s *Server) forwardMultipartToWorker(workerBaseURL string, path string, fileBytes []byte, filename string, fieldName string, formValues map[string]string) ([]byte, int, error) {
+func (s *Server) forwardMultipartToWorker(ctx context.Context, workerBaseURL string, path string, fileBytes []byte, filename string, fieldName string, formValues map[string]string) ([]byte, int, error) {
 	bodyBuf := &bytes.Buffer{}
 	writer := multipart.NewWriter(bodyBuf)
 	part, err := writer.CreateFormFile(fieldName, filename)
@@ -52,11 +54,12 @@ func (s *Server) forwardMultipartToWorker(workerBaseURL string, path string, fil
 	}
 
 	targetURL := strings.TrimRight(workerBaseURL, "/") + path
-	req, err := http.NewRequest(http.MethodPost, targetURL, bodyBuf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bodyBuf)
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	InjectTraceparent(ctx, req)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, http.StatusBadGateway, err
@@ -109,7 +112,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Nếu có Worker YT-DLP Microservice -> Gọi qua HTTP
 	if s.workerYtdlpURL != "" {
-		respBytes, statusCode, err := s.callWorkerJSON(s.workerYtdlpURL, "/api/info", req)
+		respBytes, statusCode, err := s.callWorkerJSON(r.Context(), s.workerYtdlpURL, "/api/info", req)
 		if err == nil && statusCode == http.StatusOK {
 			var result struct {
 				Success bool                   `json:"success"`
@@ -284,7 +287,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	s.pogo.PublishJobUpdate(job)
 
 	// 3. Khởi động Goroutine tải ngầm gọi Python url_conver (kèm Semaphore Concurrency Limiter)
-	go s.processDownloadJob(jobID, req.URL, req.Format, req.Quality)
+	go s.processDownloadJob(r.Context(), jobID, req.URL, req.Format, req.Quality)
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -293,7 +296,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
+func (s *Server) processDownloadJob(ctx context.Context, jobID, url, mediaFormat, quality string) {
 	// Giới hạn số lượng ffmpeg chạy đồng thời (tránh bóp nghẽn CPU)
 	s.mediaLimiter <- struct{}{}
 	defer func() { <-s.mediaLimiter }()
@@ -313,9 +316,10 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 			"download_dir": s.downloadDir,
 		}
 		bodyBytes, _ := json.Marshal(payload)
-		req, reqErr := http.NewRequest("POST", s.workerYtdlpURL+"/api/download", bytes.NewReader(bodyBytes))
+		req, reqErr := http.NewRequestWithContext(ctx, "POST", s.workerYtdlpURL+"/api/download", bytes.NewReader(bodyBytes))
 		if reqErr == nil {
 			req.Header.Set("Content-Type", "application/json")
+			InjectTraceparent(ctx, req)
 			var receivedFinal bool
 			client := &http.Client{Timeout: 900 * time.Second}
 			resp, callErr := client.Do(req)

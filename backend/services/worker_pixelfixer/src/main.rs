@@ -20,6 +20,8 @@ use tower_http::cors::{Any, CorsLayer};
 use worker_pixelfixer::{advanced_refine, core, reconstruct, topological_engine};
 
 pub struct SpanEvent {
+    pub trace_id: Option<String>,
+    pub parent_span_id: Option<String>,
     pub name: String,
     pub duration_ms: f64,
     pub attributes: HashMap<String, serde_json::Value>,
@@ -28,7 +30,21 @@ pub struct SpanEvent {
 
 static TRACE_TX: OnceLock<mpsc::Sender<SpanEvent>> = OnceLock::new();
 
+fn parse_traceparent(headers: &axum::http::HeaderMap) -> (Option<String>, Option<String>) {
+    if let Some(val) = headers.get("traceparent").and_then(|v| v.to_str().ok()) {
+        if val.starts_with("00-") {
+            let parts: Vec<&str> = val.split('-').collect();
+            if parts.len() >= 3 && parts[1].len() == 32 {
+                return (Some(parts[1].to_string()), Some(parts[2].to_string()));
+            }
+        }
+    }
+    (None, None)
+}
+
 fn send_otlp_trace(
+    trace_id: Option<String>,
+    parent_span_id: Option<String>,
     name: &str,
     duration_ms: f64,
     attributes: HashMap<String, serde_json::Value>,
@@ -36,6 +52,8 @@ fn send_otlp_trace(
 ) {
     if let Some(tx) = TRACE_TX.get() {
         let _ = tx.try_send(SpanEvent {
+            trace_id,
+            parent_span_id,
             name: name.to_string(),
             duration_ms,
             attributes,
@@ -76,7 +94,9 @@ fn init_telemetry() {
                 .as_nanos();
             let start_ns = now_ns.saturating_sub((event.duration_ms * 1_000_000.0) as u128);
 
-            let trace_id = uuid::Uuid::new_v4().simple().to_string();
+            let trace_id = event
+                .trace_id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let span_id = uuid::Uuid::new_v4().simple().to_string()[..16].to_string();
 
             let mut attrs_list = vec![
@@ -94,6 +114,20 @@ fn init_telemetry() {
                 }
             }
 
+            let mut span_json = serde_json::json!({
+                "traceId": trace_id,
+                "spanId": span_id,
+                "name": event.name,
+                "kind": 1,
+                "startTimeUnixNano": start_ns.to_string(),
+                "endTimeUnixNano": now_ns.to_string(),
+                "attributes": attrs_list,
+                "status": { "code": if event.is_error { 2 } else { 1 } }
+            });
+            if let Some(parent) = event.parent_span_id {
+                span_json["parentSpanId"] = serde_json::json!(parent);
+            }
+
             let payload = serde_json::json!({
                 "resourceSpans": [
                     {
@@ -106,18 +140,7 @@ fn init_telemetry() {
                         "scopeSpans": [
                             {
                                 "scope": { "name": "pixelfixer-tracer", "version": "1.0.0" },
-                                "spans": [
-                                    {
-                                        "traceId": trace_id,
-                                        "spanId": span_id,
-                                        "name": event.name,
-                                        "kind": 1,
-                                        "startTimeUnixNano": start_ns.to_string(),
-                                        "endTimeUnixNano": now_ns.to_string(),
-                                        "attributes": attrs_list,
-                                        "status": { "code": if event.is_error { 2 } else { 1 } }
-                                    }
-                                ]
+                                "spans": [span_json]
                             }
                         ]
                     }
@@ -284,9 +307,11 @@ async fn health_handler() -> Json<serde_json::Value> {
 }
 
 async fn detect_handler(
+    headers: axum::http::HeaderMap,
     Query(query): Query<DetectParams>,
     mut multipart: Multipart,
 ) -> Result<Json<DetectResponse>, (StatusCode, Json<serde_json::Value>)> {
+    let (trace_id, parent_span_id) = parse_traceparent(&headers);
     let t0 = Instant::now();
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut original_filename = "source.png".to_string();
@@ -402,7 +427,14 @@ async fn detect_handler(
     trace_attrs.insert("grid.rows".to_string(), serde_json::json!(res.rows));
     trace_attrs.insert("grid.confidence".to_string(), serde_json::json!(confidence));
     trace_attrs.insert("grid.consensus".to_string(), serde_json::json!(res.consensus));
-    send_otlp_trace("pixelfixer.detect", dur_ms, trace_attrs, false);
+    send_otlp_trace(
+        trace_id,
+        parent_span_id,
+        "👾 [PixelFixer] Nhận diện lưới pixel (Detect Grid)",
+        dur_ms,
+        trace_attrs,
+        false,
+    );
 
     let resp = DetectResponse {
         success: true,
@@ -434,9 +466,11 @@ async fn detect_handler(
 }
 
 async fn fix_handler(
+    headers: axum::http::HeaderMap,
     Query(query): Query<FixParams>,
     mut multipart: Multipart,
 ) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
+    let (trace_id, parent_span_id) = parse_traceparent(&headers);
     let t0 = Instant::now();
     let mut image_bytes: Option<Vec<u8>> = None;
     let mut original_filename = "source.png".to_string();
@@ -581,7 +615,14 @@ async fn fix_handler(
                 let mut trace_attrs = HashMap::new();
                 trace_attrs.insert("cache.hit".to_string(), serde_json::json!(true));
                 trace_attrs.insert("image.out_bytes".to_string(), serde_json::json!(out_bytes.len()));
-                send_otlp_trace("pixelfixer.fix", dur_ms, trace_attrs, false);
+                send_otlp_trace(
+                    trace_id.clone(),
+                    parent_span_id.clone(),
+                    "✨ [PixelFixer] Tái tạo Sprite Pixel Art (Cache Hit)",
+                    dur_ms,
+                    trace_attrs,
+                    false,
+                );
 
                 return Ok((headers, out_bytes).into_response());
             }
@@ -772,7 +813,14 @@ async fn fix_handler(
     trace_attrs.insert("reconstruct.elastic".to_string(), serde_json::json!(is_elastic));
     trace_attrs.insert("image.out_bytes".to_string(), serde_json::json!(out_len));
     trace_attrs.insert("out.filename".to_string(), serde_json::json!(out_filename));
-    send_otlp_trace("pixelfixer.fix", dur_ms, trace_attrs, false);
+    send_otlp_trace(
+        trace_id,
+        parent_span_id,
+        "✨ [PixelFixer] Tái tạo Sprite Pixel Art (Reconstruct)",
+        dur_ms,
+        trace_attrs,
+        false,
+    );
 
     Ok((headers, out_bytes).into_response())
 }

@@ -172,6 +172,7 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
+	InjectTraceparent(r.Context(), req)
 
 	client := &http.Client{Timeout: 120 * time.Second}
 	startGotenberg := time.Now()
@@ -179,9 +180,10 @@ func (s *Server) handleConvertFile(w http.ResponseWriter, r *http.Request) {
 	gotenbergDurMs := float64(time.Since(startGotenberg).Microseconds()) / 1000.0
 	finish(err)
 
-	sendCustomOTLPTrace(
+	sendCustomChildOTLPTrace(
+		r.Context(),
 		"gotenberg",
-		"POST "+endpointSubpath,
+		"📑 [Gotenberg] Chuyển đổi tài liệu (LibreOffice Engine)",
 		gotenbergDurMs,
 		map[string]string{
 			"http.route":  endpointSubpath,
@@ -386,21 +388,9 @@ func (s *Server) handlePdfToDocx(w http.ResponseWriter, r *http.Request, file mu
 		return
 	}
 	req.Header.Set("Content-Type", bodyWriter.FormDataContentType())
+	InjectTraceparent(r.Context(), req)
 
-	startReq := time.Now()
 	resp, err := s.httpClient.Do(req)
-	durMs := float64(time.Since(startReq).Microseconds()) / 1000.0
-
-	sendCustomOTLPTrace(
-		"worker_pdf2docx",
-		"POST /convert",
-		durMs,
-		map[string]string{
-			"file.name": originalFilename,
-			"target":    "docx",
-		},
-		err != nil || (resp != nil && resp.StatusCode != http.StatusOK),
-	)
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")

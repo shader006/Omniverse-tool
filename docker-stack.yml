@@ -34,7 +34,7 @@ services:
       - WORKER_PDF2DOCX_URL=http://tasks.worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
-      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
@@ -57,7 +57,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8001
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
-      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     networks:
@@ -79,7 +79,7 @@ services:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
-      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     networks:
@@ -104,7 +104,7 @@ services:
       - BIREFNET_CACHE_DIR=/home/appuser/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=300
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
-      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/models/birefnet:/home/appuser/.cache/birefnet
@@ -131,7 +131,7 @@ services:
       - PORT=8004
       - RUST_LOG=info
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
-      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     networks:
       - omniverse_net
 
@@ -152,6 +152,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8005
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     networks:
       - omniverse_net
 

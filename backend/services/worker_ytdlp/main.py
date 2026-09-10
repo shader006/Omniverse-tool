@@ -8,7 +8,7 @@ import threading
 import queue
 import logging
 from typing import Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
@@ -65,15 +65,29 @@ def _telemetry_worker():
 
 threading.Thread(target=_telemetry_worker, daemon=True).start()
 
-def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
-    """Đẩy trace vào hàng đợi để thread duy nhất gửi đi."""
+def parse_traceparent(tp_header: Optional[str]):
+    """Phân tích header W3C traceparent (00-{trace_id}-{span_id}-01)."""
+    if tp_header and tp_header.startswith("00-"):
+        parts = tp_header.split("-")
+        if len(parts) >= 3 and len(parts[1]) == 32:
+            return parts[1], parts[2]
+    return uuid.uuid4().hex, None
+
+def send_otlp_trace(
+    name: str,
+    duration_ms: float,
+    attributes: dict,
+    trace_id: Optional[str] = None,
+    parent_span_id: Optional[str] = None,
+    is_error: bool = False
+):
+    """Đẩy trace vào hàng đợi để thread duy nhất gửi đi theo cây phân tán."""
     if not HIAI_OBSERVE_API_KEY:
         return
 
     try:
         now_ns = int(time.time() * 1e9)
         start_ns = now_ns - int(duration_ms * 1e6)
-        trace_id = uuid.uuid4().hex
         span_id = uuid.uuid4().hex[:16]
 
         attrs_list = [
@@ -83,8 +97,23 @@ def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: b
         for k, v in attributes.items():
             if isinstance(v, (int, float)):
                 attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
+            elif isinstance(v, bool):
+                attrs_list.append({"key": str(k), "value": {"boolValue": v}})
             else:
                 attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
+
+        span_obj = {
+            "traceId": trace_id or uuid.uuid4().hex,
+            "spanId": span_id,
+            "name": name,
+            "kind": 1,
+            "startTimeUnixNano": str(start_ns),
+            "endTimeUnixNano": str(now_ns),
+            "attributes": attrs_list,
+            "status": {"code": 2 if is_error else 1}
+        }
+        if parent_span_id:
+            span_obj["parentSpanId"] = parent_span_id
 
         payload = {
             "resourceSpans": [
@@ -93,18 +122,7 @@ def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: b
                     "scopeSpans": [
                         {
                             "scope": {"name": "ytdlp-tracer", "version": "1.0.0"},
-                            "spans": [
-                                {
-                                    "traceId": trace_id,
-                                    "spanId": span_id,
-                                    "name": name,
-                                    "kind": 1,
-                                    "startTimeUnixNano": str(start_ns),
-                                    "endTimeUnixNano": str(now_ns),
-                                    "attributes": attrs_list,
-                                    "status": {"code": 2 if is_error else 1}
-                                }
-                            ]
+                            "spans": [span_obj]
                         }
                     ]
                 }
@@ -129,15 +147,16 @@ def health_check():
     return {"status": "ok", "service": "worker-ytdlp"}
 
 @app.post("/api/info")
-def fetch_info(req: InfoRequest):
+def fetch_info(req: InfoRequest, request: Request):
     if not req.url:
         raise HTTPException(status_code=400, detail="URL không được để trống")
+    trace_id, parent_span_id = parse_traceparent(request.headers.get("traceparent"))
     start = time.perf_counter()
     try:
         data = get_media_info(req.url)
         proc_ms = (time.perf_counter() - start) * 1000.0
         send_otlp_trace(
-            name="POST /api/info",
+            name="🎬 [YtDlp] Trích xuất metadata video",
             duration_ms=proc_ms,
             attributes={
                 "http.route": "/api/info",
@@ -146,24 +165,29 @@ def fetch_info(req: InfoRequest):
                 "media.url": req.url,
                 "media.title": str(data.get("title", ""))[:80],
                 "media.extractor": str(data.get("extractor", "unknown")),
-            }
+            },
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
         )
         return {"success": True, "data": data}
     except Exception as e:
         logger.error(f"Error fetching info for {req.url}: {e}")
         send_otlp_trace(
-            name="POST /api/info",
+            name="🎬 [YtDlp] Trích xuất metadata video",
             duration_ms=50.0,
             attributes={"error": str(e), "http.status_code": 400},
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
             is_error=True
         )
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/download")
-def start_download(req: DownloadRequest):
+def start_download(req: DownloadRequest, request: Request):
     if not req.url or not req.job_id:
         raise HTTPException(status_code=400, detail="Thiếu url hoặc job_id")
     
+    trace_id, parent_span_id = parse_traceparent(request.headers.get("traceparent"))
     out_dir = req.download_dir or os.getenv("DOWNLOAD_DIR", DEFAULT_DOWNLOAD_DIR)
     os.makedirs(out_dir, exist_ok=True)
 
@@ -198,7 +222,7 @@ def start_download(req: DownloadRequest):
                         "download_url": f"/api/file/{final_filename}"
                     })
                     send_otlp_trace(
-                        name="POST /api/download",
+                        name="⬇️ [YtDlp] Tải file & Gộp luồng media",
                         duration_ms=duration_ms,
                         attributes={
                             "http.route": "/api/download",
@@ -209,7 +233,9 @@ def start_download(req: DownloadRequest):
                             "media.format": req.format,
                             "media.quality": req.quality,
                             "media.filename": final_filename
-                        }
+                        },
+                        trace_id=trace_id,
+                        parent_span_id=parent_span_id,
                     )
                 else:
                     q.put({
@@ -217,9 +243,11 @@ def start_download(req: DownloadRequest):
                         "error": "Không thể tải hoặc chuyển đổi file media từ liên kết."
                     })
                     send_otlp_trace(
-                        name="POST /api/download",
+                        name="⬇️ [YtDlp] Tải file & Gộp luồng media",
                         duration_ms=duration_ms,
                         attributes={"http.route": "/api/download", "http.status_code": 500, "error": "Download returned None"},
+                        trace_id=trace_id,
+                        parent_span_id=parent_span_id,
                         is_error=True
                     )
             except Exception as e:
@@ -229,9 +257,11 @@ def start_download(req: DownloadRequest):
                     "error": str(e)
                 })
                 send_otlp_trace(
-                    name="POST /api/download",
+                    name="⬇️ [YtDlp] Tải file & Gộp luồng media",
                     duration_ms=duration_ms,
                     attributes={"http.route": "/api/download", "http.status_code": 500, "error": str(e)},
+                    trace_id=trace_id,
+                    parent_span_id=parent_span_id,
                     is_error=True
                 )
             finally:

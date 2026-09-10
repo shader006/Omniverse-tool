@@ -120,6 +120,7 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	// 1. Nếu có Worker Whisper Microservice -> Forward qua HTTP
 	if s.workerWhisperURL != "" {
 		respBody, statusCode, callErr := s.forwardMultipartToWorker(
+			r.Context(),
 			s.workerWhisperURL,
 			"/api/transcribe",
 			fileBytes,
@@ -298,6 +299,7 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 		// Retry tối đa 3 lần đề phòng Worker đang khởi động lại hoặc nạp lại OpenVINO
 		for attempt := 1; attempt <= 3; attempt++ {
 			respBody, statusCode, callErr = s.forwardMultipartToWorker(
+				r.Context(),
 				s.workerRmbgURL,
 				"/api/remove-bg",
 				fileBytes,

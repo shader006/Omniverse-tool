@@ -12,8 +12,8 @@ import queue
 import wave
 import struct
 from contextlib import asynccontextmanager
-from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from typing import Optional, Tuple
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 import uvicorn
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -66,13 +66,27 @@ def _telemetry_worker():
 
 threading.Thread(target=_telemetry_worker, daemon=True).start()
 
-def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: bool = False):
+def parse_traceparent(tp_header: Optional[str]) -> Tuple[str, Optional[str]]:
+    """Phân tích header W3C traceparent (00-{trace_id}-{span_id}-01)."""
+    if tp_header and tp_header.startswith("00-"):
+        parts = tp_header.split("-")
+        if len(parts) >= 3 and len(parts[1]) == 32:
+            return parts[1], parts[2]
+    return uuid.uuid4().hex, None
+
+def send_otlp_trace(
+    name: str,
+    duration_ms: float,
+    attributes: dict,
+    trace_id: Optional[str] = None,
+    parent_span_id: Optional[str] = None,
+    is_error: bool = False
+):
     if not HIAI_OBSERVE_API_KEY:
         return
     try:
         now_ns = int(time.time() * 1e9)
         start_ns = now_ns - int(duration_ms * 1e6)
-        trace_id = uuid.uuid4().hex
         span_id = uuid.uuid4().hex[:16]
 
         attrs_list = [
@@ -82,8 +96,23 @@ def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: b
         for k, v in attributes.items():
             if isinstance(v, (int, float)):
                 attrs_list.append({"key": str(k), "value": {"doubleValue": float(v)}})
+            elif isinstance(v, bool):
+                attrs_list.append({"key": str(k), "value": {"boolValue": v}})
             else:
                 attrs_list.append({"key": str(k), "value": {"stringValue": str(v)}})
+
+        span_obj = {
+            "traceId": trace_id or uuid.uuid4().hex,
+            "spanId": span_id,
+            "name": name,
+            "kind": 1,
+            "startTimeUnixNano": str(start_ns),
+            "endTimeUnixNano": str(now_ns),
+            "attributes": attrs_list,
+            "status": {"code": 2 if is_error else 1}
+        }
+        if parent_span_id:
+            span_obj["parentSpanId"] = parent_span_id
 
         payload = {
             "resourceSpans": [
@@ -92,18 +121,7 @@ def send_otlp_trace(name: str, duration_ms: float, attributes: dict, is_error: b
                     "scopeSpans": [
                         {
                             "scope": {"name": "whisper-tracer", "version": "1.0.0"},
-                            "spans": [
-                                {
-                                    "traceId": trace_id,
-                                    "spanId": span_id,
-                                    "name": name,
-                                    "kind": 1,
-                                    "startTimeUnixNano": str(start_ns),
-                                    "endTimeUnixNano": str(now_ns),
-                                    "attributes": attrs_list,
-                                    "status": {"code": 2 if is_error else 1}
-                                }
-                            ]
+                            "spans": [span_obj]
                         }
                     ]
                 }
@@ -157,6 +175,7 @@ def health_check():
 
 @app.post("/api/transcribe")
 async def transcribe_media(
+    request: Request,
     file: UploadFile = File(...),
     language: str = Form("auto"),
     format: str = Form("txt"),
@@ -164,6 +183,8 @@ async def transcribe_media(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Tên file không hợp lệ")
+
+    trace_id, parent_span_id = parse_traceparent(request.headers.get("traceparent"))
 
     clean_format = format.lower().lstrip(".")
     allowed_formats = {"txt", "srt", "vtt", "json"}
@@ -312,7 +333,7 @@ async def transcribe_media(
                 out_f.write(text_content)
 
         send_otlp_trace(
-            name="POST /api/transcribe",
+            name="🎙️ [Whisper] Nhận diện giọng nói (GGML C++ Engine)",
             duration_ms=proc_time * 1000.0,
             attributes={
                 "http.route": "/api/transcribe",
@@ -322,7 +343,9 @@ async def transcribe_media(
                 "ai.audio_duration_sec": duration_sec,
                 "ai.detected_language": language,
                 "ai.output_format": clean_format,
-            }
+            },
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
         )
 
         return {
@@ -340,9 +363,11 @@ async def transcribe_media(
         raise
     except Exception as e:
         send_otlp_trace(
-            name="POST /api/transcribe",
+            name="🎙️ [Whisper] Nhận diện giọng nói (GGML C++ Engine)",
             duration_ms=50.0,
             attributes={"error": str(e), "http.status_code": 500},
+            trace_id=trace_id,
+            parent_span_id=parent_span_id,
             is_error=True
         )
         raise e
