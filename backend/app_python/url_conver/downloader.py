@@ -30,6 +30,7 @@ def get_base_ydl_opts(media_format: str = "mp3") -> Dict[str, Any]:
         'skip_unavailable_fragments': True,
         'keepvideo': False,
         'nocheckcertificate': True,
+        'noplaylist': True,
         'concurrent_fragment_downloads': concurrent_fragments,
         'http_chunk_size': chunk_size,
         'hls_prefer_native': True,

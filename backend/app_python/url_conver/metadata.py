@@ -10,6 +10,7 @@ FAST_INFO_OPTS = {
     'skip_download': True,
     'extract_flat': False,
     'socket_timeout': 10,
+    'noplaylist': True,
 }
 
 

@@ -46,6 +46,16 @@ func InjectTraceparent(ctx context.Context, req *http.Request) {
 	}
 }
 
+// DetachTraceContext tạo context nền độc lập không bị cancel khi HTTP request kết thúc,
+// nhưng vẫn giữ nguyên thông tin TraceID và SpanID để gửi sang worker.
+func DetachTraceContext(ctx context.Context) context.Context {
+	bg := context.Background()
+	if ti := GetTraceInfo(ctx); ti != nil {
+		return context.WithValue(bg, traceCtxKey, ti)
+	}
+	return bg
+}
+
 type otlpSpanItem struct {
 	TraceID    string
 	SpanID     string

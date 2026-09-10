@@ -212,13 +212,14 @@ services:
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiNWNiYjk4Nzg3OWEwODcyM2FmYzQ3Nzg1MDIwZDkxZGYiLCJ0IjoiYTgwZDBjMGUtNGQxMy00ZjUyLTg0MDctOGRiZjMwNTllN2ZmIiwicyI6Ik5UWTJPRFJtWXpNdFlqa3pNaTAwWlRnNExUaGtOV0V0TXpNNU9XWmpabUUxTmpkbCJ9}
     security_opt:
       - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:
-        condition: on-failure
+        condition: any
+        delay: 3s
     networks:
       - omniverse_net
 
@@ -240,7 +241,7 @@ services:
       - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_worker-pixelfixer,omniverse_gotenberg
       - MIN_REPLICAS=1
       - MAX_REPLICAS=3
-      - SCALE_DOWN_COOLDOWN_SEC=15
+      - SCALE_DOWN_COOLDOWN_SEC=300
       - CHECK_INTERVAL=5
       - PRUNE_BUILD_CACHE=true
       - AUTO_PRUNE_INTERVAL_HOURS=6

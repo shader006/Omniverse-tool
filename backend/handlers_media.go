@@ -287,7 +287,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	s.pogo.PublishJobUpdate(job)
 
 	// 3. Khởi động Goroutine tải ngầm gọi Python url_conver (kèm Semaphore Concurrency Limiter)
-	go s.processDownloadJob(r.Context(), jobID, req.URL, req.Format, req.Quality)
+	go s.processDownloadJob(DetachTraceContext(r.Context()), jobID, req.URL, req.Format, req.Quality)
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,

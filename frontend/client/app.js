@@ -211,11 +211,25 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       hideError();
 
-      const url = urlInput ? urlInput.value.trim() : '';
+      let url = urlInput ? urlInput.value.trim() : '';
       if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
         showError('Vui lòng nhập một đường link hợp lệ!');
         return;
       }
+
+      // Tự động làm sạch URL YouTube: loại bỏ list, start_radio, radio params để lấy đúng 1 video
+      try {
+        const u = new URL(url);
+        if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+          if (u.searchParams.has('v')) {
+            const vid = u.searchParams.get('v');
+            url = `https://www.youtube.com/watch?v=${vid}`;
+          } else if (u.hostname.includes('youtu.be')) {
+            const vid = u.pathname.replace(/^\//, '');
+            if (vid) url = `https://www.youtube.com/watch?v=${vid}`;
+          }
+        }
+      } catch (_) {}
 
       currentTargetUrl = url;
       if (convertBtn) convertBtn.disabled = true;
@@ -229,6 +243,11 @@ document.addEventListener('DOMContentLoaded', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url })
         });
+
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          throw new Error(`Máy chủ không phản hồi JSON (Mã lỗi ${res.status}). Vui lòng kiểm tra lại dịch vụ.`);
+        }
 
         const data = await res.json();
         if (!res.ok || !data.success) {
@@ -291,6 +310,11 @@ document.addEventListener('DOMContentLoaded', () => {
               quality: quality
             })
           });
+
+          const ct = res.headers.get('content-type') || '';
+          if (!ct.includes('application/json')) {
+            throw new Error(`Máy chủ không phản hồi JSON (Mã lỗi ${res.status}). Vui lòng thử lại sau.`);
+          }
 
           const data = await res.json();
           if (!res.ok || !data.success) {
@@ -405,6 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const res = await fetch(`/api/status/${jobId}`);
         if (!res.ok) throw new Error('Không tìm thấy job');
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) throw new Error('Phản hồi không hợp lệ');
         const job = await res.json();
         handleProgressUpdate(job, triggerBtn);
         if (job.status === 'completed' || job.status === 'error') {
@@ -674,6 +700,11 @@ document.addEventListener('DOMContentLoaded', () => {
           method: 'POST',
           body: formData
         });
+
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          throw new Error(`Máy chủ chuyển đổi không phản hồi JSON (Mã lỗi ${res.status}). Vui lòng thử lại sau.`);
+        }
 
         const data = await res.json();
         if (!res.ok || !data.success) {

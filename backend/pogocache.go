@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -282,15 +284,45 @@ func (pe *PogocacheEngine) SetMetadata(key string, data map[string]interface{}, 
 
 // ── 3. QUẢN LÝ FILE CACHE & DỌN DẸP Ổ ĐĨA ──
 
-func GenerateCacheKey(url, mediaFormat, quality string) string {
-	raw := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(url), strings.ToLower(mediaFormat), quality)
-	hasher := sha256.New()
-	hasher.Write([]byte(raw))
-	return hex.EncodeToString(hasher.Sum(nil))[:12]
+// CleanURLKey chuẩn hóa URL YouTube (loại bỏ playlist, tracking params) để khớp chính xác với Python
+func CleanURLKey(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	if strings.Contains(u.Host, "youtube.com") || strings.Contains(u.Host, "youtu.be") {
+		v := u.Query().Get("v")
+		if v != "" {
+			return "https://www.youtube.com/watch?v=" + v
+		}
+		if strings.Contains(u.Host, "youtu.be") {
+			path := strings.TrimPrefix(u.Path, "/")
+			if path != "" {
+				return "https://www.youtube.com/watch?v=" + path
+			}
+		}
+	}
+	return rawURL
 }
 
-func (pe *PogocacheEngine) FindCachedFile(url, mediaFormat, quality string) (string, bool) {
-	prefix := GenerateCacheKey(url, mediaFormat, quality)
+func GenerateCacheKey(rawURL, mediaFormat, quality string) string {
+	cleaned := CleanURLKey(rawURL)
+	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
+	hasher := md5.New()
+	hasher.Write([]byte(raw))
+	return hex.EncodeToString(hasher.Sum(nil))[:10]
+}
+
+func (pe *PogocacheEngine) FindCachedFile(rawURL, mediaFormat, quality string) (string, bool) {
+	prefixMD5 := GenerateCacheKey(rawURL, mediaFormat, quality)
+	
+	// Khóa SHA256 dự phòng để tương thích ngược
+	rawSha := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(rawURL), strings.ToLower(mediaFormat), quality)
+	hSha := sha256.New()
+	hSha.Write([]byte(rawSha))
+	prefixSha := hex.EncodeToString(hSha.Sum(nil))[:12]
+
 	entries, err := os.ReadDir(pe.downloadDir)
 	if err != nil {
 		return "", false
@@ -302,7 +334,16 @@ func (pe *PogocacheEngine) FindCachedFile(url, mediaFormat, quality string) (str
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, prefix) {
+		if strings.HasPrefix(name, prefixMD5) || strings.HasPrefix(name, prefixSha) {
+			// Bỏ qua file tạm hoặc không đúng định dạng
+			lowerName := strings.ToLower(name)
+			if strings.HasSuffix(lowerName, ".part") || strings.HasSuffix(lowerName, ".ytdl") {
+				continue
+			}
+			targetExt := "." + strings.ToLower(mediaFormat)
+			if !strings.HasSuffix(lowerName, targetExt) {
+				continue
+			}
 			info, err := entry.Info()
 			if err == nil {
 				if now.Sub(info.ModTime()) < DefaultCacheTTL {
