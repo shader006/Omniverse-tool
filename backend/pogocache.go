@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -309,7 +308,7 @@ func CleanURLKey(rawURL string) string {
 func GenerateCacheKey(rawURL, mediaFormat, quality string) string {
 	cleaned := CleanURLKey(rawURL)
 	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
-	hasher := md5.New()
+	hasher := sha256.New()
 	hasher.Write([]byte(raw))
 	return hex.EncodeToString(hasher.Sum(nil))[:10]
 }

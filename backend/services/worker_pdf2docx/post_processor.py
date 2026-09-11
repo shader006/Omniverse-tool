@@ -2,7 +2,7 @@ import os
 import time
 import zipfile
 import logging
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from typing import Optional
 
 logger = logging.getLogger("worker_pdf2docx.post_processor")

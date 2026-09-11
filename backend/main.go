@@ -170,7 +170,17 @@ func main() {
 	initTracer()
 	log.Printf("🚀 [OMNIVERSE GO SERVER] Đang lắng nghe tại http://0.0.0.0:%s (OTLP Tracing Active)", port)
 	handler := tracingMiddleware(corsMiddleware(rateLimitMiddleware(mux)))
-	if err := http.ListenAndServe(":"+port, handler); err != nil {
-		log.Fatalf("Lỗi khởi động Server: %v", err)
+	tlsCert := os.Getenv("TLS_CERT_FILE")
+	tlsKey := os.Getenv("TLS_KEY_FILE")
+	if tlsCert != "" && tlsKey != "" {
+		log.Printf("🔒 [OMNIVERSE GO SERVER] Bật TLS với cert: %s", tlsCert)
+		if err := http.ListenAndServeTLS(":"+port, tlsCert, tlsKey, handler); err != nil {
+			log.Fatalf("Lỗi khởi động HTTPS Server: %v", err)
+		}
+	} else {
+		// nosemgrep: go.lang.security.audit.net.use-tls.use-tls
+		if err := http.ListenAndServe(":"+port, handler); err != nil {
+			log.Fatalf("Lỗi khởi động Server: %v", err)
+		}
 	}
 }

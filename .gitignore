@@ -56,11 +56,27 @@ git_pixel/
 git\ pixel
 git\ pixel/
 malicious-pdf/
-semgrep_report*.json
 .serena/
 
+# Security Scans & Audit Reports
+bug_report*.md
+*_report*.json
+semgrep_report*.json
+gitleaks*.json
+nuclei*.json
 
-# IDE & System
+# Node & Frontend
+node_modules/
+npm-debug.log*
+
+# Test & Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE & System & Agent configs
+.agents/
+.gemini/
 .vscode/
 .idea/
 .DS_Store
@@ -69,3 +85,4 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
