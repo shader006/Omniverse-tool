@@ -101,7 +101,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Kiểm tra Pogocache Engine (0.0001 ms)
 	cacheKey := GenerateCacheKey(req.URL, "info", "info")
-	if cachedData, found := s.pogo.GetMetadata(cacheKey); found {
+	if cachedData, found := s.pogo.GetMetadataWithContext(r.Context(), cacheKey); found {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"data":    cachedData,
@@ -121,7 +121,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 			}
 			if json.Unmarshal(respBytes, &result) == nil && result.Success {
 				if result.Data != nil {
-					s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
+					s.pogo.SetMetadataWithContext(r.Context(), cacheKey, result.Data, DefaultCacheTTL)
 				}
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -167,7 +167,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result.Data != nil {
-		s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
+		s.pogo.SetMetadataWithContext(r.Context(), cacheKey, result.Data, DefaultCacheTTL)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

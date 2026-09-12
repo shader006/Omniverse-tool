@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"image"
 	"image/png"
@@ -268,4 +269,66 @@ func TestHandleFileMIMETypes(t *testing.T) {
 	}
 
 	t.Log("✅ [P1 PASS] /api/file/ trả về Content-Type MIME chuẩn xác cho WebVTT, JSON, Audio, Video, Image.")
+}
+
+// 7. Kiểm tra Tracer phát hiện Security Probe và Pogocache Context Tracing
+func TestSecurityProbeTracingAndPogocache(t *testing.T) {
+	s, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/pixel/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+
+	handler := tracingMiddleware(mux)
+
+	// Test 1: Quét thăm dò /.env (Security Probe ngoài /api/)
+	reqProbe := httptest.NewRequest("GET", "/.env", nil)
+	recProbe := httptest.NewRecorder()
+	handler.ServeHTTP(recProbe, reqProbe)
+
+	if recProbe.Code != http.StatusNotFound {
+		t.Fatalf("Kỳ vọng 404 cho /.env, nhận %d", recProbe.Code)
+	}
+
+	select {
+	case item := <-traceChan:
+		if !item.IsSecurityProbe {
+			t.Errorf("Kỳ vọng item.IsSecurityProbe = true cho /.env")
+		}
+		if !strings.Contains(item.Name, "[Security Probe]") {
+			t.Errorf("Kỳ vọng tên span chứa '[Security Probe]', nhận: %s", item.Name)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("Tracer không đẩy trace cho Security Probe /.env")
+	}
+
+	// Test 2: Endpoint /api/pixel/health không bị filter bỏ sót
+	reqPixel := httptest.NewRequest("GET", "/api/pixel/health", nil)
+	recPixel := httptest.NewRecorder()
+	handler.ServeHTTP(recPixel, reqPixel)
+
+	select {
+	case item := <-traceChan:
+		if !strings.Contains(item.Name, "PixelFixer Health") {
+			t.Errorf("Kỳ vọng trace ghi nhận PixelFixer Health, nhận: %s", item.Name)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("Tracer bỏ sót /api/pixel/health")
+	}
+
+	// Test 3: Pogocache Context-aware methods
+	ctx := context.WithValue(context.Background(), traceCtxKey, &TraceInfo{TraceID: "testtrace123", SpanID: "testspan456"})
+	s.pogo.SetMetadataWithContext(ctx, "test_key", map[string]interface{}{"title": "demo"}, 10*time.Minute)
+	data, found := s.pogo.GetMetadataWithContext(ctx, "test_key")
+	if !found || data["title"] != "demo" {
+		t.Errorf("Pogocache GetMetadataWithContext thất bại: found=%v, data=%v", found, data)
+	}
+
+	t.Log("✅ [PASS] Tracer phát hiện Security Probe chính xác, không bỏ lọt health và Pogocache context hoạt động hoàn hảo.")
 }

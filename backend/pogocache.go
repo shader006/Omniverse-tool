@@ -281,6 +281,36 @@ func (pe *PogocacheEngine) SetMetadata(key string, data map[string]interface{}, 
 	}
 }
 
+func (pe *PogocacheEngine) GetMetadataWithContext(ctx context.Context, key string) (map[string]interface{}, bool) {
+	start := time.Now()
+	data, found := pe.GetMetadata(key)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "GET_METADATA", key, durMs, found, nil)
+	return data, found
+}
+
+func (pe *PogocacheEngine) SetMetadataWithContext(ctx context.Context, key string, data map[string]interface{}, ttl time.Duration) {
+	start := time.Now()
+	pe.SetMetadata(key, data, ttl)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "SET_METADATA", key, durMs, true, nil)
+}
+
+func (pe *PogocacheEngine) GetJobWithContext(ctx context.Context, jobID string) (Job, bool) {
+	start := time.Now()
+	job, found := pe.GetJob(jobID)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "GET_JOB", jobID, durMs, found, nil)
+	return job, found
+}
+
+func (pe *PogocacheEngine) SaveJobWithContext(ctx context.Context, job Job) {
+	start := time.Now()
+	pe.SaveJob(job)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "SAVE_JOB", job.JobID, durMs, true, nil)
+}
+
 // ── 3. QUẢN LÝ FILE CACHE & DỌN DẸP Ổ ĐĨA ──
 
 // CleanURLKey chuẩn hóa URL YouTube (loại bỏ playlist, tracking params) để khớp chính xác với Python
