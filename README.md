@@ -194,7 +194,7 @@ classDiagram
     direction TB
 
     %% ==========================================
-    %% 1. TẦNG NGƯỜI DÙNG (USER LAYER)
+    %% 1. TẦNG NGƯỜI DÙNG & REVERSE PROXY
     %% ==========================================
     class User {
         -String userId
@@ -205,6 +205,14 @@ classDiagram
         +getJobStatus(jobId) JobStatus
         +downloadResult(jobId) File
         +switchLanguage(lang) void
+    }
+
+    class PingoraProxy {
+        -String upstreamTarget
+        -Map statsMap
+        +upstream_peer(session) HttpPeer
+        +upstream_request_filter(session, header) void
+        +logging(session, error) void
     }
 
     %% ==========================================
@@ -343,13 +351,38 @@ classDiagram
     }
 
     %% ==========================================
+    %% 5. TẦNG HẠ TẦNG (INFRASTRUCTURE LAYER)
+    %% ==========================================
+    class Autoscaler {
+        -List~ServiceScaleConfig~ configs
+        -HttpClient dockerClient
+        +monitorAndScaleService(ctx, cfg) void
+        +evaluateScalingDecision(metrics, cfg) ScalingDecision
+        +scaleServiceWithRetry(service, replicas) void
+        +startDockerAutoPruner(ctx, interval) void
+    }
+
+    class ServiceScaleConfig {
+        -String serviceName
+        -int minReplicas
+        -int maxReplicas
+        -float cpuScaleUp
+        -float cpuScaleDown
+        -int intervalSec
+    }
+
+    %% ==========================================
     %% CÁC QUAN HỆ (RELATIONSHIPS)
     %% ==========================================
-    
-    %% User tương tác tạo Job
+
+    %% Luồng request: User -> Proxy -> Gateway
+    User --> PingoraProxy : gửi HTTP request
+    PingoraProxy --> APIGateway : chuyển tiếp upstream
+
+    %% User theo dõi Job
     User "1" o-- "0..*" MediaJob : khởi tạo và theo dõi
 
-    %% Gateway quản lý Cache & điều phối Job
+    %% Gateway quản lý Cache và điều phối Job
     APIGateway "1" *-- "1" PogoCache : quản lý cache
     APIGateway ..> MediaJob : tiếp nhận và điều phối
     APIGateway "1" o-- "1..*" WorkerService : gọi thực thi
@@ -369,19 +402,17 @@ classDiagram
     WorkerService <|.. WhisperWorker : hiện thực hóa
     WorkerService <|.. RmbgWorker : hiện thực hóa
 
-    %% Tác vụ phụ thuộc vào Worker tương ứng
-    DownloadTask ..> YtdlpWorker : xử lý bởi
-    ConvertDocTask ..> GotenbergEngine : chuyển đổi bởi
-    TranscribeTask ..> WhisperWorker : nhận diện bởi
-    RemoveBgTask ..> RmbgWorker : tách nền bởi
+    %% Autoscaler giám sát và co giãn Worker
+    Autoscaler "1" *-- "1..*" ServiceScaleConfig : cấu hình
+    Autoscaler ..> WorkerService : giám sát và scale
 ```
 
 ---
 
 #### Giải thích các phân vùng chức năng trong sơ đồ:
 
-1. **Tầng Giao diện & Người dùng (`User`):**
-   * Nơi người dùng thực hiện các thao tác: dán link video, kéo thả file tài liệu/ảnh/audio và theo dõi tiến độ hoàn thành trực tiếp trên giao diện web.
+1. **Tầng Giao diện & Người dùng (`User`, `PingoraProxy`):**
+   * Người dùng gửi HTTP request qua trình duyệt. Request đi qua `PingoraProxy` (Reverse Proxy viết bằng Rust/Pingora) sử dụng thuật toán cân bằng tải P2C (Power of Two Choices) kết hợp Peak-EWMA Latency để chọn backend tối ưu nhất, sau đó chuyển tiếp đến `APIGateway`.
 
 2. **Tầng Cổng giao tiếp & Điều phối (`APIGateway`, `PogoCache`):**
    * Đóng vai trò làm bộ não trung tâm. Khi có request, Gateway truy vấn `PogoCache` trước để kiểm tra kết quả đã tồn tại chưa (tránh xử lý trùng lặp). Nếu chưa, Gateway sẽ phân loại và chuyển tiếp tác vụ đến các Worker thích hợp qua giao thức mạng nội bộ tốc độ cao.
@@ -390,8 +421,11 @@ classDiagram
    * Áp dụng tính đa hình (Polymorphism) và tính kế thừa (Inheritance). Mọi tác vụ dù là xử lý âm thanh, văn bản hay hình ảnh AI đều tuân thủ chung một vòng đời quản lý trạng thái (`status`, `progress`, `result`), giúp hệ thống mở rộng thêm tính năng mới cực kỳ thuận tiện mà không phá vỡ cấu trúc sẵn có.
 
 4. **Tầng Vi dịch vụ Thực thi (`WorkerService` và các Workers):**
-   * Các Worker chuyên biệt chạy trong các container độc lập:
+   * Các Worker chuyên biệt chạy trong các container Docker độc lập:
      * `YtdlpWorker`: Chuyên xử lý giải mã luồng video/âm thanh và nén file bằng FFmpeg.
      * `GotenbergEngine`: Chuyên render tài liệu văn phòng chuẩn LibreOffice và Chromium.
      * `WhisperWorker`: Chạy mô hình học sâu (Deep Learning) nhận dạng giọng nói thành văn bản.
      * `RmbgWorker`: Chạy mạng nơ-ron tích chập BiRefNet phân tách chủ thể ảnh với cơ chế tái chế bộ nhớ RAM tự động khi nhàn rỗi.
+
+5. **Tầng Hạ tầng (`Autoscaler`, `ServiceScaleConfig`):**
+   * `Autoscaler` là dịch vụ viết bằng Golang, giám sát mức CPU sử dụng của các Worker container qua Docker API. Khi phát hiện quá tải (CPU vượt ngưỡng `cpuScaleUp`), Autoscaler tự động tăng số lượng bản sao (replicas); khi nhàn rỗi (CPU dưới ngưỡng `cpuScaleDown`), tự động thu hẹp để tiết kiệm tài nguyên. Mỗi Worker được cấu hình riêng bằng đối tượng `ServiceScaleConfig` với ngưỡng min/max replicas và khoảng giám sát.
