@@ -1,4 +1,4 @@
-# Tên đề tài: Xây Dựng Quản Lí Đa Phương Tiện ONIVERSE - MULTI MEDIA & AI TOOLS
+# Tên đề tài: Xây Dựng Ứng Dụng Quản Lí Đa Phương Tiện ONIVERSE - MULTI MEDIA & AI TOOLS
 ---
 ## **Nhóm 1**
 - Thành viên:
