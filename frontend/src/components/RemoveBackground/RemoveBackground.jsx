@@ -280,7 +280,10 @@ export default function RemoveBackground({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-quick-sample"
-                onClick={handleLoadDemoImage}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLoadDemoImage(e);
+                }}
               >
                 {tr.bg_sample_btn}
               </button>

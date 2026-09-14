@@ -261,7 +261,10 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-quick-sample"
-                onClick={handleLoadDemoAudio}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLoadDemoAudio(e);
+                }}
               >
                 {tr.whisper_sample_btn}
               </button>

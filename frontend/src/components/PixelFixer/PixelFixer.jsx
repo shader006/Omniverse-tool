@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { formatFileBytes } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
 import './pixel-fixer.css';
@@ -12,6 +12,9 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [resultBlob, setResultBlob] = useState(null);
   const [sliderPos, setSliderPos] = useState(50);
   const [activePreset, setActivePreset] = useState('auto');
+  const [viewMode, setViewMode] = useState('slider'); // 'slider' | 'side' | 'result'
+  const [zoomLevel, setZoomLevel] = useState(1); // 1, 2, 4
+  const [isCopied, setIsCopied] = useState(false);
 
   // Studio Controls
   const [engineMode, setEngineMode] = useState('fast'); // 'fast' | 'advanced'
@@ -24,9 +27,10 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [gridInfo, setGridInfo] = useState({
     cols: 32,
     rows: 32,
-    stepX: 3.0,
-    stepY: 3.0,
-    consensus: '98.5%'
+    stepX: '3.00',
+    stepY: '3.00',
+    consensus: '98.5%',
+    algo: 'Rayon 2-Stage'
   });
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -34,6 +38,7 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const fileInputRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Listen to paste (Ctrl+V)
   useEffect(() => {
@@ -56,7 +61,16 @@ export default function PixelFixer({ lang = 'vi' }) {
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  const onSelectFile = (file) => {
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+      if (resultUrl) URL.revokeObjectURL(resultUrl);
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, []);
+
+  const onSelectFile = (file, overrides = null) => {
     if (!file) return;
     setErrorMsg('');
     setSelectedFile(file);
@@ -69,7 +83,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     setResultBlob(null);
 
     // Tự động kích hoạt xử lý khi chọn ảnh
-    processFix(file);
+    processFix(file, overrides || {});
   };
 
   const handlePresetSelect = (presetKey) => {
@@ -94,6 +108,16 @@ export default function PixelFixer({ lang = 'vi' }) {
       newTopology = 'uniform';
       newPalette = 'pico8';
       newScale = '1';
+    } else if (presetKey === 'gameboy') {
+      newEngine = 'fast';
+      newTopology = 'uniform';
+      newPalette = 'gameboy';
+      newScale = '1';
+    } else if (presetKey === 'nes') {
+      newEngine = 'fast';
+      newTopology = 'uniform';
+      newPalette = 'nes';
+      newScale = '1';
     } else if (presetKey === 'photo-pixel') {
       newEngine = 'advanced';
       newTopology = 'uniform';
@@ -111,26 +135,30 @@ export default function PixelFixer({ lang = 'vi' }) {
     setPalette(newPalette);
     setScaleFactor(newScale);
 
+    const overrides = {
+      engine: newEngine,
+      topology: newTopology,
+      palette: newPalette,
+      scale: newScale
+    };
+
     if (selectedFile) {
-      processFix(selectedFile, {
-        engine: newEngine,
-        topology: newTopology,
-        palette: newPalette,
-        scale: newScale
-      });
+      processFix(selectedFile, overrides);
+    } else {
+      // Nếu chưa có file nào, tự động nạp ảnh mẫu áp dụng preset này
+      loadSample(overrides);
     }
   };
 
-  const loadSample = async () => {
+  const loadSample = async (overrides = {}) => {
     try {
       const resp = await fetch('/assets/sample-pixel-blur.png');
       if (!resp.ok) throw new Error('Sample not found');
       const blob = await resp.blob();
       const sampleFile = new File([blob], 'sprite_sample_blurry.png', { type: 'image/png' });
-      onSelectFile(sampleFile);
+      onSelectFile(sampleFile, overrides);
     } catch (e) {
       console.warn('Fallback sample load:', e);
-      // Giả lập load sample
       const dummyBlob = new Blob(['sample'], { type: 'image/png' });
       const sampleFile = new File([dummyBlob], 'sprite_sample.png', { type: 'image/png' });
       setSelectedFile(sampleFile);
@@ -139,9 +167,10 @@ export default function PixelFixer({ lang = 'vi' }) {
       setGridInfo({
         cols: 24,
         rows: 24,
-        stepX: 3.0,
-        stepY: 3.0,
-        consensus: '99.2%'
+        stepX: '3.00',
+        stepY: '3.00',
+        consensus: '99.2%',
+        algo: 'Fallback SOTA'
       });
     }
   };
@@ -150,10 +179,18 @@ export default function PixelFixer({ lang = 'vi' }) {
     const targetFile = fileObj || selectedFile;
     if (!targetFile) return;
 
+    // Hủy request đang chạy dở nếu người dùng đổi preset nhanh
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     const eng = overrides.engine || engineMode;
     const top = overrides.topology || topology;
     const scl = overrides.scale || scaleFactor;
     const pal = overrides.palette || palette;
+    const clr = overrides.customColors !== undefined ? overrides.customColors : customColors;
 
     setIsProcessing(true);
     setErrorMsg('');
@@ -166,7 +203,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     if (pal === 'pico8') maxColors = 16;
     else if (pal === 'gameboy') maxColors = 4;
     else if (pal === 'nes') maxColors = 54;
-    else if (pal === 'custom') maxColors = parseInt(customColors, 10) || 16;
+    else if (pal === 'custom') maxColors = parseInt(clr, 10) || 16;
 
     let queryParams = `mode=${eng}&elastic=${isElastic}&downscale=${scl}`;
     if (maxColors > 0) {
@@ -176,7 +213,8 @@ export default function PixelFixer({ lang = 'vi' }) {
     try {
       const res = await fetch(`/api/pixel/fix?${queryParams}`, {
         method: 'POST',
-        body: formData
+        body: formData,
+        signal: controller.signal
       });
 
       if (!res.ok) {
@@ -189,9 +227,15 @@ export default function PixelFixer({ lang = 'vi' }) {
       const rows = res.headers.get('X-Grid-Rows') || 32;
       const stepX = parseFloat(res.headers.get('X-Grid-StepX') || '3.0').toFixed(2);
       const stepY = parseFloat(res.headers.get('X-Grid-StepY') || '3.0').toFixed(2);
-      const consensus = res.headers.get('X-Grid-Consensus') ? `${res.headers.get('X-Grid-Consensus')}%` : '98.5%';
 
-      setGridInfo({ cols, rows, stepX, stepY, consensus });
+      const rawConsensus = res.headers.get('X-Grid-Consensus') || '98.5';
+      const consensusDisplay = !isNaN(Number(rawConsensus))
+        ? `${Number(rawConsensus).toFixed(1)}%`
+        : rawConsensus;
+
+      const algo = res.headers.get('X-Reconstruct-Algo') || (eng === 'advanced' ? 'OKLab SOTA' : 'Fast 2-Stage');
+
+      setGridInfo({ cols, rows, stepX, stepY, consensus: consensusDisplay, algo });
 
       const blob = await res.blob();
       setResultBlob(blob);
@@ -199,18 +243,21 @@ export default function PixelFixer({ lang = 'vi' }) {
       const newResultUrl = URL.createObjectURL(blob);
       setResultUrl(newResultUrl);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        return; // Hủy có chủ đích, không báo lỗi
+      }
       console.warn('PixelFixer API call error, using client fallback demo:', err);
-      // Cung cấp trải nghiệm fallback tức thì nếu server Rust chưa bật trong môi trường dev
       setTimeout(() => {
         setResultUrl('/assets/sample-pixel-native.png');
         setGridInfo({
           cols: 24,
           rows: 24,
-          stepX: 3.0,
-          stepY: 3.0,
-          consensus: '98.8%'
+          stepX: '3.00',
+          stepY: '3.00',
+          consensus: '98.8%',
+          algo: 'Fallback SOTA'
         });
-      }, 500);
+      }, 300);
     } finally {
       setIsProcessing(false);
     }
@@ -221,13 +268,28 @@ export default function PixelFixer({ lang = 'vi' }) {
     const a = document.createElement('a');
     a.href = resultUrl;
     const originalName = selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, '') : 'pixel_art';
-    a.download = `${originalName}_pixel_fixed.png`;
+    a.download = `${originalName}_fixed.png`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
 
+  const handleCopyClipboard = async () => {
+    if (!resultBlob) return;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': resultBlob })
+      ]);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.warn('Không thể sao chép vào clipboard:', err);
+      setErrorMsg('Trình duyệt không hỗ trợ sao chép ảnh trực tiếp vào Clipboard.');
+    }
+  };
+
   const resetStudio = () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
     setSelectedFile(null);
     setSourceUrl('');
     setResultUrl('');
@@ -243,7 +305,7 @@ export default function PixelFixer({ lang = 'vi' }) {
         <h1 className="hero-title">{tr.pixel_title} <span className="gradient-text">{tr.pixel_title_highlight}</span></h1>
         <p className="hero-subtitle">{tr.pixel_subtitle}</p>
 
-        {/* Presets Bar */}
+        {/* Presets Bar (Retro Arcade Buttons) */}
         <div className="pixel-presets-bar">
           <span className="pixel-presets-label">{tr.pixel_presets_label}</span>
           <button 
@@ -276,6 +338,20 @@ export default function PixelFixer({ lang = 'vi' }) {
           </button>
           <button 
             type="button" 
+            className={`pixel-preset-btn ${activePreset === 'gameboy' ? 'active' : ''}`}
+            onClick={() => handlePresetSelect('gameboy')}
+          >
+            {tr.pixel_preset_gameboy_btn}
+          </button>
+          <button 
+            type="button" 
+            className={`pixel-preset-btn ${activePreset === 'nes' ? 'active' : ''}`}
+            onClick={() => handlePresetSelect('nes')}
+          >
+            {tr.pixel_preset_nes_btn}
+          </button>
+          <button 
+            type="button" 
             className={`pixel-preset-btn ${activePreset === 'photo-pixel' ? 'active' : ''}`}
             onClick={() => handlePresetSelect('photo-pixel')}
           >
@@ -295,9 +371,12 @@ export default function PixelFixer({ lang = 'vi' }) {
       <div className="pixel-studio-card">
         {/* Quick Top Bar */}
         <div className="pixel-studio-topbar">
-          <label 
+          <div 
+            role="button"
+            tabIndex={0}
             className="pixel-upload-quick-zone"
             onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
           >
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -311,21 +390,29 @@ export default function PixelFixer({ lang = 'vi' }) {
                 <>{tr.pixel_drop_browse}</>
               )}
             </span>
-          </label>
+          </div>
 
+          {/* Hidden file input without layout blocking */}
           <input 
             type="file" 
             ref={fileInputRef}
-            className="file-input-hidden" 
+            style={{ display: 'none' }}
             accept=".png,.jpg,.jpeg,.webp,.bmp,image/png,image/jpeg,image/webp,image/bmp" 
-            onChange={(e) => e.target.files && onSelectFile(e.target.files[0])}
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                onSelectFile(e.target.files[0]);
+              }
+            }}
           />
 
           <div className="pixel-topbar-actions">
             <button 
               type="button" 
               className="btn-studio-pill"
-              onClick={loadSample}
+              onClick={(e) => {
+                e.stopPropagation();
+                loadSample();
+              }}
               title={tr.pixel_sample_btn}
             >
               <span>{tr.pixel_sample_btn}</span>
@@ -334,7 +421,10 @@ export default function PixelFixer({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-studio-pill"
-                onClick={resetStudio}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  resetStudio();
+                }}
                 title={tr.change_file}
               >
                 ✕ <span>{tr.remove_file}</span>
@@ -357,7 +447,10 @@ export default function PixelFixer({ lang = 'vi' }) {
             }}
             onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
             onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={(e) => {
+              if (e.target.closest('button')) return;
+              fileInputRef.current?.click();
+            }}
           >
             <div className="dropzone-prompt">
               <div className="dropzone-icon">
@@ -384,58 +477,154 @@ export default function PixelFixer({ lang = 'vi' }) {
           </div>
         )}
 
-        {/* Comparison Viewer with Interactive Slider */}
+        {/* Interactive Workspace when file is selected */}
         {selectedFile && sourceUrl && (
           <>
-            <div className="pixel-compare-box">
-              {isProcessing && (
-                <div className="pixel-processing-overlay">
-                  <div className="pixel-pulse-spinner"></div>
-                  <span>{tr.pixel_btn_processing}</span>
-                </div>
-              )}
-
-              {/* Layer Trước: Ảnh gốc mờ / JPEG */}
-              <div className="pixel-compare-layer pixel-compare-before">
-                <img src={sourceUrl} alt="Original" />
-                <span className="pixel-compare-tag tag-before">{tr.pixel_slider_before}</span>
+            {/* View Mode & Zoom Toolbar */}
+            <div className="pixel-view-toolbar">
+              <div className="pixel-view-modes">
+                <span style={{ fontSize: '0.6rem', color: '#94a3b8', marginRight: '6px' }}>{tr.pixel_view_mode}</span>
+                <button
+                  type="button"
+                  className={`pixel-toolbar-btn ${viewMode === 'slider' ? 'active' : ''}`}
+                  onClick={() => setViewMode('slider')}
+                >
+                  {tr.pixel_view_slider}
+                </button>
+                <button
+                  type="button"
+                  className={`pixel-toolbar-btn ${viewMode === 'side' ? 'active' : ''}`}
+                  onClick={() => setViewMode('side')}
+                >
+                  {tr.pixel_view_side}
+                </button>
+                <button
+                  type="button"
+                  className={`pixel-toolbar-btn ${viewMode === 'result' ? 'active' : ''}`}
+                  onClick={() => setViewMode('result')}
+                >
+                  {tr.pixel_view_result}
+                </button>
               </div>
 
-              {/* Layer Sau: Pixel Art phục hồi sắc nét trên nền trong suốt */}
-              <div 
-                className="pixel-compare-layer pixel-compare-after"
-                style={{ clipPath: `polygon(${sliderPos}% 0, 100% 0, 100% 100%, ${sliderPos}% 100%)` }}
-              >
-                <div className="pixel-checker-bg">
-                  <img 
-                    src={resultUrl || sourceUrl} 
-                    alt="Restored Pixel Art" 
-                    className="pixel-render-img" 
-                  />
-                </div>
-                <span className="pixel-compare-tag tag-after">{tr.pixel_slider_after}</span>
-              </div>
-
-              {/* Slider Input Range */}
-              <input 
-                type="range" 
-                min="0" 
-                max="100" 
-                value={sliderPos}
-                className="pixel-slider-input"
-                onChange={(e) => setSliderPos(Number(e.target.value))}
-              />
-
-              {/* Slider Divider Line */}
-              <div className="pixel-slider-divider" style={{ left: `${sliderPos}%` }}>
-                <div className="pixel-slider-knob">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="15 18 9 12 15 6"></polyline>
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                  </svg>
-                </div>
+              <div className="pixel-zoom-controls">
+                <span style={{ fontSize: '0.6rem', color: '#94a3b8', marginRight: '6px' }}>Zoom:</span>
+                {[1, 2, 4].map((z) => (
+                  <button
+                    key={z}
+                    type="button"
+                    className={`pixel-toolbar-btn ${zoomLevel === z ? 'active' : ''}`}
+                    onClick={() => setZoomLevel(z)}
+                  >
+                    {z}x
+                  </button>
+                ))}
               </div>
             </div>
+
+            {/* Viewer Display based on viewMode */}
+            {viewMode === 'slider' && (
+              <div className="pixel-compare-box">
+                {isProcessing && (
+                  <div className="pixel-processing-overlay">
+                    <div className="pixel-pulse-spinner"></div>
+                    <span>{tr.pixel_btn_processing}</span>
+                  </div>
+                )}
+
+                {/* Layer Trước: Ảnh gốc mờ / JPEG */}
+                <div className="pixel-compare-layer pixel-compare-before">
+                  <img 
+                    src={sourceUrl} 
+                    alt="Original" 
+                    style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                  />
+                  <span className="pixel-compare-tag tag-before">{tr.pixel_slider_before}</span>
+                </div>
+
+                {/* Layer Sau: Pixel Art phục hồi sắc nét */}
+                <div 
+                  className="pixel-compare-layer pixel-compare-after"
+                  style={{ clipPath: `polygon(${sliderPos}% 0, 100% 0, 100% 100%, ${sliderPos}% 100%)` }}
+                >
+                  <div className="pixel-checker-bg">
+                    <img 
+                      src={resultUrl || sourceUrl} 
+                      alt="Restored Pixel Art" 
+                      className="pixel-render-img" 
+                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }}
+                    />
+                  </div>
+                  <span className="pixel-compare-tag tag-after">{tr.pixel_slider_after}</span>
+                </div>
+
+                {/* Draggable Slider */}
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="100" 
+                  value={sliderPos}
+                  className="pixel-slider-input"
+                  onChange={(e) => setSliderPos(Number(e.target.value))}
+                />
+
+                <div className="pixel-slider-divider" style={{ left: `${sliderPos}%` }}>
+                  <div className="pixel-slider-knob">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="15 18 9 12 15 6"></polyline>
+                      <polyline points="9 18 15 12 9 6"></polyline>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'side' && (
+              <div className="pixel-side-container">
+                <div className="pixel-side-panel">
+                  <div className="pixel-side-header">
+                    <span>{tr.pixel_slider_before}</span>
+                  </div>
+                  <div className="pixel-side-body">
+                    <img 
+                      src={sourceUrl} 
+                      alt="Original" 
+                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                    />
+                  </div>
+                </div>
+
+                <div className="pixel-side-panel">
+                  <div className="pixel-side-header">
+                    <span>{tr.pixel_slider_after}</span>
+                    <span style={{ color: '#22c55e', fontSize: '0.55rem' }}>{gridInfo.algo}</span>
+                  </div>
+                  <div className="pixel-side-body pixel-checker-bg">
+                    <img 
+                      src={resultUrl || sourceUrl} 
+                      alt="Restored Pixel Art" 
+                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {viewMode === 'result' && (
+              <div className="pixel-result-container pixel-checker-bg">
+                {isProcessing && (
+                  <div className="pixel-processing-overlay">
+                    <div className="pixel-pulse-spinner"></div>
+                    <span>{tr.pixel_btn_processing}</span>
+                  </div>
+                )}
+                <img 
+                  src={resultUrl || sourceUrl} 
+                  alt="Restored Pixel Art" 
+                  style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center', maxWidth: '90%', maxHeight: '520px', imageRendering: 'pixelated' }} 
+                />
+              </div>
+            )}
 
             {/* Grid Parameters Stats Bar */}
             <div className="pixel-grid-stats-bar">
@@ -469,8 +658,9 @@ export default function PixelFixer({ lang = 'vi' }) {
                   className="pixel-select"
                   value={engineMode}
                   onChange={(e) => {
-                    setEngineMode(e.target.value);
-                    processFix(selectedFile, { engine: e.target.value });
+                    const newMode = e.target.value;
+                    setEngineMode(newMode);
+                    processFix(selectedFile, { engine: newMode });
                   }}
                 >
                   <option value="fast">{tr.pixel_engine_fast}</option>
@@ -488,8 +678,9 @@ export default function PixelFixer({ lang = 'vi' }) {
                   className="pixel-select"
                   value={topology}
                   onChange={(e) => {
-                    setTopology(e.target.value);
-                    processFix(selectedFile, { topology: e.target.value });
+                    const newTop = e.target.value;
+                    setTopology(newTop);
+                    processFix(selectedFile, { topology: newTop });
                   }}
                 >
                   <option value="uniform">{tr.pixel_topology_uniform}</option>
@@ -507,8 +698,9 @@ export default function PixelFixer({ lang = 'vi' }) {
                   className="pixel-select"
                   value={scaleFactor}
                   onChange={(e) => {
-                    setScaleFactor(e.target.value);
-                    processFix(selectedFile, { scale: e.target.value });
+                    const newScale = e.target.value;
+                    setScaleFactor(newScale);
+                    processFix(selectedFile, { scale: newScale });
                   }}
                 >
                   <option value="1">{tr.pixel_scale_native}</option>
@@ -529,8 +721,9 @@ export default function PixelFixer({ lang = 'vi' }) {
                   className="pixel-select"
                   value={palette}
                   onChange={(e) => {
-                    setPalette(e.target.value);
-                    processFix(selectedFile, { palette: e.target.value });
+                    const newPalette = e.target.value;
+                    setPalette(newPalette);
+                    processFix(selectedFile, { palette: newPalette });
                   }}
                 >
                   <option value="auto">{tr.pixel_palette_auto}</option>
@@ -539,6 +732,32 @@ export default function PixelFixer({ lang = 'vi' }) {
                   <option value="nes">{tr.pixel_palette_nes}</option>
                   <option value="custom">{tr.pixel_palette_custom}</option>
                 </select>
+
+                {/* Custom Colors Slider / Input when palette === 'custom' */}
+                {palette === 'custom' && (
+                  <div className="pixel-custom-colors-box">
+                    <label>
+                      <span>{tr.pixel_custom_colors}</span>
+                      <strong>{customColors}</strong>
+                    </label>
+                    <input 
+                      type="range"
+                      min="2"
+                      max="256"
+                      value={customColors}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setCustomColors(val);
+                      }}
+                      onMouseUp={() => {
+                        processFix(selectedFile, { palette: 'custom', customColors });
+                      }}
+                      onTouchEnd={() => {
+                        processFix(selectedFile, { palette: 'custom', customColors });
+                      }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -578,18 +797,33 @@ export default function PixelFixer({ lang = 'vi' }) {
               </button>
 
               {resultUrl && (
-                <button 
-                  type="button" 
-                  className="btn-pixel-download"
-                  onClick={handleDownload}
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                  <span>{tr.pixel_btn_download}</span>
-                </button>
+                <>
+                  <button 
+                    type="button" 
+                    className="btn-pixel-download"
+                    onClick={handleDownload}
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>{tr.pixel_btn_download}</span>
+                  </button>
+
+                  <button 
+                    type="button" 
+                    className="btn-pixel-copy"
+                    onClick={handleCopyClipboard}
+                    title={tr.pixel_btn_copy}
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span>{isCopied ? tr.pixel_btn_copied : tr.pixel_btn_copy}</span>
+                  </button>
+                </>
               )}
 
               <button 
