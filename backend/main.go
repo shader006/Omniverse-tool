@@ -110,15 +110,17 @@ func main() {
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)
 
+	// Caching headers helper cho static files & SPA index
+	setCachingHeaders := func(w http.ResponseWriter) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+	}
+
 	// Serve static assets under /static/
 	mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
 		relPath := strings.TrimPrefix(r.URL.Path, "/static/")
 		filePath := filepath.Join(frontendDir, relPath)
-		setCachingHeaders := func(w http.ResponseWriter) {
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-		}
 		if _, err := os.Stat(filePath); err == nil {
 			setCachingHeaders(w)
 			http.ServeFile(w, r, filePath)
@@ -154,6 +156,7 @@ func main() {
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
+			setCachingHeaders(w)
 			http.ServeFile(w, r, filepath.Join(frontendDir, "index.html"))
 			return
 		}
@@ -178,6 +181,7 @@ func main() {
 			}
 		}
 		// Fallback cho client-side routing (React SPA)
+		setCachingHeaders(w)
 		http.ServeFile(w, r, filepath.Join(frontendDir, "index.html"))
 	})
 
