@@ -47,7 +47,7 @@ class TestRmbgClientHybrid(unittest.TestCase):
 
     def test_01_client_file_exists_and_content(self):
         """Kiểm tra file frontend/rmbg-client.js tồn tại và chứa các hàm cốt lõi"""
-        rmbg_js_path = os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "client", "rmbg-client.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "rmbg-client.js")) else os.path.join(FRONTEND_DIR, "rmbg-client.js")
         self.assertTrue(os.path.isfile(rmbg_js_path), f"Không tìm thấy file {rmbg_js_path}")
 
         with open(rmbg_js_path, "r", encoding="utf-8") as f:
@@ -85,7 +85,7 @@ class TestRmbgClientHybrid(unittest.TestCase):
     def test_03_frontend_ui_integration(self):
         """Kiểm tra index.html và app.js đã tích hợp Engine selector và script tag"""
         index_html_path = os.path.join(FRONTEND_DIR, "index.html")
-        app_js_path = os.path.join(FRONTEND_DIR, "app.js")
+        app_js_path = os.path.join(FRONTEND_DIR, "client", "app.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "app.js")) else os.path.join(FRONTEND_DIR, "app.js")
 
         with open(index_html_path, "r", encoding="utf-8") as f:
             html = f.read()
@@ -130,7 +130,7 @@ class TestRmbgClientHybrid(unittest.TestCase):
 
     def test_05_instant_recolor_logic(self):
         """Kiểm tra logic đổi màu nền không gửi request tới server fallback"""
-        rmbg_js_path = os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "client", "rmbg-client.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "rmbg-client.js")) else os.path.join(FRONTEND_DIR, "rmbg-client.js")
         with open(rmbg_js_path, "r", encoding="utf-8") as f:
             content = f.read()
 
@@ -144,8 +144,8 @@ class TestRmbgClientHybrid(unittest.TestCase):
 
     def test_06_pre_compression_logic(self):
         """Kiểm tra logic nén và resize ảnh trước khi xử lý (Pre-compression)"""
-        rmbg_js_path = os.path.join(FRONTEND_DIR, "rmbg-client.js")
-        app_js_path = os.path.join(FRONTEND_DIR, "app.js")
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "client", "rmbg-client.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "rmbg-client.js")) else os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        app_js_path = os.path.join(FRONTEND_DIR, "client", "app.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "app.js")) else os.path.join(FRONTEND_DIR, "app.js")
         index_html_path = os.path.join(FRONTEND_DIR, "index.html")
 
         with open(rmbg_js_path, "r", encoding="utf-8") as f:
@@ -172,7 +172,7 @@ class TestRmbgClientHybrid(unittest.TestCase):
 
     def test_07_browser_model_caching(self):
         """Kiểm tra cơ chế CacheStorage lưu mô hình BiRefNet-Lite để nạp tức thì khi refresh/restart web"""
-        rmbg_js_path = os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "client", "rmbg-client.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "rmbg-client.js")) else os.path.join(FRONTEND_DIR, "rmbg-client.js")
         with open(rmbg_js_path, "r", encoding="utf-8") as f:
             content = f.read()
 

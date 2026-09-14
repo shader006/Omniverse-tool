@@ -3,13 +3,14 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,8 +20,9 @@ import (
 )
 
 const (
-	DefaultCacheTTL = 300 * time.Second // 5 phút TTL cho File & Metadata Cache
-	JobTTLSeconds   = 7200              // 2 giờ TTL cho Job State
+	DefaultCacheTTL = 3600 * time.Second // 1 giờ TTL cho File kết quả hoàn tất (tránh mất file khi Job State còn lưu 2 giờ)
+	TempFileTTL     = 1800 * time.Second // 30 phút TTL cho file tạm dở dang
+	JobTTLSeconds   = 7200               // 2 giờ TTL cho Job State
 )
 
 // RESP Protocol Helper: Gửi command RESP sang Pogocache (https://pogocache.com)
@@ -59,7 +61,7 @@ func readRESPResponse(reader *bufio.Reader) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if length == -1 {
+		if length < 0 {
 			return nil, nil // Null
 		}
 		buf := make([]byte, length+2)
@@ -72,7 +74,7 @@ func readRESPResponse(reader *bufio.Reader) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		if count == -1 {
+		if count < 0 {
 			return nil, nil
 		}
 		var arr []interface{}
@@ -279,17 +281,77 @@ func (pe *PogocacheEngine) SetMetadata(key string, data map[string]interface{}, 
 	}
 }
 
+func (pe *PogocacheEngine) GetMetadataWithContext(ctx context.Context, key string) (map[string]interface{}, bool) {
+	start := time.Now()
+	data, found := pe.GetMetadata(key)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "GET_METADATA", key, durMs, found, nil)
+	return data, found
+}
+
+func (pe *PogocacheEngine) SetMetadataWithContext(ctx context.Context, key string, data map[string]interface{}, ttl time.Duration) {
+	start := time.Now()
+	pe.SetMetadata(key, data, ttl)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "SET_METADATA", key, durMs, true, nil)
+}
+
+func (pe *PogocacheEngine) GetJobWithContext(ctx context.Context, jobID string) (Job, bool) {
+	start := time.Now()
+	job, found := pe.GetJob(jobID)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "GET_JOB", jobID, durMs, found, nil)
+	return job, found
+}
+
+func (pe *PogocacheEngine) SaveJobWithContext(ctx context.Context, job Job) {
+	start := time.Now()
+	pe.SaveJob(job)
+	durMs := float64(time.Since(start).Microseconds()) / 1000.0
+	TrackPogoCacheSpan(ctx, "SAVE_JOB", job.JobID, durMs, true, nil)
+}
+
 // ── 3. QUẢN LÝ FILE CACHE & DỌN DẸP Ổ ĐĨA ──
 
-func GenerateCacheKey(url, mediaFormat, quality string) string {
-	raw := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(url), strings.ToLower(mediaFormat), quality)
-	hasher := md5.New()
+// CleanURLKey chuẩn hóa URL YouTube (loại bỏ playlist, tracking params) để khớp chính xác với Python
+func CleanURLKey(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	if strings.Contains(u.Host, "youtube.com") || strings.Contains(u.Host, "youtu.be") {
+		v := u.Query().Get("v")
+		if v != "" {
+			return "https://www.youtube.com/watch?v=" + v
+		}
+		if strings.Contains(u.Host, "youtu.be") {
+			path := strings.TrimPrefix(u.Path, "/")
+			if path != "" {
+				return "https://www.youtube.com/watch?v=" + path
+			}
+		}
+	}
+	return rawURL
+}
+
+func GenerateCacheKey(rawURL, mediaFormat, quality string) string {
+	cleaned := CleanURLKey(rawURL)
+	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
+	hasher := sha256.New()
 	hasher.Write([]byte(raw))
 	return hex.EncodeToString(hasher.Sum(nil))[:10]
 }
 
-func (pe *PogocacheEngine) FindCachedFile(url, mediaFormat, quality string) (string, bool) {
-	prefix := GenerateCacheKey(url, mediaFormat, quality)
+func (pe *PogocacheEngine) FindCachedFile(rawURL, mediaFormat, quality string) (string, bool) {
+	prefixMD5 := GenerateCacheKey(rawURL, mediaFormat, quality)
+	
+	// Khóa SHA256 dự phòng để tương thích ngược
+	rawSha := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(rawURL), strings.ToLower(mediaFormat), quality)
+	hSha := sha256.New()
+	hSha.Write([]byte(rawSha))
+	prefixSha := hex.EncodeToString(hSha.Sum(nil))[:12]
+
 	entries, err := os.ReadDir(pe.downloadDir)
 	if err != nil {
 		return "", false
@@ -301,7 +363,16 @@ func (pe *PogocacheEngine) FindCachedFile(url, mediaFormat, quality string) (str
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, prefix) {
+		if strings.HasPrefix(name, prefixMD5) || strings.HasPrefix(name, prefixSha) {
+			// Bỏ qua file tạm hoặc không đúng định dạng
+			lowerName := strings.ToLower(name)
+			if strings.HasSuffix(lowerName, ".part") || strings.HasSuffix(lowerName, ".ytdl") {
+				continue
+			}
+			targetExt := "." + strings.ToLower(mediaFormat)
+			if !strings.HasSuffix(lowerName, targetExt) {
+				continue
+			}
 			info, err := entry.Info()
 			if err == nil {
 				if now.Sub(info.ModTime()) < DefaultCacheTTL {
@@ -323,17 +394,70 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 	var freedBytes int64 = 0
 	now := time.Now()
 
+	// Thu thập danh sách file đang được xử lý bởi các active Job
+	activeFiles := make(map[string]bool)
+	pe.localJobs.Range(func(key, value interface{}) bool {
+		if j, ok := value.(Job); ok {
+			if j.Status == "downloading" || j.Status == "queued" {
+				if j.Filename != "" {
+					activeFiles[j.Filename] = true
+				}
+			}
+		}
+		return true
+	})
+
 	for _, entry := range entries {
+		// Xử lý dọn dẹp thư mục tmp/ riêng biệt
 		if entry.IsDir() {
+			if entry.Name() == "tmp" {
+				tmpDir := filepath.Join(pe.downloadDir, "tmp")
+				if tmpEntries, err := os.ReadDir(tmpDir); err == nil {
+					for _, te := range tmpEntries {
+						if te.IsDir() {
+							continue
+						}
+						if tInfo, err := te.Info(); err == nil {
+							if now.Sub(tInfo.ModTime()) > TempFileTTL {
+								fullTmpPath := filepath.Join(tmpDir, te.Name())
+								freedBytes += tInfo.Size()
+								_ = os.Remove(fullTmpPath)
+								deletedCount++
+							}
+						}
+					}
+				}
+			}
 			continue
 		}
+
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
 
+		// Không xóa file của các tác vụ đang tải dở hoặc đang được xử lý
+		if activeFiles[entry.Name()] {
+			continue
+		}
+
+		name := entry.Name()
+		isPartial := strings.HasSuffix(name, ".part") || strings.HasSuffix(name, ".ytdl") || strings.HasSuffix(name, ".tmp")
+
+		// File tải dở chỉ dọn sau TempFileTTL (30 phút) nếu bị bỏ rơi
+		if isPartial {
+			if now.Sub(info.ModTime()) > TempFileTTL {
+				fullPath := filepath.Join(pe.downloadDir, name)
+				freedBytes += info.Size()
+				_ = os.Remove(fullPath)
+				deletedCount++
+			}
+			continue
+		}
+
+		// File kết quả hoàn tất lưu trữ đủ DefaultCacheTTL (1 giờ)
 		if now.Sub(info.ModTime()) > DefaultCacheTTL {
-			fullPath := filepath.Join(pe.downloadDir, entry.Name())
+			fullPath := filepath.Join(pe.downloadDir, name)
 			freedBytes += info.Size()
 			_ = os.Remove(fullPath)
 			deletedCount++

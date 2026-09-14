@@ -3,6 +3,8 @@ version: '3.8'
 services:
   gateway:
     image: omniversetool-gateway:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -28,7 +30,11 @@ services:
       - WORKER_YTDLP_URL=http://tasks.worker-ytdlp:8001
       - WORKER_WHISPER_URL=http://tasks.worker-whisper:8002
       - WORKER_RMBG_URL=http://tasks.worker-rmbg:8003
+      - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
+      - WORKER_PDF2DOCX_URL=http://tasks.worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
@@ -37,6 +43,8 @@ services:
 
   worker-ytdlp:
     image: omniversetool-worker-ytdlp:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -48,6 +56,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8001
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     networks:
@@ -55,6 +65,8 @@ services:
 
   worker-whisper:
     image: omniversetool-worker-whisper:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -66,6 +78,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
     networks:
@@ -73,6 +87,8 @@ services:
 
   worker-rmbg:
     image: omniversetool-worker-rmbg:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -85,16 +101,66 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
-      - BIREFNET_CACHE_DIR=/root/.cache/birefnet
+      - BIREFNET_CACHE_DIR=/home/appuser/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=300
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
-      - ${WORKSPACE_DIR:-.}/models/birefnet:/root/.cache/birefnet
+      - ${WORKSPACE_DIR:-.}/models/birefnet:/home/appuser/.cache/birefnet
+    networks:
+      - omniverse_net
+
+  worker-pixelfixer:
+    image: omniversetool-worker-pixelfixer:latest
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: any
+        delay: 1s
+      resources:
+        limits:
+          memory: 1024M
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8004
+      - RUST_LOG=info
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
+    networks:
+      - omniverse_net
+
+  worker-pdf2docx:
+    image: omniversetool-worker-pdf2docx:latest
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 1024M
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8005
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-ho_24c101b8a34b64f6af3f08be38a18fbb650a94af37236779}
     networks:
       - omniverse_net
 
   pogocache:
     image: pogocache/pogocache:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -108,6 +174,8 @@ services:
 
   gotenberg:
     image: gotenberg/gotenberg:8
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       endpoint_mode: dnsrr
@@ -125,6 +193,8 @@ services:
 
   pingora:
     image: omniversetool-pingora:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:
@@ -142,16 +212,21 @@ services:
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiNWNiYjk4Nzg3OWEwODcyM2FmYzQ3Nzg1MDIwZDkxZGYiLCJ0IjoiYTgwZDBjMGUtNGQxMy00ZjUyLTg0MDctOGRiZjMwNTllN2ZmIiwicyI6Ik5UWTJPRFJtWXpNdFlqa3pNaTAwWlRnNExUaGtOV0V0TXpNNU9XWmpabUUxTmpkbCJ9}
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:
-        condition: on-failure
+        condition: any
+        delay: 3s
     networks:
       - omniverse_net
 
   autoscaler:
     image: omniversetool-autoscaler:latest
+    security_opt:
+      - no-new-privileges:true
     deploy:
       replicas: 1
       restart_policy:
@@ -163,10 +238,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - POGOCACHE_ADDR=pogocache:9401
-      - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_gotenberg
+      - SWARM_SERVICES=omniverse_worker-rmbg,omniverse_worker-whisper,omniverse_worker-ytdlp,omniverse_worker-pixelfixer,omniverse_gotenberg
       - MIN_REPLICAS=1
       - MAX_REPLICAS=3
-      - SCALE_DOWN_COOLDOWN_SEC=15
+      - SCALE_DOWN_COOLDOWN_SEC=300
       - CHECK_INTERVAL=5
       - PRUNE_BUILD_CACHE=true
       - AUTO_PRUNE_INTERVAL_HOURS=6

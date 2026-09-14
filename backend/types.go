@@ -41,7 +41,10 @@ type Server struct {
 	workerYtdlpURL   string
 	workerWhisperURL string
 	workerRmbgURL    string
-	httpClient       *http.Client
+	workerPixelfixerURL string
+	workerPdf2docxURL   string
+	httpClient          *http.Client
+	httpLongClient      *http.Client
 }
 
 func randomID() string {

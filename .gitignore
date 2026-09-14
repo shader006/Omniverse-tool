@@ -41,6 +41,9 @@ models/
 *.temp
 *.tmp
 *.log
+out.png
+scratch/
+data/
 
 # Environment & Secrets
 .env
@@ -49,16 +52,31 @@ models/
 
 # Sub-projects & external repos
 hiai-observe/
+git_pixel/
+git\ pixel
+git\ pixel/
+malicious-pdf/
+.serena/
 
-# Node / Frontend
+# Security Scans & Audit Reports
+bug_report*.md
+*_report*.json
+semgrep_report*.json
+gitleaks*.json
+nuclei*.json
+
+# Node & Frontend
 node_modules/
-frontend/node_modules/
-dist/
-frontend/dist/
-.vite/
-frontend/.vite/
+npm-debug.log*
 
-# IDE & System
+# Test & Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# IDE & System & Agent configs
+.agents/
+.gemini/
 .vscode/
 .idea/
 .DS_Store

@@ -4,7 +4,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     ca-certificates \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -u 1000 -m appuser
 
 WORKDIR /app
 
@@ -18,14 +19,19 @@ RUN pip install --no-cache-dir \
     onnxruntime>=1.18.0 \
     huggingface_hub>=0.23.0
 
-COPY app/ /app/app/
+COPY app_python/ /app/app/
 COPY services/worker_rmbg/ /app/services/worker_rmbg/
+
+RUN mkdir -p /app/downloads /home/appuser/.cache/birefnet && \
+    chown -R appuser:appuser /app /home/appuser
 
 ENV PORT=8003
 ENV DOWNLOAD_DIR=/app/downloads
 ENV PYTHONPATH=/app
-ENV BIREFNET_CACHE_DIR=/root/.cache/birefnet
+ENV BIREFNET_CACHE_DIR=/home/appuser/.cache/birefnet
 
 EXPOSE 8003
+
+USER appuser
 
 CMD ["python3", "-m", "services.worker_rmbg.main"]

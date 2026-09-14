@@ -9,6 +9,12 @@ backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bac
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
+
 def main():
     parser = argparse.ArgumentParser(description="Chạy bộ kiểm thử (Test Suite) của MediaFlow")
     parser.add_argument("--url", action="store_true", help="Chỉ chạy các bài test liên quan đến URL to MP3/MP4")

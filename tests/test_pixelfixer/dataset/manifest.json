@@ -1,0 +1,2127 @@
+[
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_01_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_01.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_01_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_01.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_01_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_01.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_01_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_01.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_01_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_01.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_02_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_02.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_02_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_02.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_02_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_02.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_02_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_02.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_02_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_02.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_03_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_03.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_03_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_03.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_03_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_03.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_03_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_03.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_03_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_03.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_04_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_04.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_04_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_04.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_04_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_04.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_04_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_04.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_04_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_04.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_05_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_05.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_05_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_05.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_05_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_05.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_05_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_05.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_05_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_05.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_06_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_06.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_06_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_06.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_06_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_06.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_06_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_06.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_06_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_06.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_07_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_07.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_07_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_07.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_07_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_07.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_07_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_07.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_07_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_07.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_08_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_08.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_08_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_08.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_08_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_08.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_08_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_08.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_08_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_08.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_09_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_09.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_09_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_09.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_09_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_09.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_09_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_09.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_09_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_09.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_10_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_10.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_10_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_10.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_10_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_10.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_10_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_10.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_10_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_10.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_11_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_11.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_11_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_11.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_11_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_11.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_11_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_11.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_11_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_11.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_12_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_12.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_12_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_12.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_12_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_12.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_12_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_12.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_12_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_12.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_13_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_13.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_13_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_13.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_13_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_13.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_13_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_13.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_13_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_13.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_14_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_14.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_14_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_14.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_14_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_14.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_14_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_14.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_14_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_14.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_15_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_15.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_15_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_15.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_15_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_15.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_15_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_15.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_15_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_15.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_16_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_16.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_16_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_16.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_16_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_16.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_16_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_16.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_16_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_16.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_17_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_17.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_17_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_17.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_17_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_17.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_17_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_17.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_17_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_17.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_18_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_18.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_18_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_18.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_18_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_18.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_18_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_18.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_18_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_18.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_19_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_19.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_19_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_19.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_19_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_19.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_19_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_19.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_19_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_19.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_20_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_20.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_20_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_20.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_20_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_20.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_20_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_20.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_20_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_20.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_21_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_21.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_21_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_21.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_21_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_21.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_21_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_21.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_21_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_21.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_22_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_22.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_22_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_22.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_22_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_22.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_22_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_22.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_22_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_22.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_23_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_23.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_23_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_23.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_23_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_23.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_23_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_23.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_23_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_23.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_24_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_24.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_24_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_24.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_24_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_24.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_24_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_24.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_24_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_24.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_25_nn3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_25.png",
+    "category": "clean_nn_3x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_25_nn4x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_25.png",
+    "category": "clean_nn_4x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      384,
+      384
+    ],
+    "scale": [
+      4.0,
+      4.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_25_frac2_5x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_25.png",
+    "category": "fractional_2_5x",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      240,
+      240
+    ],
+    "scale": [
+      2.5,
+      2.5
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_25_blur3x.png",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_25.png",
+    "category": "blur_bicubic",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  },
+  {
+    "file": "tests/test_pixelfixer/dataset/distorted/sprite_25_jpeg.jpg",
+    "orig_file": "tests/test_pixelfixer/dataset/native_1x/sprite_25.png",
+    "category": "jpeg_q45",
+    "orig_size": [
+      96,
+      96
+    ],
+    "distorted_size": [
+      288,
+      288
+    ],
+    "scale": [
+      3.0,
+      3.0
+    ]
+  }
+]

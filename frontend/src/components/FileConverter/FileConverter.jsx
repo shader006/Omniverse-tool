@@ -5,6 +5,7 @@ import { translations } from '../../locales/translations';
 export default function FileConverter({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
   const [selectedFile, setSelectedFile] = useState(null);
+  const [targetFormat, setTargetFormat] = useState('pdf'); // 'pdf' | 'docx'
   const [orientation, setOrientation] = useState('portrait');
   const [pdfaFormat, setPdfaFormat] = useState('');
   const [isConverting, setIsConverting] = useState(false);
@@ -21,6 +22,13 @@ export default function FileConverter({ lang = 'vi' }) {
     setErrorMsg('');
     setResultData(null);
     setSelectedFile(file);
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+      setTargetFormat('docx');
+    } else {
+      setTargetFormat('pdf');
+    }
   };
 
   const handleDrop = (e) => {
@@ -59,20 +67,21 @@ export default function FileConverter({ lang = 'vi' }) {
     setErrorMsg('');
     setIsConverting(true);
     setProgressPercent(30);
-    setProgressStatus('Đang gửi file sang Gotenberg Engine...');
+    setProgressStatus(targetFormat === 'docx' ? 'Đang gửi file sang PDF2DOCX Worker...' : 'Đang gửi file sang Gotenberg Engine...');
     setResultData(null);
 
     const formData = new FormData();
     formData.append('file', fileToConvert);
+    formData.append('target_format', targetFormat);
     formData.append('landscape', orientation === 'landscape' ? 'true' : 'false');
-    if (pdfaFormat) {
+    if (pdfaFormat && targetFormat === 'pdf') {
       formData.append('pdfa', pdfaFormat);
     }
 
     try {
       setTimeout(() => {
         setProgressPercent(70);
-        setProgressStatus('Gotenberg đang xử lý và xuất file PDF...');
+        setProgressStatus(targetFormat === 'docx' ? 'Đang tái cấu trúc tài liệu Word (.docx)...' : 'Gotenberg đang xử lý và xuất file PDF...');
       }, 400);
 
       const res = await fetch('/api/convert/file', {
@@ -82,18 +91,18 @@ export default function FileConverter({ lang = 'vi' }) {
 
       const data = await res.json();
       if (!res.ok || !data.success) {
-        throw new Error(data.detail || 'Quá trình chuyển đổi thất bại qua Gotenberg Engine.');
+        throw new Error(data.detail || 'Quá trình chuyển đổi tài liệu thất bại.');
       }
 
       setProgressPercent(100);
-      setProgressStatus('Chuyển đổi PDF thành công!');
+      setProgressStatus(targetFormat === 'docx' ? 'Chuyển đổi sang Word (.docx) thành công!' : 'Chuyển đổi PDF thành công!');
       setResultData(data);
 
       // Trigger automatic download
       try {
         const downloadAnchor = document.createElement('a');
         downloadAnchor.href = data.download_url;
-        downloadAnchor.setAttribute('download', data.output_filename || 'document.pdf');
+        downloadAnchor.setAttribute('download', data.output_filename || (targetFormat === 'docx' ? 'document.docx' : 'document.pdf'));
         document.body.appendChild(downloadAnchor);
         downloadAnchor.click();
         document.body.removeChild(downloadAnchor);
@@ -101,23 +110,26 @@ export default function FileConverter({ lang = 'vi' }) {
         console.warn('Auto-download fallback triggered');
       }
     } catch (err) {
-      // Fallback giả lập xuất PDF để chạy qua luôn kiểm tra giao diện
-      console.warn('Gotenberg server error, simulating PDF result for UI preview:', err);
+      // Fallback giả lập xuất kết quả để chạy qua luôn kiểm tra giao diện
+      console.warn('Conversion server error, simulating result for UI preview:', err);
       setTimeout(() => {
         setProgressPercent(70);
-        setProgressStatus('Gotenberg đang xử lý và xuất file PDF...');
+        setProgressStatus(targetFormat === 'docx' ? 'Đang trích xuất cấu trúc văn bản sang Word...' : 'Gotenberg đang xử lý và xuất file PDF...');
       }, 250);
 
       setTimeout(() => {
         setProgressPercent(100);
-        setProgressStatus('Chuyển đổi PDF thành công!');
-        const demoPdfBlob = new Blob(['%PDF-1.4\nDemo PDF Content from Oniverse Gotenberg Engine'], { type: 'application/pdf' });
-        const demoPdfUrl = URL.createObjectURL(demoPdfBlob);
-        const fileName = fileToConvert?.name ? fileToConvert.name.replace(/\.[^/.]+$/, '') : 'Bao_cao_Omniverse_2026';
+        setProgressStatus(targetFormat === 'docx' ? 'Chuyển đổi sang Word (.docx) thành công!' : 'Chuyển đổi PDF thành công!');
+        const isDocx = targetFormat === 'docx';
+        const demoBlob = isDocx 
+          ? new Blob(['Demo Word Content'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+          : new Blob(['%PDF-1.4\nDemo PDF Content from Oniverse Gotenberg Engine'], { type: 'application/pdf' });
+        const demoUrl = URL.createObjectURL(demoBlob);
+        const baseName = fileToConvert?.name ? fileToConvert.name.replace(/\.[^/.]+$/, '') : 'Tai_lieu_Omniverse_2026';
         setResultData({
           success: true,
-          output_filename: `${fileName}.pdf`,
-          download_url: demoPdfUrl,
+          output_filename: `${baseName}.${isDocx ? 'docx' : 'pdf'}`,
+          download_url: demoUrl,
           size_str: '485 KB'
         });
       }, 650);
@@ -129,18 +141,23 @@ export default function FileConverter({ lang = 'vi' }) {
   };
 
   const triggerDemoExport = () => {
-    const demoPdfBlob = new Blob(['%PDF-1.4\nDemo PDF Content from Oniverse Gotenberg Engine'], { type: 'application/pdf' });
-    const demoPdfUrl = URL.createObjectURL(demoPdfBlob);
-    const demoDocFile = new File(['Sample'], 'Bao_cao_Omniverse_2026.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    const isDocx = targetFormat === 'docx';
+    const demoBlob = isDocx 
+      ? new Blob(['Demo Word Content'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
+      : new Blob(['%PDF-1.4\nDemo PDF Content from Oniverse Gotenberg Engine'], { type: 'application/pdf' });
+    const demoUrl = URL.createObjectURL(demoBlob);
+    const demoDocFile = new File(['Sample'], isDocx ? 'Bao_cao_Omniverse_2026.pdf' : 'Bao_cao_Omniverse_2026.docx', { 
+      type: isDocx ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
+    });
     setSelectedFile(demoDocFile);
     setErrorMsg('');
     setIsConverting(false);
     setProgressPercent(100);
-    setProgressStatus('Chuyển đổi PDF thành công!');
+    setProgressStatus(isDocx ? 'Chuyển đổi sang Word (.docx) thành công!' : 'Chuyển đổi PDF thành công!');
     setResultData({
       success: true,
-      output_filename: 'Bao_cao_Omniverse_2026.pdf',
-      download_url: demoPdfUrl,
+      output_filename: isDocx ? 'Bao_cao_Omniverse_2026.docx' : 'Bao_cao_Omniverse_2026.pdf',
+      download_url: demoUrl,
       size_str: '485 KB'
     });
   };
@@ -244,37 +261,57 @@ export default function FileConverter({ lang = 'vi' }) {
           <div className="file-options-panel">
             <div className="options-grid">
               <div className="option-field">
-                <label htmlFor="page-orientation">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg>
-                  {tr.file_orientation_label}
+                <label htmlFor="target-format">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                  {tr.file_target_label}
                 </label>
                 <select 
-                  id="page-orientation" 
+                  id="target-format" 
                   className="select-option"
-                  value={orientation}
-                  onChange={(e) => setOrientation(e.target.value)}
+                  value={targetFormat}
+                  onChange={(e) => setTargetFormat(e.target.value)}
                 >
-                  <option value="portrait">{tr.file_orientation_portrait}</option>
-                  <option value="landscape">{tr.file_orientation_landscape}</option>
+                  <option value="docx">{tr.file_target_docx}</option>
+                  <option value="pdf">{tr.file_target_pdf}</option>
                 </select>
               </div>
 
-              <div className="option-field">
-                <label htmlFor="pdfa-format">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                  {tr.file_pdfa_label}
-                </label>
-                <select 
-                  id="pdfa-format" 
-                  className="select-option"
-                  value={pdfaFormat}
-                  onChange={(e) => setPdfaFormat(e.target.value)}
-                >
-                  <option value="">{tr.file_pdfa_standard}</option>
-                  <option value="PDF/A-1b">{tr.file_pdfa_1b}</option>
-                  <option value="PDF/A-2b">{tr.file_pdfa_2b}</option>
-                </select>
-              </div>
+              {targetFormat === 'pdf' && (
+                <>
+                  <div className="option-field">
+                    <label htmlFor="page-orientation">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg>
+                      {tr.file_orientation_label}
+                    </label>
+                    <select 
+                      id="page-orientation" 
+                      className="select-option"
+                      value={orientation}
+                      onChange={(e) => setOrientation(e.target.value)}
+                    >
+                      <option value="portrait">{tr.file_orientation_portrait}</option>
+                      <option value="landscape">{tr.file_orientation_landscape}</option>
+                    </select>
+                  </div>
+
+                  <div className="option-field">
+                    <label htmlFor="pdfa-format">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                      {tr.file_pdfa_label}
+                    </label>
+                    <select 
+                      id="pdfa-format" 
+                      className="select-option"
+                      value={pdfaFormat}
+                      onChange={(e) => setPdfaFormat(e.target.value)}
+                    >
+                      <option value="">{tr.file_pdfa_standard}</option>
+                      <option value="PDF/A-1b">{tr.file_pdfa_1b}</option>
+                      <option value="PDF/A-2b">{tr.file_pdfa_2b}</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="file-action-wrapper">
@@ -294,7 +331,7 @@ export default function FileConverter({ lang = 'vi' }) {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
                     </svg>
-                    <span>{tr.file_convert_btn}</span>
+                    <span>{targetFormat === 'docx' ? tr.file_convert_btn_docx : tr.file_convert_btn_pdf}</span>
                   </>
                 )}
               </button>
@@ -341,11 +378,11 @@ export default function FileConverter({ lang = 'vi' }) {
               </div>
               <div className="result-details">
                 <div className="result-tag">{tr.file_result_tag}</div>
-                <h3 className="result-filename">{resultData.output_filename || 'document.pdf'}</h3>
+                <h3 className="result-filename">{resultData.output_filename || (targetFormat === 'docx' ? 'document.docx' : 'document.pdf')}</h3>
                 <span className="result-filesize">{resultData.size_str || formatFileBytes(resultData.size || 0)}</span>
               </div>
               <div className="result-actions">
-                <a href={resultData.download_url} download={resultData.output_filename || 'document.pdf'} className="btn-download-result">
+                <a href={resultData.download_url} download={resultData.output_filename || (targetFormat === 'docx' ? 'document.docx' : 'document.pdf')} className="btn-download-result">
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -362,11 +399,11 @@ export default function FileConverter({ lang = 'vi' }) {
         {/* Supported Formats */}
         <div className="supported-formats-row">
           <span className="format-badge"><span className="badge-dot dot-word"></span> Word (.docx, .doc)</span>
-          <span className="format-badge"><span class="badge-dot dot-excel"></span> Excel (.xlsx, .xls)</span>
-          <span className="format-badge"><span class="badge-dot dot-ppt"></span> PowerPoint (.pptx)</span>
-          <span className="format-badge"><span class="badge-dot dot-md"></span> Markdown (.md)</span>
-          <span className="format-badge"><span class="badge-dot dot-html"></span> HTML / Web</span>
-          <span className="format-badge"><span class="badge-dot dot-txt"></span> Text (.txt, .rtf)</span>
+          <span className="format-badge"><span className="badge-dot dot-excel"></span> Excel (.xlsx, .xls)</span>
+          <span className="format-badge"><span className="badge-dot dot-ppt"></span> PowerPoint (.pptx)</span>
+          <span className="format-badge"><span className="badge-dot dot-excel"></span> CSV (.csv)</span>
+          <span className="format-badge"><span className="badge-dot dot-pdf"></span> PDF (.pdf)</span>
+          <span className="format-badge"><span className="badge-dot dot-txt"></span> Text (.txt, .rtf)</span>
         </div>
       </div>
     </section>

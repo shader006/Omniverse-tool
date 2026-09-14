@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,17 +15,18 @@ import (
 	"time"
 )
 
-func (s *Server) callWorkerJSON(workerBaseURL string, path string, payload interface{}) ([]byte, int, error) {
+func (s *Server) callWorkerJSON(ctx context.Context, workerBaseURL string, path string, payload interface{}) ([]byte, int, error) {
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		return nil, http.StatusBadRequest, err
 	}
 	targetURL := strings.TrimRight(workerBaseURL, "/") + path
-	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(jsonBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(jsonBytes))
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	InjectTraceparent(ctx, req)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, http.StatusBadGateway, err
@@ -34,8 +36,8 @@ func (s *Server) callWorkerJSON(workerBaseURL string, path string, payload inter
 	return respBody, resp.StatusCode, err
 }
 
-func (s *Server) forwardMultipartToWorker(workerBaseURL string, path string, fileBytes []byte, filename string, fieldName string, formValues map[string]string) ([]byte, int, error) {
-	bodyBuf := &bytes.Buffer{}
+func (s *Server) forwardMultipartToWorker(ctx context.Context, workerBaseURL string, path string, fileBytes []byte, filename string, fieldName string, formValues map[string]string) ([]byte, int, error) {
+	bodyBuf := bytes.NewBuffer(make([]byte, 0, len(fileBytes)+2048))
 	writer := multipart.NewWriter(bodyBuf)
 	part, err := writer.CreateFormFile(fieldName, filename)
 	if err != nil {
@@ -52,11 +54,12 @@ func (s *Server) forwardMultipartToWorker(workerBaseURL string, path string, fil
 	}
 
 	targetURL := strings.TrimRight(workerBaseURL, "/") + path
-	req, err := http.NewRequest(http.MethodPost, targetURL, bodyBuf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bodyBuf)
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	InjectTraceparent(ctx, req)
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, http.StatusBadGateway, err
@@ -74,7 +77,23 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	var req InfoRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, `{"success":false,"detail":"URL không hợp lệ"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Dữ liệu yêu cầu không hợp lệ hoặc thiếu URL.",
+		})
+		return
+	}
+
+	req.URL = strings.TrimSpace(req.URL)
+	if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "URL không hợp lệ. Đường dẫn phải bắt đầu bằng http:// hoặc https://",
+		})
 		return
 	}
 
@@ -82,7 +101,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Kiểm tra Pogocache Engine (0.0001 ms)
 	cacheKey := GenerateCacheKey(req.URL, "info", "info")
-	if cachedData, found := s.pogo.GetMetadata(cacheKey); found {
+	if cachedData, found := s.pogo.GetMetadataWithContext(r.Context(), cacheKey); found {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": true,
 			"data":    cachedData,
@@ -93,7 +112,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Nếu có Worker YT-DLP Microservice -> Gọi qua HTTP
 	if s.workerYtdlpURL != "" {
-		respBytes, statusCode, err := s.callWorkerJSON(s.workerYtdlpURL, "/api/info", req)
+		respBytes, statusCode, err := s.callWorkerJSON(r.Context(), s.workerYtdlpURL, "/api/info", req)
 		if err == nil && statusCode == http.StatusOK {
 			var result struct {
 				Success bool                   `json:"success"`
@@ -102,9 +121,12 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 			}
 			if json.Unmarshal(respBytes, &result) == nil && result.Success {
 				if result.Data != nil {
-					s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
+					s.pogo.SetMetadataWithContext(r.Context(), cacheKey, result.Data, DefaultCacheTTL)
 				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Content-Type-Options", "nosniff")
 				w.WriteHeader(http.StatusOK)
+				// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing validated JSON payload
 				_, _ = w.Write(respBytes)
 				return
 			}
@@ -145,10 +167,13 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result.Data != nil {
-		s.pogo.SetMetadata(cacheKey, result.Data, DefaultCacheTTL)
+		s.pogo.SetMetadataWithContext(r.Context(), cacheKey, result.Data, DefaultCacheTTL)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing validated JSON payload
 	_, _ = w.Write([]byte(jsonStr))
 }
 
@@ -160,15 +185,63 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	var req DownloadRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.URL) == "" {
-		http.Error(w, `{"success":false,"detail":"Dữ liệu request không hợp lệ"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "Dữ liệu yêu cầu không hợp lệ hoặc thiếu URL.",
+		})
 		return
 	}
 
+	req.URL = strings.TrimSpace(req.URL)
+	if !strings.HasPrefix(req.URL, "http://") && !strings.HasPrefix(req.URL, "https://") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  "URL không hợp lệ. Đường dẫn phải bắt đầu bằng http:// hoặc https://",
+		})
+		return
+	}
+
+	allowedFormats := map[string]bool{
+		"mp3": true, "mp4": true, "m4a": true, "wav": true, "flac": true, "webm": true,
+	}
+	req.Format = strings.ToLower(strings.TrimSpace(req.Format))
 	if req.Format == "" {
 		req.Format = "mp3"
 	}
+	if !allowedFormats[req.Format] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Định dạng '%s' không được hỗ trợ. Các định dạng hợp lệ: mp3, mp4, m4a, wav, flac, webm.", req.Format),
+		})
+		return
+	}
+
+	allowedQualities := map[string]bool{
+		"64": true, "128": true, "192": true, "256": true, "320": true,
+		"360": true, "480": true, "720": true, "1080": true, "1440": true, "2160": true, "best": true,
+	}
+	req.Quality = strings.ToLower(strings.TrimSpace(req.Quality))
 	if req.Quality == "" {
-		req.Quality = "320"
+		if req.Format == "mp4" {
+			req.Quality = "720"
+		} else {
+			req.Quality = "320"
+		}
+	}
+	if !allowedQualities[req.Quality] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"detail":  fmt.Sprintf("Chất lượng '%s' không hợp lệ. Các chất lượng hợp lệ: 64, 128, 192, 256, 320, 360, 480, 720, 1080, 1440, 2160, best.", req.Quality),
+		})
+		return
 	}
 
 	jobID := randomID()
@@ -214,7 +287,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	s.pogo.PublishJobUpdate(job)
 
 	// 3. Khởi động Goroutine tải ngầm gọi Python url_conver (kèm Semaphore Concurrency Limiter)
-	go s.processDownloadJob(jobID, req.URL, req.Format, req.Quality)
+	go s.processDownloadJob(DetachTraceContext(r.Context()), jobID, req.URL, req.Format, req.Quality)
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -223,7 +296,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
+func (s *Server) processDownloadJob(ctx context.Context, jobID, url, mediaFormat, quality string) {
 	// Giới hạn số lượng ffmpeg chạy đồng thời (tránh bóp nghẽn CPU)
 	s.mediaLimiter <- struct{}{}
 	defer func() { <-s.mediaLimiter }()
@@ -233,7 +306,7 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 		s.pogo.PublishJobUpdate(j)
 	}
 
-	// 1. Nếu có Worker YT-DLP Microservice -> Chuyển giao qua HTTP
+	// 1. Nếu có Worker YT-DLP Microservice -> Chuyển giao qua HTTP stream
 	if s.workerYtdlpURL != "" {
 		payload := map[string]string{
 			"job_id":       jobID,
@@ -242,15 +315,105 @@ func (s *Server) processDownloadJob(jobID, url, mediaFormat, quality string) {
 			"quality":      quality,
 			"download_dir": s.downloadDir,
 		}
-		_, statusCode, err := s.callWorkerJSON(s.workerYtdlpURL, "/api/download", payload)
-		if err == nil && statusCode == http.StatusOK {
-			log.Printf("✅ [WORKER YT-DLP] Đã chuyển giao Job %s sang worker-ytdlp xử lý", jobID)
-			return
+		bodyBytes, _ := json.Marshal(payload)
+		req, reqErr := http.NewRequestWithContext(ctx, "POST", s.workerYtdlpURL+"/api/download", bytes.NewReader(bodyBytes))
+		if reqErr == nil {
+			req.Header.Set("Content-Type", "application/json")
+			InjectTraceparent(ctx, req)
+			var receivedFinal bool
+			resp, callErr := s.httpLongClient.Do(req)
+			if callErr == nil && resp.StatusCode == http.StatusOK {
+				defer resp.Body.Close()
+				scanner := bufio.NewScanner(resp.Body)
+				for scanner.Scan() {
+					line := strings.TrimSpace(scanner.Text())
+					if line == "" {
+						continue
+					}
+					var event struct {
+						Status      string  `json:"status"`
+						Percent     float64 `json:"percent"`
+						Speed       string  `json:"speed"`
+						ETA         string  `json:"eta"`
+						Filename    string  `json:"filename"`
+						DownloadURL string  `json:"download_url"`
+						Error       string  `json:"error"`
+					}
+					if err := json.Unmarshal([]byte(line), &event); err == nil {
+						if event.Status == "downloading" {
+							j, ok := s.pogo.GetJob(jobID)
+							if !ok {
+								j = Job{JobID: jobID, URL: url, Format: mediaFormat, Quality: quality}
+							}
+							j.Status = "downloading"
+							j.Percent = event.Percent
+							if event.Speed != "" {
+								j.Speed = event.Speed
+							}
+							s.pogo.PublishJobUpdate(j)
+						} else if event.Status == "completed" {
+							j, ok := s.pogo.GetJob(jobID)
+							if !ok {
+								j = Job{JobID: jobID, URL: url, Format: mediaFormat, Quality: quality}
+							}
+							j.Status = "completed"
+							j.Percent = 100.0
+							j.Filename = event.Filename
+							j.DownloadURL = fmt.Sprintf("/api/file/%s", event.Filename)
+							s.pogo.PublishJobUpdate(j)
+							receivedFinal = true
+							return
+						} else if event.Status == "error" {
+							errText := event.Error
+							if errText == "" {
+								errText = "Lỗi khi xử lý tải file hoặc liên kết không khả dụng."
+							}
+							s.failJob(jobID, errText)
+							receivedFinal = true
+							return
+						} else if event.Status == "queued" {
+							if j, ok := s.pogo.GetJob(jobID); ok {
+								j.Status = "queued"
+								s.pogo.PublishJobUpdate(j)
+							}
+						}
+					}
+				}
+				if receivedFinal {
+					return
+				}
+				if scanErr := scanner.Err(); scanErr != nil {
+					log.Printf("⚠️ [WORKER YT-DLP] Scanner stream error: %v", scanErr)
+				}
+			}
+			if resp != nil {
+				_ = resp.Body.Close()
+			}
+			log.Printf("⚠️ [WORKER YT-DLP] Kết thúc stream worker /api/download (callErr=%v, receivedFinal=%v)", callErr, receivedFinal)
 		}
-		log.Printf("⚠️ [WORKER YT-DLP] Gọi worker /api/download thất bại (%v), fallback sang CLI cục bộ...", err)
 	}
 
-	// 2. Fallback sang CLI cục bộ
+	// 1.5. Kiểm tra nếu Worker đã tải xong file vào thư mục dùng chung trước khi báo lỗi
+	if cachedFile, found := s.pogo.FindCachedFile(url, mediaFormat, quality); found {
+		log.Printf("✅ [WORKER YT-DLP RECOVERY] Tìm thấy file đã tải thành công trong downloadDir: %s", cachedFile)
+		j, ok := s.pogo.GetJob(jobID)
+		if !ok {
+			j = Job{JobID: jobID, URL: url, Format: mediaFormat, Quality: quality}
+		}
+		j.Status = "completed"
+		j.Percent = 100.0
+		j.Filename = cachedFile
+		j.DownloadURL = fmt.Sprintf("/api/file/%s", cachedFile)
+		s.pogo.PublishJobUpdate(j)
+		return
+	}
+
+	// 2. Fallback sang CLI cục bộ (chỉ khi có sẵn python3 trên hệ thống)
+	if _, err := exec.LookPath("python3"); err != nil {
+		log.Printf("⚠️ [LOCAL FALLBACK] Không tìm thấy python3 trên hệ thống, không thể fallback.")
+		s.failJob(jobID, "Dịch vụ tải media hiện đang bận hoặc không khả dụng. Vui lòng thử lại sau.")
+		return
+	}
 	cmd := exec.Command("python3", "-m", "app.url_conver.cli", "download",
 		"--url", url,
 		"--format", mediaFormat,
@@ -375,9 +538,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	jobCh, cleanup := s.pogo.SubscribeJob(r.Context(), jobID)
 	defer cleanup()
 
+	var lastSentStatus string
+	var lastSentPercent float64 = -1
+
 	// Gửi ngay trạng thái ban đầu nếu có
 	if initialJob, exists := s.pogo.GetJob(jobID); exists {
+		lastSentStatus = initialJob.Status
+		lastSentPercent = initialJob.Percent
 		data, _ := json.Marshal(initialJob)
+		// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 		_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
 		flusher.Flush()
 		if initialJob.Status == "completed" || initialJob.Status == "error" {
@@ -396,22 +565,34 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
+			lastSentStatus = job.Status
+			lastSentPercent = job.Percent
 			data, _ := json.Marshal(job)
+			// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
 			_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
 			flusher.Flush()
 			if job.Status == "completed" || job.Status == "error" {
 				return
 			}
 		case <-ticker.C:
-			// Heartbeat và Polling an toàn
+			// Heartbeat và Polling an toàn khi có thay đổi trạng thái
 			if currentJob, exists := s.pogo.GetJob(jobID); exists {
-				data, _ := json.Marshal(currentJob)
-				_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
-				flusher.Flush()
-				if currentJob.Status == "completed" || currentJob.Status == "error" {
-					return
+				if currentJob.Status != lastSentStatus || currentJob.Percent != lastSentPercent {
+					lastSentStatus = currentJob.Status
+					lastSentPercent = currentJob.Percent
+					data, _ := json.Marshal(currentJob)
+					// nosemgrep: go.lang.security.audit.xss.no-fprintf-to-responsewriter - SSE stream with JSON payload
+					_, _ = fmt.Fprintf(w, "event: progress\ndata: %s\n\n", string(data))
+					flusher.Flush()
+					if currentJob.Status == "completed" || currentJob.Status == "error" {
+						return
+					}
+					continue
 				}
 			}
+			// SSE Keep-Alive Ping chuẩn (giữ kết nối qua Cloudflare/proxy mà không gây re-render client)
+			_, _ = fmt.Fprintf(w, ": ping\n\n")
+			flusher.Flush()
 		}
 	}
 }

@@ -6,6 +6,7 @@ import UrlDownloader from './components/UrlDownloader/UrlDownloader';
 import FileConverter from './components/FileConverter/FileConverter';
 import WhisperTranscribe from './components/WhisperTranscribe/WhisperTranscribe';
 import RemoveBackground from './components/RemoveBackground/RemoveBackground';
+import PixelFixer from './components/PixelFixer/PixelFixer';
 import Footer from './components/Footer';
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
 
@@ -22,9 +23,9 @@ export default function App() {
   useEffect(() => {
     const handleRoute = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (['url', 'file', 'transcribe', 'bg', 'tools', 'tools-workspace'].includes(hash)) {
+      if (['url', 'file', 'transcribe', 'bg', 'pixel', 'tools', 'tools-workspace'].includes(hash)) {
         setCurrentPage('tools');
-        if (['url', 'file', 'transcribe', 'bg'].includes(hash)) {
+        if (['url', 'file', 'transcribe', 'bg', 'pixel'].includes(hash)) {
           setCurrentMode(hash);
         }
       } else {
@@ -39,7 +40,7 @@ export default function App() {
 
   const navigateToTools = (mode) => {
     setCurrentPage('tools');
-    if (mode && ['url', 'file', 'transcribe', 'bg'].includes(mode)) {
+    if (mode && ['url', 'file', 'transcribe', 'bg', 'pixel'].includes(mode)) {
       setCurrentMode(mode);
       window.location.hash = `#${mode}`;
     } else {
@@ -87,6 +88,7 @@ export default function App() {
             {currentMode === 'file' && <FileConverter lang={lang} />}
             {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
             {currentMode === 'bg' && <RemoveBackground lang={lang} />}
+            {currentMode === 'pixel' && <PixelFixer lang={lang} />}
           </main>
 
           <Footer lang={lang} />

@@ -18,6 +18,8 @@ services:
       - WORKER_YTDLP_URL=http://worker-ytdlp:8001
       - WORKER_WHISPER_URL=http://worker-whisper:8002
       - WORKER_RMBG_URL=http://worker-rmbg:8003
+      - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
+      - WORKER_PDF2DOCX_URL=http://worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
     depends_on:
       - gotenberg
@@ -25,6 +27,8 @@ services:
       - worker-ytdlp
       - worker-whisper
       - worker-rmbg
+      - worker-pixelfixer
+      - worker-pdf2docx
 
   worker-ytdlp:
     build:
@@ -34,7 +38,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./downloads:/app/downloads
-      - ./backend/app:/app/app
+      - ./backend/app_python:/app/app
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8001
@@ -60,12 +64,45 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./models/birefnet:/root/.cache/birefnet
-      - ./backend/app:/app/app
+      - ./backend/app_python:/app/app
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=120
+
+  worker-pixelfixer:
+    build:
+      context: ./backend
+      dockerfile: services/worker_pixelfixer/Dockerfile
+    container_name: mediaflow_worker_pixelfixer
+    restart: unless-stopped
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8004
+      - RUST_LOG=info
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+
+  worker-pdf2docx:
+    build:
+      context: ./backend
+      dockerfile: services/worker_pdf2docx/Dockerfile
+    container_name: mediaflow_worker_pdf2docx
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8005
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
 
   pogocache:
     image: pogocache/pogocache:latest
@@ -99,6 +136,6 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: mediaflow_tunnel
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiNWNiYjk4Nzg3OWEwODcyM2FmYzQ3Nzg1MDIwZDkxZGYiLCJ0IjoiYTgwZDBjMGUtNGQxMy00ZjUyLTg0MDctOGRiZjMwNTllN2ZmIiwicyI6Ik5UWTJPRFJtWXpNdFlqa3pNaTAwWlRnNExUaGtOV0V0TXpNNU9XWmpabUUxTmpkbCJ9}
     depends_on:
       - pingora
