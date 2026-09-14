@@ -1,0 +1,83 @@
+{
+  "name": "Omniverse Tool Dev Environment",
+  "workspaceFolder": "/workspaces/Omniverse-tool",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.22"
+    },
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "default"
+    },
+    "ghcr.io/devcontainers/features/python:3": {
+      "version": "3.11",
+      "installTools": true
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": "true"
+    }
+  },
+  "remoteEnv": {
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+  },
+  "forwardPorts": [
+    8000,
+    8080,
+    80,
+    8001,
+    8002,
+    8003,
+    8004,
+    8005,
+    9401,
+    3000
+  ],
+  "portsAttributes": {
+    "8000": {
+      "label": "Omniverse Gateway API & UI",
+      "onAutoForward": "notify"
+    },
+    "80": {
+      "label": "Pingora Reverse Proxy",
+      "onAutoForward": "silent"
+    },
+    "8001": {
+      "label": "HiAi Observe / Worker YTDLP",
+      "onAutoForward": "silent"
+    },
+    "3000": {
+      "label": "Gotenberg PDF Service",
+      "onAutoForward": "silent"
+    },
+    "9401": {
+      "label": "Pogocache KV Store",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "go.toolsManagement.autoUpdate": true,
+        "go.useLanguageServer": true,
+        "rust-analyzer.check.command": "clippy",
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true
+      },
+      "extensions": [
+        "golang.go",
+        "rust-lang.rust-analyzer",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "tamasfe.even-better-toml",
+        "redhat.vscode-yaml"
+      ]
+    }
+  },
+  "postCreateCommand": "bash -c 'pip install -r backend/requirements.txt || true && cd backend && go mod download || true'",
+  "remoteUser": "vscode"
+}

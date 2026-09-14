@@ -40,7 +40,7 @@ if [ -f .env ]; then
     set +a
 fi
 
-export WORKSPACE_DIR="$DIR"
+export WORKSPACE_DIR="${LOCAL_WORKSPACE_FOLDER:-$DIR}"
 
 # 4. Deploy stack (có cơ chế tự động thử lại 1 lần nếu gặp race condition mạng overlay)
 echo -e "📦 Đang triển khai stack 'omniverse' từ docker-stack.yml..."
