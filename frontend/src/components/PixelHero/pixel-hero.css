@@ -1,0 +1,436 @@
+/* =========================================================
+   PIXEL HERO SECTION - RETRO CYBER PIXEL ART AESTHETIC
+   ========================================================= */
+
+.pixel-hero-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background-color: #38bdf8;
+  background-image: 
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.1) 0%, rgba(15, 23, 42, 0.0) 25%, rgba(15, 23, 42, 0.0) 70%, rgba(15, 23, 42, 0.4) 100%),
+    url('/assets/hero-bg.gif?v=4');
+  background-size: cover;
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  border-bottom: 4px solid #111827;
+}
+
+/* Atmospheric pixel stars overlay - disabled for daytime Bliss landscape */
+.pixel-stars-layer {
+  display: none;
+}
+
+/* ==================== NAVBAR ==================== */
+.pixel-navbar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 48px;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.pixel-logo-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.pixel-logo-img {
+  height: 32px;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.5));
+  transition: transform 0.15s ease;
+}
+
+.pixel-logo-img:hover {
+  transform: scale(1.05);
+}
+
+.pixel-nav-links {
+  display: flex;
+  align-items: center;
+  gap: 36px;
+  list-style: none;
+}
+
+.pixel-nav-link {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.75rem;
+  color: #ffffff;
+  text-decoration: none;
+  letter-spacing: 1px;
+  text-shadow: 
+    -2px -2px 0 #000,  
+     2px -2px 0 #000,
+    -2px  2px 0 #000,
+     2px  2px 0 #000;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+}
+
+.pixel-nav-link:hover,
+.pixel-nav-link.active {
+  color: #38bdf8;
+  text-shadow: 
+    -2px -2px 0 #000,  
+     2px -2px 0 #000,
+    -2px  2px 0 #000,
+     2px  2px 0 #000,
+     0 0 10px rgba(56, 189, 248, 0.8);
+}
+
+/* ==================== HERO CENTER CONTENT ==================== */
+.pixel-hero-center {
+  position: relative;
+  z-index: 20;
+  text-align: center;
+  padding: 30px 20px 40px;
+  max-width: 1000px;
+  margin: auto auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.pixel-meet-tag {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.95rem;
+  color: #38bdf8;
+  letter-spacing: 5px;
+  text-transform: uppercase;
+  text-shadow: 0 0 14px rgba(56, 189, 248, 0.7);
+  animation: pulse-glow 2.5s infinite alternate;
+}
+
+@keyframes pulse-glow {
+  0% { opacity: 0.8; text-shadow: 0 0 8px rgba(56, 189, 248, 0.4); }
+  100% { opacity: 1; text-shadow: 0 0 18px rgba(56, 189, 248, 0.9), 0 0 30px rgba(96, 165, 250, 0.4); }
+}
+
+.pixel-hero-logo-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 6px 0 10px;
+}
+
+.pixel-center-hero-logo {
+  max-width: 90vw;
+  width: 580px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 0 20px rgba(34, 197, 94, 0.6)) drop-shadow(0 4px 0 #000);
+  transition: transform 0.2s ease;
+}
+
+.pixel-center-hero-logo:hover {
+  transform: scale(1.03);
+}
+
+.pixel-main-subtitle {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.7rem, 1.8vw, 0.95rem);
+  color: #cbd5e1;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  max-width: 750px;
+  margin: 0 auto;
+  text-shadow: 
+    -2px -2px 0 #000,  
+     2px -2px 0 #000,
+    -2px  2px 0 #000,
+     2px  2px 0 #000;
+}
+
+/* START NOW Action Button Area */
+.pixel-start-now-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.pixel-btn-start-now {
+  font-size: 1rem !important;
+  padding: 16px 36px !important;
+  height: auto !important;
+  letter-spacing: 2px !important;
+  box-shadow: 
+    -4px 0 0 0 #000,
+    4px 0 0 0 #000,
+    0 4px 0 0 #000,
+    0 -4px 0 0 #000,
+    0 0 25px rgba(34, 197, 94, 0.6) !important;
+  animation: start-pulse 2s infinite alternate;
+}
+
+@keyframes start-pulse {
+  0% { transform: translateY(0); filter: brightness(1); }
+  100% { transform: translateY(-3px); filter: brightness(1.15); box-shadow: -4px 0 0 0 #000, 4px 0 0 0 #000, 0 4px 0 0 #000, 0 -4px 0 0 #000, 0 0 35px rgba(34, 197, 94, 0.8) !important; }
+}
+
+.pixel-btn-explore {
+  font-size: 0.85rem !important;
+  padding: 16px 28px !important;
+  height: auto !important;
+  letter-spacing: 1px !important;
+}
+
+.pixel-hero-bottom-spacer {
+  height: 40px;
+}
+
+/* ==================== LEFT & RIGHT FLOATING ELEMENTS ==================== */
+.pixel-floating-left {
+  position: absolute;
+  left: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 25;
+}
+
+.pixel-arrow-btn {
+  width: 38px;
+  height: 38px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #334155;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #000;
+  transition: all 0.1s ease;
+}
+
+.pixel-arrow-btn:hover {
+  background: #1e293b;
+  color: #38bdf8;
+  border-color: #38bdf8;
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 #000;
+}
+
+.pixel-arrow-btn:active {
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0 #000;
+}
+
+.pixel-floating-right {
+  position: absolute;
+  right: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  z-index: 25;
+}
+
+.pixel-social-icon {
+  width: 40px;
+  height: 40px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px solid #334155;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  box-shadow: 2px 2px 0 #000;
+  transition: all 0.1s ease;
+}
+
+.pixel-social-icon:hover {
+  background: #1e293b;
+  color: #ffffff;
+  border-color: #67e8f9;
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 #000, 0 0 12px rgba(103, 232, 249, 0.4);
+}
+
+.pixel-hero-lang-btn {
+  width: auto !important;
+  min-width: 58px !important;
+  padding: 0 8px !important;
+  gap: 6px !important;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace !important;
+  font-size: 0.65rem !important;
+  font-weight: bold;
+}
+
+.pixel-hero-lang-tag {
+  color: #38bdf8;
+  font-size: 0.62rem;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== SPRITE LOG IN MODAL ==================== */
+.pixel-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 20px;
+}
+
+.pixel-modal-box {
+  background: #090d16;
+  border: 4px solid #1e293b;
+  box-shadow: 0 0 0 4px #000, 8px 8px 0 rgba(0, 0, 0, 0.8);
+  width: 100%;
+  max-width: 440px;
+  animation: modal-pop 0.15s ease-out;
+}
+
+@keyframes modal-pop {
+  0% { transform: scale(0.95); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.pixel-modal-header {
+  background: #0f172a;
+  border-bottom: 3px solid #1e293b;
+  padding: 12px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pixel-modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pixel-header-icon {
+  font-size: 1.2rem;
+}
+
+.pixel-header-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.85rem;
+  color: #f8fafc;
+  letter-spacing: 1px;
+}
+
+.pixel-modal-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 1.1rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: color 0.1s;
+}
+
+.pixel-modal-close:hover {
+  color: #ef4444;
+}
+
+.pixel-modal-body {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pixel-modal-subtitle {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #ffffff;
+  text-align: center;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.pixel-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pixel-input {
+  width: 100%;
+  background: #030712;
+  border: 3px solid #334155;
+  box-shadow: inset 2px 2px 0 #000;
+  padding: 12px 16px;
+  color: #f8fafc;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.75rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.pixel-input:focus {
+  border-color: #38bdf8;
+}
+
+.pixel-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.pixel-modal-footer-note {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* ==================== RESPONSIVE TWEAKS ==================== */
+@media (max-width: 900px) {
+  .pixel-navbar {
+    padding: 18px 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .pixel-nav-links {
+    gap: 18px;
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+  .pixel-floating-left,
+  .pixel-floating-right {
+    display: none;
+  }
+  .pixel-features-row {
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .pixel-feature-col {
+    align-items: center;
+  }
+}

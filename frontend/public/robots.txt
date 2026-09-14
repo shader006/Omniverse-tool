@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /downloads/
+
+Sitemap: https://www.omniversetool.online/sitemap.xml

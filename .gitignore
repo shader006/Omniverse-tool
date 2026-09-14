@@ -50,6 +50,14 @@ models/
 # Sub-projects & external repos
 hiai-observe/
 
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+
 # IDE & System
 .vscode/
 .idea/
@@ -59,3 +67,4 @@ Thumbs.db
 *.swp
 *.swo
 *~
+

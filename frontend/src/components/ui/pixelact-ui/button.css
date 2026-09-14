@@ -1,0 +1,172 @@
+.pixel__button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  user-select: none;
+  border: none;
+  outline: none;
+  padding: 12px 20px;
+  min-height: 42px;
+  box-sizing: border-box;
+  box-shadow: 
+    calc(-1 * var(--box-shadow-width)) 0 0 0 #000,
+    var(--box-shadow-width) 0 0 0 #000,
+    0 var(--box-shadow-width) 0 0 #000,
+    0 calc(-1 * var(--box-shadow-width)) 0 0 #000;
+  transition: transform 0.05s ease, background-color 0.1s ease;
+}
+
+/* Button Sizing */
+.pixel-btn--sm,
+.h-8 {
+  padding: 8px 14px !important;
+  min-height: 32px !important;
+  font-size: 0.65rem !important;
+}
+
+.pixel-btn--md,
+.h-10 {
+  padding: 12px 22px !important;
+  min-height: 42px !important;
+  font-size: 0.75rem !important;
+}
+
+.pixel-btn--lg,
+.h-12 {
+  padding: 16px 28px !important;
+  min-height: 48px !important;
+  font-size: 0.85rem !important;
+  letter-spacing: 1.2px !important;
+}
+
+.pixel-btn--icon {
+  width: 42px !important;
+  height: 42px !important;
+  padding: 0 !important;
+}
+
+.w-full {
+  width: 100% !important;
+}
+
+.w-fit {
+  width: fit-content !important;
+}
+
+.pixel__button::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pixel__button:active {
+  transform: translate(2px, 2px);
+  box-shadow: 
+    calc(-1 * var(--box-shadow-width) + 1px) 0 0 0 #000,
+    calc(var(--box-shadow-width) - 1px) 0 0 0 #000,
+    0 calc(var(--box-shadow-width) - 1px) 0 0 #000,
+    0 calc(-1 * var(--box-shadow-width) + 1px) 0 0 #000;
+}
+
+/* Default (Cyan/Sky blue button matching the reference screenshot "Buy now") */
+.pixel-default__button {
+  background-color: #67e8f9;
+  color: #082f49;
+}
+.pixel-default__button::after {
+  border-right: 3px solid #0891b2;
+  border-bottom: 3px solid #0891b2;
+  border-top: 3px solid #a5f3fc;
+  border-left: 3px solid #a5f3fc;
+}
+.pixel-default__button:hover {
+  background-color: #a5f3fc;
+}
+
+/* Omniverse Green (Matching the Logo) */
+.pixel-green__button {
+  background-color: #22c55e;
+  color: #052e16;
+}
+.pixel-green__button::after {
+  border-right: 3px solid #15803d;
+  border-bottom: 3px solid #15803d;
+  border-top: 3px solid #86efac;
+  border-left: 3px solid #86efac;
+}
+.pixel-green__button:hover {
+  background-color: #4ade80;
+}
+
+/* Secondary (Dark Slate) */
+.pixel-secondary__button {
+  background-color: #1e293b;
+  color: #f8fafc;
+}
+.pixel-secondary__button::after {
+  border-right: 3px solid #0f172a;
+  border-bottom: 3px solid #0f172a;
+  border-top: 3px solid #475569;
+  border-left: 3px solid #475569;
+}
+.pixel-secondary__button:hover {
+  background-color: #334155;
+}
+
+/* Success (Green) */
+.pixel-success__button {
+  background-color: #10b981;
+  color: #ffffff;
+}
+.pixel-success__button::after {
+  border-right: 3px solid #047857;
+  border-bottom: 3px solid #047857;
+  border-top: 3px solid #6ee7b7;
+  border-left: 3px solid #6ee7b7;
+}
+
+/* Destructive (Red) */
+.pixel-destructive__button {
+  background-color: #ef4444;
+  color: #ffffff;
+}
+.pixel-destructive__button::after {
+  border-right: 3px solid #b91c1c;
+  border-bottom: 3px solid #b91c1c;
+  border-top: 3px solid #fca5a5;
+  border-left: 3px solid #fca5a5;
+}
+
+/* Warning (Gold/Orange) */
+.pixel-warning__button {
+  background-color: #f59e0b;
+  color: #000000;
+}
+.pixel-warning__button::after {
+  border-right: 3px solid #b45309;
+  border-bottom: 3px solid #b45309;
+  border-top: 3px solid #fde68a;
+  border-left: 3px solid #fde68a;
+}
+
+/* Ghost / Link */
+.pixel-ghost__button {
+  background: transparent;
+  color: #94a3b8;
+  box-shadow: none;
+}
+.pixel-ghost__button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
