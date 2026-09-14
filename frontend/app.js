@@ -6,16 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const modeFileBtn = document.getElementById('mode-file-btn');
   const modeTranscribeBtn = document.getElementById('mode-transcribe-btn');
   const modeBgBtn = document.getElementById('mode-bg-btn');
-  const modePixelBtn = document.getElementById('mode-pixel-btn');
   const sectionUrlMode = document.getElementById('section-url-mode');
   const sectionFileMode = document.getElementById('section-file-mode');
   const sectionTranscribeMode = document.getElementById('section-transcribe-mode');
   const sectionBgMode = document.getElementById('section-bg-mode');
-  const sectionPixelMode = document.getElementById('section-pixel-mode');
 
   function switchMode(mode) {
-    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn, modeBgBtn, modePixelBtn];
-    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode, sectionBgMode, sectionPixelMode];
+    const allBtns = [modeUrlBtn, modeFileBtn, modeTranscribeBtn, modeBgBtn];
+    const allSecs = [sectionUrlMode, sectionFileMode, sectionTranscribeMode, sectionBgMode];
 
     allBtns.forEach(btn => {
       if (btn) {
@@ -39,25 +37,19 @@ document.addEventListener('DOMContentLoaded', () => {
       sectionTranscribeMode.classList.remove('hidden');
     } else if (mode === 'bg' && sectionBgMode) {
       sectionBgMode.classList.remove('hidden');
-    } else if (mode === 'pixel' && sectionPixelMode) {
-      sectionPixelMode.classList.remove('hidden');
     }
-
-    document.body.classList.toggle('pixel-mode-active', mode === 'pixel');
   }
 
   // Gán switchMode vào window để inline onclick và debugging đều hoạt động 100%
   window.switchMode = switchMode;
 
-  // Kiểm tra nếu có hash trên URL (ví dụ #bg, #pixel)
+  // Kiểm tra nếu có hash trên URL (ví dụ #bg)
   if (window.location.hash === '#bg') {
     switchMode('bg');
   } else if (window.location.hash === '#file') {
     switchMode('file');
   } else if (window.location.hash === '#transcribe') {
     switchMode('transcribe');
-  } else if (window.location.hash === '#pixel') {
-    switchMode('pixel');
   }
 
   // Event delegation trên container để click vào icon svg hay text đều hoạt động 100%
@@ -78,18 +70,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (modeFileBtn) modeFileBtn.addEventListener('click', () => switchMode('file'));
   if (modeTranscribeBtn) modeTranscribeBtn.addEventListener('click', () => switchMode('transcribe'));
   if (modeBgBtn) modeBgBtn.addEventListener('click', () => switchMode('bg'));
-  if (modePixelBtn) modePixelBtn.addEventListener('click', () => switchMode('pixel'));
-
-  // Pixel Studio Iframe Reload Action
-  const reloadPixelBtn = document.getElementById('btn-reload-pixel-iframe');
-  if (reloadPixelBtn) {
-    reloadPixelBtn.addEventListener('click', () => {
-      const frame = document.getElementById('pixel-refiner-frame');
-      if (frame) {
-        frame.src = frame.src;
-      }
-    });
-  }
 
   // ==========================================
   // 2. URL TO MP3 / MP4 LOGIC
@@ -211,25 +191,11 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       hideError();
 
-      let url = urlInput ? urlInput.value.trim() : '';
+      const url = urlInput ? urlInput.value.trim() : '';
       if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
         showError('Vui lòng nhập một đường link hợp lệ!');
         return;
       }
-
-      // Tự động làm sạch URL YouTube: loại bỏ list, start_radio, radio params để lấy đúng 1 video
-      try {
-        const u = new URL(url);
-        if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
-          if (u.searchParams.has('v')) {
-            const vid = u.searchParams.get('v');
-            url = `https://www.youtube.com/watch?v=${vid}`;
-          } else if (u.hostname.includes('youtu.be')) {
-            const vid = u.pathname.replace(/^\//, '');
-            if (vid) url = `https://www.youtube.com/watch?v=${vid}`;
-          }
-        }
-      } catch (_) {}
 
       currentTargetUrl = url;
       if (convertBtn) convertBtn.disabled = true;
@@ -243,11 +209,6 @@ document.addEventListener('DOMContentLoaded', () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url })
         });
-
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-          throw new Error(`Máy chủ không phản hồi JSON (Mã lỗi ${res.status}). Vui lòng kiểm tra lại dịch vụ.`);
-        }
 
         const data = await res.json();
         if (!res.ok || !data.success) {
@@ -310,11 +271,6 @@ document.addEventListener('DOMContentLoaded', () => {
               quality: quality
             })
           });
-
-          const ct = res.headers.get('content-type') || '';
-          if (!ct.includes('application/json')) {
-            throw new Error(`Máy chủ không phản hồi JSON (Mã lỗi ${res.status}). Vui lòng thử lại sau.`);
-          }
 
           const data = await res.json();
           if (!res.ok || !data.success) {
@@ -429,8 +385,6 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const res = await fetch(`/api/status/${jobId}`);
         if (!res.ok) throw new Error('Không tìm thấy job');
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) throw new Error('Phản hồi không hợp lệ');
         const job = await res.json();
         handleProgressUpdate(job, triggerBtn);
         if (job.status === 'completed' || job.status === 'error') {
@@ -455,14 +409,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRemoveFile = document.getElementById('btn-remove-file');
 
   const fileOptionsPanel = document.getElementById('file-options-panel');
-  const targetFormatSelect = document.getElementById('target-format');
-  const targetFormatField = document.getElementById('target-format-field');
-  const orientationField = document.getElementById('orientation-field');
-  const pdfaField = document.getElementById('pdfa-field');
   const pageOrientationSelect = document.getElementById('page-orientation');
   const pdfaFormatSelect = document.getElementById('pdfa-format');
   const btnConvertFile = document.getElementById('btn-convert-file');
-  const btnConvertText = document.getElementById('btn-convert-text');
 
   const fileErrorBox = document.getElementById('file-error-box');
   const fileErrorMessage = document.getElementById('file-error-message');
@@ -478,34 +427,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnConvertAnother = document.getElementById('btn-convert-another');
 
   let selectedFileObj = null;
-
-  function updateConversionMode() {
-    if (!selectedFileObj) return;
-    const isPdf = selectedFileObj.name.toLowerCase().endsWith('.pdf');
-
-    if (isPdf) {
-      if (targetFormatField) targetFormatField.classList.remove('hidden');
-      const target = targetFormatSelect ? targetFormatSelect.value : 'docx';
-      if (target === 'docx') {
-        if (orientationField) orientationField.classList.add('hidden');
-        if (pdfaField) pdfaField.classList.add('hidden');
-        if (btnConvertText) btnConvertText.textContent = 'Chuyển Đổi Sang Word (.docx)';
-      } else {
-        if (orientationField) orientationField.classList.remove('hidden');
-        if (pdfaField) pdfaField.classList.remove('hidden');
-        if (btnConvertText) btnConvertText.textContent = 'Chuyển Đổi Sang PDF (Gotenberg)';
-      }
-    } else {
-      if (targetFormatField) targetFormatField.classList.add('hidden');
-      if (orientationField) orientationField.classList.remove('hidden');
-      if (pdfaField) pdfaField.classList.remove('hidden');
-      if (btnConvertText) btnConvertText.textContent = 'Chuyển Đổi Sang PDF (Gotenberg)';
-    }
-  }
-
-  if (targetFormatSelect) {
-    targetFormatSelect.addEventListener('change', updateConversionMode);
-  }
 
   function formatFileBytes(bytes) {
     if (bytes === 0) return '0 Bytes';
@@ -524,10 +445,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return { text: 'EXCEL', bg: 'linear-gradient(135deg, #059669, #10b981)' };
       case 'pptx': case 'ppt': case 'odp':
         return { text: 'PPTX', bg: 'linear-gradient(135deg, #ea580c, #f97316)' };
-      case 'csv':
-        return { text: 'CSV', bg: 'linear-gradient(135deg, #059669, #10b981)' };
-      case 'pdf':
-        return { text: 'PDF', bg: 'linear-gradient(135deg, #dc2626, #ef4444)' };
+      case 'md': case 'markdown':
+        return { text: 'MD', bg: 'linear-gradient(135deg, #7c3aed, #8b5cf6)' };
+      case 'html': case 'htm':
+        return { text: 'HTML', bg: 'linear-gradient(135deg, #0891b2, #06b6d4)' };
       case 'txt': case 'rtf': case 'odt':
         return { text: 'TEXT', bg: 'linear-gradient(135deg, #475569, #64748b)' };
       default:
@@ -537,13 +458,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleFileSelect(file) {
     if (!file) return;
-
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
-    const allowedOfficeExts = ['.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods', '.odp', '.rtf', '.txt', '.csv', '.pdf'];
-    if (!allowedOfficeExts.includes(ext)) {
-      showFileError(`Định dạng '${ext}' không được hỗ trợ. Vui lòng chỉ tải lên tài liệu văn phòng hợp lệ (.pdf, .docx, .doc, .xlsx, .xls, .pptx, .ppt, .csv, .txt, .rtf, .odt...).`);
-      return;
-    }
 
     if (file.size > 100 * 1024 * 1024) {
       showFileError('Dung lượng file vượt quá giới hạn 100MB!');
@@ -566,13 +480,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fileOptionsPanel) fileOptionsPanel.classList.remove('hidden');
     if (fileResultCard) fileResultCard.classList.add('hidden');
     if (fileProgressBanner) fileProgressBanner.classList.add('hidden');
-
-    if (ext === '.pdf') {
-      if (targetFormatSelect) targetFormatSelect.value = 'docx';
-    } else {
-      if (targetFormatSelect) targetFormatSelect.value = 'pdf';
-    }
-    updateConversionMode();
   }
 
   function resetFileSelection() {
@@ -592,12 +499,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (fileProgressBanner) fileProgressBanner.classList.add('hidden');
     if (btnConvertFile) {
       btnConvertFile.disabled = false;
-      const isPdf = selectedFileObj && selectedFileObj.name.toLowerCase().endsWith('.pdf');
-      const isDocx = targetFormatSelect && targetFormatSelect.value === 'docx';
-      const label = (isPdf && isDocx) ? 'Chuyển Đổi Sang Word (.docx)' : 'Chuyển Đổi Sang PDF (Gotenberg)';
       btnConvertFile.innerHTML = `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-        <span id="btn-convert-text">${label}</span>
+        <span>Chuyển Đổi Sang PDF (Gotenberg)</span>
       `;
     }
   }
@@ -663,23 +567,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       hideFileError();
-      const targetFormat = targetFormatSelect ? targetFormatSelect.value : 'pdf';
-      const isDocxTarget = targetFormat === 'docx';
-
       btnConvertFile.disabled = true;
       btnConvertFile.innerHTML = `
         <div class="spinner" style="width:16px;height:16px;border-width:2px;"></div>
-        <span>${isDocxTarget ? 'Đang gửi sang PDF-to-Word Engine...' : 'Đang gửi sang Gotenberg Engine...'}</span>
+        <span>Đang gửi sang Gotenberg Engine...</span>
       `;
 
       if (fileProgressBanner) fileProgressBanner.classList.remove('hidden');
       if (fileProgressBar) fileProgressBar.style.width = '30%';
       if (filePercentText) filePercentText.textContent = '30%';
-      if (fileStatusText) fileStatusText.textContent = isDocxTarget ? 'Đang tải file PDF và khởi động engine...' : 'Đang tải file lên và kết nối LibreOffice / Chromium...';
+      if (fileStatusText) fileStatusText.textContent = 'Đang tải file lên và kết nối LibreOffice / Chromium...';
 
       const formData = new FormData();
       formData.append('file', selectedFileObj);
-      formData.append('target_format', targetFormat);
       if (pageOrientationSelect) {
         formData.append('landscape', pageOrientationSelect.value === 'landscape' ? 'true' : 'false');
       }
@@ -692,7 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (fileProgressBar) {
             fileProgressBar.style.width = '70%';
             filePercentText.textContent = '70%';
-            fileStatusText.textContent = isDocxTarget ? 'pikepdf & pdf2docx đang trích xuất layout & tạo file Word...' : 'Gotenberg đang xử lý và xuất file PDF...';
+            fileStatusText.textContent = 'Gotenberg đang xử lý và xuất file PDF...';
           }
         }, 600);
 
@@ -701,32 +601,20 @@ document.addEventListener('DOMContentLoaded', () => {
           body: formData
         });
 
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-          throw new Error(`Máy chủ chuyển đổi không phản hồi JSON (Mã lỗi ${res.status}). Vui lòng thử lại sau.`);
-        }
-
         const data = await res.json();
         if (!res.ok || !data.success) {
-          throw new Error(data.detail || 'Quá trình chuyển đổi thất bại.');
+          throw new Error(data.detail || 'Quá trình chuyển đổi thất bại qua Gotenberg Engine.');
         }
 
         if (fileProgressBar) fileProgressBar.style.width = '100%';
         if (filePercentText) filePercentText.textContent = '100%';
-        if (fileStatusText) fileStatusText.textContent = isDocxTarget ? 'Chuyển đổi sang Word (.docx) thành công!' : 'Chuyển đổi PDF thành công!';
+        if (fileStatusText) fileStatusText.textContent = 'Chuyển đổi PDF thành công!';
 
-        const isDocxResult = (data.output_filename || '').toLowerCase().endsWith('.docx');
-        const defaultOutName = isDocxResult ? 'document.docx' : 'document.pdf';
-        if (resultPdfFilename) resultPdfFilename.textContent = data.output_filename || defaultOutName;
+        if (resultPdfFilename) resultPdfFilename.textContent = data.output_filename || 'document.pdf';
         if (resultPdfFilesize) resultPdfFilesize.textContent = data.size_str || formatFileBytes(data.size || 0);
         if (btnDownloadPdf) {
           btnDownloadPdf.href = data.download_url;
-          btnDownloadPdf.setAttribute('download', data.output_filename || defaultOutName);
-        }
-
-        const resultFileTag = document.querySelector('.result-tag');
-        if (resultFileTag) {
-          resultFileTag.textContent = isDocxResult ? 'WORD CHUYỂN ĐỔI THÀNH CÔNG' : 'CONVERT HOÀN TẤT';
+          btnDownloadPdf.setAttribute('download', data.output_filename || 'document.pdf');
         }
 
         if (fileResultCard) {

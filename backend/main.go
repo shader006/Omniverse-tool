@@ -22,6 +22,10 @@ func main() {
 	if frontendDir == "" {
 		frontendDir = "/frontend"
 	}
+	// Tự động phát hiện thư mục dist (sản phẩm đóng gói của Vite/React)
+	if stat, err := os.Stat(filepath.Join(frontendDir, "dist", "index.html")); err == nil && !stat.IsDir() {
+		frontendDir = filepath.Join(frontendDir, "dist")
+	}
 
 	gotenbergURL := os.Getenv("GOTENBERG_URL")
 	if gotenbergURL == "" {
@@ -120,18 +124,25 @@ func main() {
 			http.ServeFile(w, r, filePath)
 			return
 		}
-		for _, sub := range []string{"client", "ui"} {
-			subPath := filepath.Join(frontendDir, sub, relPath)
-			if _, err := os.Stat(subPath); err == nil {
+		parentDir := filepath.Dir(frontendDir)
+		for _, candidate := range []string{
+			filepath.Join(frontendDir, "assets", relPath),
+			filepath.Join(frontendDir, "client", relPath),
+			filepath.Join(frontendDir, "ui", relPath),
+			filepath.Join(parentDir, relPath),
+			filepath.Join(parentDir, "client", relPath),
+			filepath.Join(parentDir, "ui", relPath),
+		} {
+			if _, err := os.Stat(candidate); err == nil {
 				setCachingHeaders(w)
-				http.ServeFile(w, r, subPath)
+				http.ServeFile(w, r, candidate)
 				return
 			}
 		}
 		http.NotFound(w, r)
 	})
 
-	// Serve Frontend Web UI
+	// Serve Frontend Web UI (SPA Fallback)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Content-Type", "application/json")
@@ -148,17 +159,25 @@ func main() {
 		}
 		// Direct asset check
 		filePath := filepath.Join(frontendDir, r.URL.Path)
-		if _, err := os.Stat(filePath); err == nil {
+		if stat, err := os.Stat(filePath); err == nil && !stat.IsDir() {
 			http.ServeFile(w, r, filePath)
 			return
 		}
-		for _, sub := range []string{"client", "ui"} {
-			subPath := filepath.Join(frontendDir, sub, r.URL.Path)
-			if _, err := os.Stat(subPath); err == nil {
-				http.ServeFile(w, r, subPath)
+		parentDir := filepath.Dir(frontendDir)
+		for _, candidate := range []string{
+			filepath.Join(frontendDir, "assets", r.URL.Path),
+			filepath.Join(frontendDir, "client", r.URL.Path),
+			filepath.Join(frontendDir, "ui", r.URL.Path),
+			filepath.Join(parentDir, r.URL.Path),
+			filepath.Join(parentDir, "client", r.URL.Path),
+			filepath.Join(parentDir, "ui", r.URL.Path),
+		} {
+			if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+				http.ServeFile(w, r, candidate)
 				return
 			}
 		}
+		// Fallback cho client-side routing (React SPA)
 		http.ServeFile(w, r, filepath.Join(frontendDir, "index.html"))
 	})
 

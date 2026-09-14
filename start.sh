@@ -42,6 +42,15 @@ fi
 
 export WORKSPACE_DIR="${LOCAL_WORKSPACE_FOLDER:-$DIR}"
 
+# 3.5 Kiểm tra và tự động đóng gói Frontend React/Vite nếu cần
+if [ -f "$DIR/frontend/package.json" ] && command -v npm >/dev/null 2>&1; then
+    if [ ! -d "$DIR/frontend/dist" ] || [ "$DIR/frontend/src" -nt "$DIR/frontend/dist" ]; then
+        echo -e "${YELLOW}⚡ Đang đóng gói Frontend React/Vite (npm run build)...${NC}"
+        (cd "$DIR/frontend" && npm run build)
+        echo -e "${GREEN}✅ Build frontend hoàn tất!${NC}"
+    fi
+fi
+
 # 4. Deploy stack (có cơ chế tự động thử lại 1 lần nếu gặp race condition mạng overlay)
 echo -e "📦 Đang triển khai stack 'omniverse' từ docker-stack.yml..."
 if ! docker stack deploy --resolve-image=never -c docker-stack.yml omniverse; then
