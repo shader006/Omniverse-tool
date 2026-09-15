@@ -449,7 +449,7 @@ func tracingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(srw, r.WithContext(ctx))
 
 		// Phân loại request để xác định có cần trace hay không
-		isRoutineHealth := (r.URL.Path == "/health" || r.URL.Path == "/api/health") && srw.statusCode < 500
+		isRoutineHealth := (r.URL.Path == "/health" || r.URL.Path == "/api/health" || r.URL.Path == "/api/pixel/health") && srw.statusCode < 500
 		isApi := strings.HasPrefix(r.URL.Path, "/api/")
 		isErrorOrProbe := srw.statusCode >= 400
 

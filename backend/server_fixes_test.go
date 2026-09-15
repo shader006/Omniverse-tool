@@ -308,18 +308,35 @@ func TestSecurityProbeTracingAndPogocache(t *testing.T) {
 		t.Errorf("Tracer không đẩy trace cho Security Probe /.env")
 	}
 
-	// Test 2: Endpoint /api/pixel/health không bị filter bỏ sót
+	// Test 2a: Endpoint /api/pixel/health bình thường (200 OK) được lọc bỏ để tránh spam trace
 	reqPixel := httptest.NewRequest("GET", "/api/pixel/health", nil)
 	recPixel := httptest.NewRecorder()
 	handler.ServeHTTP(recPixel, reqPixel)
 
 	select {
 	case item := <-traceChan:
-		if !strings.Contains(item.Name, "PixelFixer Health") {
-			t.Errorf("Kỳ vọng trace ghi nhận PixelFixer Health, nhận: %s", item.Name)
+		t.Errorf("Kỳ vọng routine healthcheck /api/pixel/health bị lọc bỏ khi 200 OK, nhưng nhận được span: %s", item.Name)
+	case <-time.After(100 * time.Millisecond):
+		// Thành công: không có trace bị đẩy
+	}
+
+	// Test 2b: Khi /api/pixel/health gặp sự cố (>= 500), tracer vẫn bắt buộc phải ghi nhận
+	muxErr := http.NewServeMux()
+	muxErr.HandleFunc("/api/pixel/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"error"}`))
+	})
+	handlerErr := tracingMiddleware(muxErr)
+	recPixelErr := httptest.NewRecorder()
+	handlerErr.ServeHTTP(recPixelErr, reqPixel)
+
+	select {
+	case item := <-traceChan:
+		if !strings.Contains(item.Name, "PixelFixer Health") && !strings.Contains(item.Name, "503") {
+			t.Errorf("Kỳ vọng trace ghi nhận lỗi PixelFixer Health, nhận: %s", item.Name)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Errorf("Tracer bỏ sót /api/pixel/health")
+		t.Errorf("Tracer bỏ sót lỗi /api/pixel/health khi trả về 503")
 	}
 
 	// Test 3: Pogocache Context-aware methods
