@@ -20,14 +20,8 @@ import urllib.error
 import urllib.parse
 
 # ── Configuration ────────────────────────────────────────────────────────────
-DEFAULT_OBSERVE_URL = "http://shader.tail4ddc22.ts.net:8001"
+DEFAULT_OBSERVE_URL = "http://localhost:8001"
 OBSERVE_URL = os.getenv("HIAI_OBSERVE_URL", DEFAULT_OBSERVE_URL).rstrip("/")
-
-# Normalize raw Tailscale IP to MagicDNS domain (Tailscale Serve routes by Host header)
-if "100.93.1.114:8001" in OBSERVE_URL:
-    OBSERVE_URL = OBSERVE_URL.replace("100.93.1.114:8001", "shader.tail4ddc22.ts.net:8001")
-elif "100.93.1.114" in OBSERVE_URL:
-    OBSERVE_URL = OBSERVE_URL.replace("100.93.1.114", "shader.tail4ddc22.ts.net")
 API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "")
 HOST_ID = os.getenv("HOST_ID", "pail")
 INTERVAL = int(os.getenv("INTERVAL_SECONDS", "15"))
@@ -621,7 +615,7 @@ Sử dụng:
 
 Tùy chọn:
   --once               Gửi snapshot 1 lần duy nhất rồi thoát (tiện kiểm tra kết nối)
-  --url <URL>          Chỉ định URL của HiAI Observe Server (mặc định: http://shader.tail4ddc22.ts.net:8001)
+  --url <URL>          Chỉ định URL của HiAI Observe Server (mặc định: http://localhost:8001)
   --proxy <URL>        Chỉ định Proxy (ví dụ: http://127.0.0.1:1055, hoặc 'none' để tắt)
   --disk-path <path>   Chỉ định đường dẫn ổ đĩa cần giám sát (mặc định: tự động tìm phân vùng được phân chia, vd: /mnt/data/ssd980)
   --quiet, -q          Chế độ im lặng (chỉ in log khi có lỗi kết nối, không spam log)
@@ -654,10 +648,6 @@ def main():
         idx = args.index("--url")
         if idx + 1 < len(args):
             OBSERVE_URL = args[idx + 1].rstrip("/")
-            if "100.93.1.114:8001" in OBSERVE_URL:
-                OBSERVE_URL = OBSERVE_URL.replace("100.93.1.114:8001", "shader.tail4ddc22.ts.net:8001")
-            elif "100.93.1.114" in OBSERVE_URL:
-                OBSERVE_URL = OBSERVE_URL.replace("100.93.1.114", "shader.tail4ddc22.ts.net")
             INGEST_ENDPOINT = f"{OBSERVE_URL}/api/agent/ingest"
             setup_proxy()
 

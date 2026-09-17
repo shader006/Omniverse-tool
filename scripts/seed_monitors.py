@@ -40,10 +40,10 @@ MONITORS = [
         "monitor_group": "Observability"
     },
     {
-        "name": "💻 Pail Server (duongtbn) - Nginx Web (Port 80)",
-        "url": "http://100.85.212.97/",
+        "name": "💻 Remote Worker Server - Web (Port 80)",
+        "url": os.getenv("REMOTE_SERVER_URL", "http://localhost:80/"),
         "interval_seconds": 30,
-        "monitor_group": "Tailscale Nodes"
+        "monitor_group": "Remote Nodes"
     }
 ]
 
