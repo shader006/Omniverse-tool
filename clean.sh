@@ -198,8 +198,8 @@ if [ "$MOD_APP" = true ]; then
         fi
     fi
 
-    # 2. Cache phát triển trong các thư mục dự án cho phép (Allowlist: backend, tests)
-    ALLOWLIST_DIRS=("backend" "tests")
+    # 2. Cache phát triển trong các thư mục dự án cho phép (Allowlist: backend, tests, scripts)
+    ALLOWLIST_DIRS=("backend" "tests" "scripts")
     TARGETS=()
     for d in "${ALLOWLIST_DIRS[@]}"; do
         if [ -d "$d" ]; then
@@ -215,6 +215,21 @@ if [ "$MOD_APP" = true ]; then
             find "${TARGETS[@]}" -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name ".ruff_cache" -o -name ".mypy_cache" \) -exec rm -rf {} + 2>/dev/null || true
             echo -e "   ${GREEN}✓ Đã xóa sạch cache mã nguồn (__pycache__, pytest, ruff) trong: ${TARGETS[*]}${NC}"
         fi
+    fi
+
+    # 3. Dọn dẹp ảnh test tạm trong data/ và báo cáo quét tạm thời
+    if [ -d "data" ]; then
+        if [ "$DRY_RUN" = true ]; then
+            DATA_COUNT=$(find data/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.webp" \) 2>/dev/null | wc -l)
+            echo -e "   • data/ (Ảnh test tạm): Tìm thấy ${BOLD}${DATA_COUNT}${NC} files có thể dọn dẹp."
+        else
+            find data/ -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.webp" \) -delete 2>/dev/null || true
+            echo -e "   ${GREEN}✓ Đã dọn dẹp các file ảnh test tạm thời trong data/${NC}"
+        fi
+    fi
+
+    if [ "$DRY_RUN" = false ]; then
+        rm -f bug_report*.md *_report*.json semgrep_report*.json 2>/dev/null || true
     fi
 fi
 

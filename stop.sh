@@ -55,6 +55,12 @@ for i in {1..15}; do
 done
 echo ""
 
+# 4. Dừng hệ thống giám sát HiAI Observe nếu có
+if [ -d "$DIR/hiai-observe" ] && [ -f "$DIR/hiai-observe/docker-compose.yml" ]; then
+    echo -e "🔍 Đang dừng các container của HiAI Observe..."
+    docker compose -f "$DIR/hiai-observe/docker-compose.yml" down 2>/dev/null || true
+fi
+
 # Cho Docker daemon nghỉ 1 nhịp để hoàn tất state sync
 sleep 1
 

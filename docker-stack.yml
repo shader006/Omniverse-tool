@@ -212,7 +212,7 @@ services:
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiNWNiYjk4Nzg3OWEwODcyM2FmYzQ3Nzg1MDIwZDkxZGYiLCJ0IjoiYTgwZDBjMGUtNGQxMy00ZjUyLTg0MDctOGRiZjMwNTllN2ZmIiwicyI6Ik5UWTJPRFJtWXpNdFlqa3pNaTAwWlRnNExUaGtOV0V0TXpNNU9XWmpabUUxTmpkbCJ9}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
     security_opt:
       - no-new-privileges:true
     deploy:

@@ -51,6 +51,12 @@ if [ -f "$DIR/frontend/package.json" ] && command -v npm >/dev/null 2>&1; then
     fi
 fi
 
+# 3.8 Khởi động hệ thống giám sát HiAI Observe nếu có
+if [ -d "$DIR/hiai-observe" ] && [ -f "$DIR/hiai-observe/docker-compose.yml" ]; then
+    echo -e "${YELLOW}🔍 Đang kiểm tra & khởi động HiAI Observe (Port 8001)...${NC}"
+    docker compose -f "$DIR/hiai-observe/docker-compose.yml" up -d
+fi
+
 # 4. Deploy stack (có cơ chế tự động thử lại 1 lần nếu gặp race condition mạng overlay)
 echo -e "📦 Đang triển khai stack 'omniverse' từ docker-stack.yml..."
 if ! docker stack deploy --resolve-image=never -c docker-stack.yml omniverse; then
@@ -69,12 +75,17 @@ echo -e "\n"
 
 # 6. Hiển thị bảng trạng thái dịch vụ
 echo -e "${BLUE}======================================================================${NC}"
-echo -e "${GREEN}✅ TRẠNG THÁI CÁC DỊCH VỤ OMNIVERSE TOOL:${NC}"
+echo -e "${GREEN}✅ TRẠNG THÁI CÁC DỊCH VỤ OMNIVERSE TOOL & HIAI OBSERVE:${NC}"
 echo -e "${BLUE}======================================================================${NC}"
 docker service ls --filter "name=omniverse_" --format "table {{.Name}}\t{{.Mode}}\t{{.Replicas}}\t{{.Ports}}"
+if [ -d "$DIR/hiai-observe" ] && [ -f "$DIR/hiai-observe/docker-compose.yml" ]; then
+    echo -e "\n${CYAN}📊 Trạng thái HiAI Observe Containers:${NC}"
+    docker compose -f "$DIR/hiai-observe/docker-compose.yml" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+fi
 
 echo -e "\n${GREEN}✨ Hướng dẫn truy cập:${NC}"
 echo -e "   - Cổng Gateway trực tiếp:  ${BLUE}http://localhost:8000${NC}"
-echo -e "   - Cổng Pingora Proxy:      ${BLUE}http://localhost:8080${NC}"
+echo -e "   - Cổng Pingora Proxy:      ${BLUE}http://localhost:80${NC}"
+echo -e "   - Cổng HiAI Observe APM:   ${BLUE}http://localhost:8001${NC}"
 echo -e "   - Dừng toàn bộ hệ thống:   ${YELLOW}./stop.sh${NC} (hoặc ./stop)"
 echo -e "${BLUE}======================================================================${NC}\n"
