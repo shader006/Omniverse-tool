@@ -10,10 +10,21 @@ import PixelFixer from './components/PixelFixer/PixelFixer';
 import Footer from './components/Footer';
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
 import PixelMascot from './components/PixelMascot/PixelMascot';
-
 export default function App() {
-  const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'tools'
-  const [currentMode, setCurrentMode] = useState('url');
+  const getInitialRoute = () => {
+    const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '').toLowerCase() : '';
+    if (['url', 'file', 'transcribe', 'bg', 'pixel'].includes(hash)) {
+      return { page: 'tools', mode: hash };
+    }
+    if (['tools', 'tools-workspace'].includes(hash)) {
+      return { page: 'tools', mode: 'url' };
+    }
+    return { page: 'home', mode: 'url' };
+  };
+
+  const initialRoute = getInitialRoute();
+  const [currentPage, setCurrentPage] = useState(initialRoute.page);
+  const [currentMode, setCurrentMode] = useState(initialRoute.mode);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [lang, setLang] = useState('vi'); // 'vi' | 'en'
 

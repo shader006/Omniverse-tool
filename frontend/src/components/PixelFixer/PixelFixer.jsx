@@ -22,6 +22,25 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [scaleFactor, setScaleFactor] = useState('1'); // '1' | '2' | '3' | '4' | '0'
   const [palette, setPalette] = useState('auto'); // 'auto' | 'pico8' | 'gameboy' | 'nes' | 'custom'
   const [customColors, setCustomColors] = useState(16);
+  const [sourceDimensions, setSourceDimensions] = useState(null);
+
+  useEffect(() => {
+    if (!sourceUrl) {
+      setSourceDimensions(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      if (img.naturalWidth && img.naturalHeight) {
+        setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+      }
+    };
+    img.src = sourceUrl;
+  }, [sourceUrl]);
+
+  const sourceAspectRatio = sourceDimensions 
+    ? `${sourceDimensions.width} / ${sourceDimensions.height}` 
+    : 'auto';
 
   // Grid Controls
   const [gridMode, setGridMode] = useState('auto'); // 'auto' | 'preset' | 'step' | 'custom'
@@ -327,6 +346,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     setSourceUrl('');
     setResultUrl('');
     setResultBlob(null);
+    setSourceDimensions(null);
     setErrorMsg('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -538,50 +558,63 @@ export default function PixelFixer({ lang = 'vi' }) {
                   </div>
                 )}
 
-                {/* Before: Original Blurry / JPEG */}
-                <div className="pixel-compare-layer pixel-compare-before">
+                {/* Unified Image Stage: Perfectly locked to original image bounds */}
+                <div 
+                  className="pixel-compare-stage"
+                  style={{ 
+                    transform: `scale(${zoomLevel})`, 
+                    transformOrigin: 'center' 
+                  }}
+                >
+                  {/* Layer 1: Base Original Image establishes exact width, height and aspect ratio */}
                   <img 
                     src={sourceUrl} 
                     alt="Original" 
-                    style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                    className="pixel-stage-base"
+                    onLoad={(e) => {
+                      if (!sourceDimensions && e.target.naturalWidth) {
+                        setSourceDimensions({ width: e.target.naturalWidth, height: e.target.naturalHeight });
+                      }
+                    }}
                   />
-                  <span className="pixel-compare-tag tag-before">{tr.pixel_slider_before}</span>
-                </div>
 
-                {/* After: Crisp Restored Pixel Art */}
-                <div 
-                  className="pixel-compare-layer pixel-compare-after"
-                  style={{ clipPath: `polygon(${sliderPos}% 0, 100% 0, 100% 100%, ${sliderPos}% 100%)` }}
-                >
-                  <div className="pixel-checker-bg">
+                  {/* Layer 2: Overlay Restored Pixel Art locked 100% to base bounds and clipped by slider */}
+                  <div 
+                    className="pixel-stage-overlay"
+                    style={{ clipPath: `polygon(${sliderPos}% 0, 100% 0, 100% 100%, ${sliderPos}% 100%)` }}
+                  >
                     <img 
                       src={resultUrl || sourceUrl} 
                       alt="Restored Pixel Art" 
-                      className="pixel-render-img" 
-                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }}
+                      className="pixel-stage-overlay-img" 
                     />
                   </div>
-                  <span className="pixel-compare-tag tag-after">{tr.pixel_slider_after}</span>
-                </div>
 
-                {/* Draggable Slider Handle */}
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={sliderPos}
-                  className="pixel-slider-input"
-                  onChange={(e) => setSliderPos(Number(e.target.value))}
-                />
-
-                <div className="pixel-slider-divider" style={{ left: `${sliderPos}%` }}>
-                  <div className="pixel-slider-knob">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="15 18 9 12 15 6"></polyline>
-                      <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
+                  {/* Divider Line & Handle locked directly to stage */}
+                  <div className="pixel-slider-divider" style={{ left: `${sliderPos}%` }}>
+                    <div className="pixel-slider-knob">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                        <polyline points="9 18 15 12 9 6"></polyline>
+                      </svg>
+                    </div>
                   </div>
+
+                  {/* Range Slider covering the image stage */}
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={sliderPos}
+                    className="pixel-slider-input"
+                    onChange={(e) => setSliderPos(Number(e.target.value))}
+                    aria-label="Comparison slider"
+                  />
                 </div>
+
+                {/* Floating Corner Tags */}
+                <span className="pixel-compare-tag pixel-tag-before">{tr.pixel_slider_before}</span>
+                <span className="pixel-compare-tag pixel-tag-after">{tr.pixel_slider_after}</span>
               </div>
             )}
 
@@ -591,7 +624,7 @@ export default function PixelFixer({ lang = 'vi' }) {
                   <div className="pixel-side-header">
                     <span>{tr.pixel_slider_before}</span>
                   </div>
-                  <div className="pixel-side-body">
+                  <div className="pixel-side-body pixel-checker-bg">
                     <img 
                       src={sourceUrl} 
                       alt="Original" 
