@@ -28,8 +28,8 @@ services:
       - GOTENBERG_URL=http://tasks.gotenberg:3000
       - POGOCACHE_ADDR=tasks.pogocache:9401
       - WORKER_YTDLP_URL=http://tasks.worker-ytdlp:8001
-      - WORKER_WHISPER_URL=http://tasks.worker-whisper:8002
-      - WORKER_RMBG_URL=http://tasks.worker-rmbg:8003
+      - WORKER_WHISPER_URL=${WORKER_WHISPER_URL:-http://pail:8002}
+      - WORKER_RMBG_URL=${WORKER_RMBG_URL:-http://pail:8003}
       - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://tasks.worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
@@ -68,7 +68,7 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
-      replicas: 1
+      replicas: ${WORKER_WHISPER_REPLICAS:-0}
       endpoint_mode: dnsrr
       restart_policy:
         condition: on-failure
@@ -90,7 +90,7 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
-      replicas: 1
+      replicas: ${WORKER_RMBG_REPLICAS:-0}
       endpoint_mode: dnsrr
       restart_policy:
         condition: any

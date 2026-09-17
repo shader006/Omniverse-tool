@@ -16,8 +16,8 @@ services:
       - GOTENBERG_URL=http://gotenberg:3000
       - POGOCACHE_ADDR=pogocache:9401
       - WORKER_YTDLP_URL=http://worker-ytdlp:8001
-      - WORKER_WHISPER_URL=http://worker-whisper:8002
-      - WORKER_RMBG_URL=http://worker-rmbg:8003
+      - WORKER_WHISPER_URL=${WORKER_WHISPER_URL:-http://pail:8002}
+      - WORKER_RMBG_URL=${WORKER_RMBG_URL:-http://pail:8003}
       - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4

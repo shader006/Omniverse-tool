@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,8 +35,20 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
-	filename := filepath.Base(filepath.Clean(strings.TrimPrefix(r.URL.Path, "/api/file/")))
-	if filename == "" || filename == "." || filename == "/" {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rawFilename := strings.TrimPrefix(r.URL.Path, "/api/file/")
+	unescapedFilename, err := url.PathUnescape(rawFilename)
+	if err != nil {
+		http.Error(w, "Đường dẫn file không hợp lệ.", http.StatusBadRequest)
+		return
+	}
+
+	filename := filepath.Base(filepath.Clean(unescapedFilename))
+	if filename == "." || filename == "/" || filename == "" {
 		http.Error(w, "Tên file không hợp lệ.", http.StatusBadRequest)
 		return
 	}
@@ -48,6 +61,9 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if s.proxyFileFromWorkers(w, r, filename) {
+			return
+		}
 		http.Error(w, "File không tồn tại hoặc đã hết hạn.", http.StatusNotFound)
 		return
 	}
@@ -92,3 +108,35 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 
 	http.ServeFile(w, r, filePath)
 }
+
+func (s *Server) proxyFileFromWorkers(w http.ResponseWriter, r *http.Request, filename string) bool {
+	workers := []string{s.workerRmbgURL, s.workerWhisperURL}
+	for _, workerURL := range workers {
+		if workerURL == "" {
+			continue
+		}
+		targetURL := fmt.Sprintf("%s/api/file/%s", strings.TrimRight(workerURL, "/"), url.PathEscape(filename))
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, targetURL, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode == http.StatusOK {
+			defer resp.Body.Close()
+			for k, v := range resp.Header {
+				if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "Content-Disposition") || strings.EqualFold(k, "Content-Length") {
+					w.Header()[k] = v
+				}
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.Copy(w, resp.Body)
+			return true
+		}
+		resp.Body.Close()
+	}
+	return false
+}
+
