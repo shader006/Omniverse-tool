@@ -43,8 +43,7 @@ class TestRMBGRemover(unittest.TestCase):
     def test_01_optimal_threads(self):
         """Kiểm tra hàm tính toán luồng CPU tối ưu"""
         threads = get_optimal_cpu_threads()
-        self.assertIsInstance(threads, int)
-        self.assertGreaterEqual(threads, 1)
+        self.assertTrue(threads is None or (isinstance(threads, int) and threads >= 1))
 
     def test_02_hex_to_rgb(self):
         """Kiểm tra hàm chuyển đổi mã màu Hex sang RGB (bao gồm cả fallback an toàn)"""

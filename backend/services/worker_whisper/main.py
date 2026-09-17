@@ -14,7 +14,7 @@ import struct
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
-import uvicorn
+from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("worker_whisper")
@@ -163,6 +163,13 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Worker Whisper Microservice", version="1.0.0", lifespan=lifespan)
+ 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "detail": exc.detail},
+    )
 
 @app.get("/health")
 def health_check():

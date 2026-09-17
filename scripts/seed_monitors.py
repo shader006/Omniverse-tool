@@ -38,6 +38,12 @@ MONITORS = [
         "url": "http://localhost:8001/api/health",
         "interval_seconds": 30,
         "monitor_group": "Observability"
+    },
+    {
+        "name": "💻 Pail Server (duongtbn) - Nginx Web (Port 80)",
+        "url": "http://100.85.212.97/",
+        "interval_seconds": 30,
+        "monitor_group": "Tailscale Nodes"
     }
 ]
 

@@ -21,6 +21,8 @@ services:
       - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     depends_on:
       - gotenberg
       - pogocache
@@ -42,6 +44,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8001
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
 
   worker-whisper:
     build:
@@ -54,6 +58,8 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
 
   worker-rmbg:
     build:
@@ -70,6 +76,8 @@ services:
       - PORT=8003
       - BIREFNET_CACHE_DIR=/root/.cache/birefnet
       - IDLE_RECYCLE_SECONDS=120
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
 
   worker-pixelfixer:
     build:

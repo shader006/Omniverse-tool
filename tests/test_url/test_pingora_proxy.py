@@ -57,12 +57,21 @@ class TestPingoraProxy(unittest.TestCase):
             data=payload,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=25) as res:
-            self.assertEqual(res.status, 200)
-            data = json.loads(res.read().decode("utf-8"))
-            self.assertTrue(data.get("success"))
-            self.assertIn("job_id", data)
-            print(f"[+] Pingora API Download Job: ID = '{data['job_id']}', Cached = {data.get('cached')}")
+        for attempt in range(3):
+            try:
+                with urllib.request.urlopen(req, timeout=25) as res:
+                    self.assertEqual(res.status, 200)
+                    data = json.loads(res.read().decode("utf-8"))
+                    self.assertTrue(data.get("success"))
+                    self.assertIn("job_id", data)
+                    print(f"[+] Pingora API Download Job: ID = '{data['job_id']}', Cached = {data.get('cached')}")
+                    break
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < 2:
+                    import time
+                    time.sleep(1.5)
+                    continue
+                raise
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import unittest
 
 # Path setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
-for path in ["/app", os.path.abspath(os.path.join(current_dir, "..")), os.path.abspath(os.path.join(current_dir, "..", "backend"))]:
+for path in ["/app", os.path.abspath(os.path.join(current_dir, "..", "..")), os.path.abspath(os.path.join(current_dir, "..", "..", "backend"))]:
     if os.path.exists(path) and path not in sys.path:
         sys.path.insert(0, path)
 
@@ -66,8 +66,11 @@ def print_banner(title: str):
 
 class FacebookPerformanceTest(unittest.TestCase):
 
-    def test_facebook_real_world_and_cache(self):
+    def test_facebook_download_and_cache(self):
         """Đo lường chi tiết tốc độ xử lý thực tế và kiểm tra hiệu năng Cache"""
+        import app.url_conver.metadata as md
+        if getattr(md, "yt_dlp", None) is None:
+            raise unittest.SkipTest("yt_dlp not installed on host (available inside worker container)")
         print_banner("KIỂM THỬ THỰC TẾ HIỆU NĂNG FACEBOOK (COLD RUN VS CACHE HIT)")
 
         results = []

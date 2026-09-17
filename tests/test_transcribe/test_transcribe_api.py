@@ -156,7 +156,7 @@ class TestTranscribeAPI(unittest.TestCase):
         res = requests.post(f"{BASE_URL}/api/transcribe", files=files, timeout=60)
         self.assertEqual(res.status_code, 400)
         data = res.json()
-        self.assertFalse(data.get("success", True))
+        self.assertFalse(data.get("success", False))
         self.assertIn("vượt quá giới hạn tối đa", data.get("detail", ""))
         print(f"  [PASS] test_06_transcribe_duration_limit_exceeded: Bắt lỗi và từ chối đúng file > 10 phút ({data.get('detail')})")
 

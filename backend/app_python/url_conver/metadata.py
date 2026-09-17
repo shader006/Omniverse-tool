@@ -1,4 +1,7 @@
-import yt_dlp
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
 import re
 from typing import Dict, Any, Tuple, Optional
 from .utils import clean_url_key

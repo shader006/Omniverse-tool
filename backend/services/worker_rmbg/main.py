@@ -5,8 +5,10 @@ import io
 import base64
 import logging
 import queue
+import re
 from typing import Optional, Union, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import JSONResponse
 from PIL import Image
 import uvicorn
 
@@ -183,6 +185,13 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="BiRefNet-Lite OpenVINO Worker", version="2.1.0", lifespan=lifespan)
+ 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "detail": exc.detail},
+    )
 
 @app.get("/health")
 def health_check():
@@ -234,7 +243,10 @@ async def remove_bg(
         raise HTTPException(status_code=400, detail=f"Định dạng '{ext}' không được hỗ trợ. Vui lòng chọn ảnh PNG, JPG, WEBP hoặc BMP.")
 
     temp_id = uuid.uuid4().hex[:8]
-    base_name = os.path.splitext(file.filename)[0]
+    raw_base = os.path.splitext(os.path.basename(file.filename))[0]
+    base_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', raw_base)
+    if not base_name:
+        base_name = "image"
     out_filename = f"{temp_id}_{base_name}_nobg.png"
     out_filepath = os.path.join(DOWNLOAD_DIR, out_filename)
 

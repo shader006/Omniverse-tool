@@ -4,8 +4,8 @@ import unittest
 
 # Thêm đường dẫn thư mục gốc chứa package 'app'
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.abspath(os.path.join(current_dir, ".."))
-backend_dir = os.path.abspath(os.path.join(current_dir, "..", "backend"))
+parent_dir = os.path.abspath(os.path.join(current_dir, "..", ".."))
+backend_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "backend"))
 
 for path in ["/app", backend_dir, parent_dir]:
     if os.path.exists(path) and path not in sys.path:
@@ -34,6 +34,9 @@ class TestDownloader(unittest.TestCase):
 
     def test_02_get_media_info(self):
         """Kiểm tra hàm trích xuất metadata video nhanh"""
+        import app.url_conver.metadata as md
+        if getattr(md, "yt_dlp", None) is None:
+            raise unittest.SkipTest("yt_dlp not installed on host (available inside worker container)")
         test_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # Video 'Me at the zoo' (18s)
         info = get_media_info(test_url)
         self.assertIn("title", info)
@@ -43,6 +46,9 @@ class TestDownloader(unittest.TestCase):
 
     def test_03_download_mp3_with_progress(self):
         """Kiểm tra tải và chuyển đổi sang MP3 kèm callback tiến độ"""
+        import app.url_conver.downloader as dl
+        if getattr(dl, "yt_dlp", None) is None:
+            raise unittest.SkipTest("yt_dlp not installed on host (available inside worker container)")
         test_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
         progress_records = []
 

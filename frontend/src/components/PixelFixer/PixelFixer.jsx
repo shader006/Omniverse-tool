@@ -609,6 +609,7 @@ export default function PixelFixer({ lang = 'vi' }) {
                     <img 
                       src={resultUrl || sourceUrl} 
                       alt="Restored Pixel Art" 
+                      className="pixel-render-img"
                       style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
                     />
                   </div>
@@ -627,7 +628,8 @@ export default function PixelFixer({ lang = 'vi' }) {
                 <img 
                   src={resultUrl || sourceUrl} 
                   alt="Restored Pixel Art" 
-                  style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center', maxWidth: '90%', maxHeight: '520px', imageRendering: 'pixelated' }} 
+                  className="pixel-render-img"
+                  style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
                 />
               </div>
             )}

@@ -1,10 +1,16 @@
 import os
 import hashlib
-import yt_dlp
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
 from typing import Callable, Optional, Dict, Any
 from .utils import sanitize_filename, clean_url_key
 
-DEFAULT_DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
+DEFAULT_DOWNLOAD_DIR = os.getenv(
+    "DOWNLOAD_DIR",
+    "/app/downloads" if os.path.exists("/app") else os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "downloads"))
+)
 
 
 def generate_cache_key(url: str, media_format: str, quality: str) -> str:

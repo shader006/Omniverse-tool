@@ -117,9 +117,36 @@ func main() {
 		w.Header().Set("Expires", "0")
 	}
 
+	isBlockedStaticFile := func(p string) bool {
+		base := strings.ToLower(filepath.Base(filepath.Clean(p)))
+		if strings.HasPrefix(base, ".") {
+			return true
+		}
+		blockedExact := map[string]bool{
+			"package.json":      true,
+			"package-lock.json": true,
+			"tsconfig.json":     true,
+			"vite.config.js":    true,
+			"vite.config.ts":    true,
+		}
+		if blockedExact[base] {
+			return true
+		}
+		ext := filepath.Ext(base)
+		blockedExts := map[string]bool{
+			".go": true, ".py": true, ".sh": true, ".ts": true, ".tsx": true,
+			".env": true, ".lock": true,
+		}
+		return blockedExts[ext]
+	}
+
 	// Serve static assets under /static/
 	mux.HandleFunc("/static/", func(w http.ResponseWriter, r *http.Request) {
 		relPath := strings.TrimPrefix(r.URL.Path, "/static/")
+		if isBlockedStaticFile(relPath) {
+			http.NotFound(w, r)
+			return
+		}
 		filePath := filepath.Join(frontendDir, relPath)
 		if _, err := os.Stat(filePath); err == nil {
 			setCachingHeaders(w)
@@ -153,6 +180,10 @@ func main() {
 				"success": false,
 				"error":   "API endpoint không tồn tại: " + r.URL.Path,
 			})
+			return
+		}
+		if isBlockedStaticFile(r.URL.Path) {
+			http.NotFound(w, r)
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {

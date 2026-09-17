@@ -9,6 +9,7 @@ import RemoveBackground from './components/RemoveBackground/RemoveBackground';
 import PixelFixer from './components/PixelFixer/PixelFixer';
 import Footer from './components/Footer';
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
+import PixelMascot from './components/PixelMascot/PixelMascot';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'tools'
@@ -97,6 +98,9 @@ export default function App() {
 
       {/* Modal đăng nhập dùng chung ở cả 2 view */}
       <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} lang={lang} />
+
+      {/* Mascot Cáo Pixel tương tác thông minh */}
+      <PixelMascot lang={lang} />
     </div>
   );
 }

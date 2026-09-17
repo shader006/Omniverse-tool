@@ -83,7 +83,18 @@ class TestRmbgClientHybrid(unittest.TestCase):
         print(f"  [PASS] test_02: Phục vụ static file /static/rmbg-client.js thành công ({len(res.content)} bytes).")
 
     def test_03_frontend_ui_integration(self):
-        """Kiểm tra index.html và app.js đã tích hợp Engine selector và script tag"""
+        """Kiểm tra giao diện (React component hoặc HTML/JS) đã tích hợp Engine selector và hybrid logic"""
+        react_comp_path = os.path.join(FRONTEND_DIR, "src", "components", "RemoveBackground", "RemoveBackground.jsx")
+        if os.path.isfile(react_comp_path):
+            with open(react_comp_path, "r", encoding="utf-8") as f:
+                comp_src = f.read()
+            self.assertIn("removeBackgroundHybrid", comp_src, "RemoveBackground.jsx chưa gọi removeBackgroundHybrid")
+            self.assertIn("changeExistingBackgroundColor", comp_src, "RemoveBackground.jsx chưa gọi changeExistingBackgroundColor")
+            self.assertIn("client", comp_src, "RemoveBackground.jsx thiếu mode client")
+            self.assertIn("server", comp_src, "RemoveBackground.jsx thiếu mode server")
+            print("  [PASS] test_03: Giao diện React RemoveBackground.jsx đã tích hợp đầy đủ UI & logic Hybrid.")
+            return
+
         index_html_path = os.path.join(FRONTEND_DIR, "index.html")
         app_js_path = os.path.join(FRONTEND_DIR, "client", "app.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "app.js")) else os.path.join(FRONTEND_DIR, "app.js")
 
@@ -144,23 +155,32 @@ class TestRmbgClientHybrid(unittest.TestCase):
 
     def test_06_pre_compression_logic(self):
         """Kiểm tra logic nén và resize ảnh trước khi xử lý (Pre-compression)"""
-        rmbg_js_path = os.path.join(FRONTEND_DIR, "client", "rmbg-client.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "rmbg-client.js")) else os.path.join(FRONTEND_DIR, "rmbg-client.js")
-        app_js_path = os.path.join(FRONTEND_DIR, "client", "app.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "app.js")) else os.path.join(FRONTEND_DIR, "app.js")
-        index_html_path = os.path.join(FRONTEND_DIR, "index.html")
+        rmbg_js_path = os.path.join(FRONTEND_DIR, "src", "utils", "rmbgClient.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "src", "utils", "rmbgClient.js")) else os.path.join(FRONTEND_DIR, "rmbg-client.js")
+        react_comp_path = os.path.join(FRONTEND_DIR, "src", "components", "RemoveBackground", "RemoveBackground.jsx")
 
         with open(rmbg_js_path, "r", encoding="utf-8") as f:
             rmbg_js = f.read()
+
+        # Kiểm tra hàm compressAndResizeImage trong rmbg-client.js hoặc rmbgClient.js
+        self.assertIn("compressAndResizeImage", rmbg_js, "rmbg-client.js thiếu hàm compressAndResizeImage")
+        self.assertIn("maxDimension", rmbg_js, "Thiếu tham số maxDimension để resize cạnh lớn")
+        self.assertIn("createImageBitmap", rmbg_js, "compressAndResizeImage phải hỗ trợ createImageBitmap")
+
+        if os.path.isfile(react_comp_path):
+            with open(react_comp_path, "r", encoding="utf-8") as f:
+                comp_src = f.read()
+            self.assertIn("autoCompress", comp_src, "RemoveBackground.jsx chưa có state/prop autoCompress")
+            print("  [PASS] test_06: Logic Pre-compression & UI tối ưu ảnh tự động đã được tích hợp đầy đủ (React).")
+            return
+
+        app_js_path = os.path.join(FRONTEND_DIR, "client", "app.js") if os.path.isfile(os.path.join(FRONTEND_DIR, "client", "app.js")) else os.path.join(FRONTEND_DIR, "app.js")
+        index_html_path = os.path.join(FRONTEND_DIR, "index.html")
 
         with open(app_js_path, "r", encoding="utf-8") as f:
             app_js = f.read()
 
         with open(index_html_path, "r", encoding="utf-8") as f:
             html = f.read()
-
-        # Kiểm tra hàm compressAndResizeImage trong rmbg-client.js
-        self.assertIn("compressAndResizeImage", rmbg_js, "rmbg-client.js thiếu hàm compressAndResizeImage")
-        self.assertIn("maxDimension", rmbg_js, "Thiếu tham số maxDimension để resize cạnh lớn")
-        self.assertIn("createImageBitmap", rmbg_js, "compressAndResizeImage phải hỗ trợ createImageBitmap")
 
         # Kiểm tra index.html có checkbox bật/tắt nén
         self.assertIn('id="bg-auto-compress"', html, "index.html thiếu checkbox id='bg-auto-compress'")

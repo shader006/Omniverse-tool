@@ -12,7 +12,7 @@ import unittest
 
 # Path setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
-for path in ["/app", os.path.abspath(os.path.join(current_dir, "..")), os.path.abspath(os.path.join(current_dir, "..", "backend"))]:
+for path in ["/app", os.path.abspath(os.path.join(current_dir, "..", "..")), os.path.abspath(os.path.join(current_dir, "..", "..", "backend"))]:
     if os.path.exists(path) and path not in sys.path:
         sys.path.insert(0, path)
 
@@ -71,6 +71,9 @@ class MultiPlatformBenchmarkTest(unittest.TestCase):
 
     def test_multi_platform_download_and_cache(self):
         """Đo lường chi tiết tốc độ xử lý trên 5 kịch bản / nền tảng khác nhau"""
+        import app.url_conver.metadata as md
+        if getattr(md, "yt_dlp", None) is None:
+            raise unittest.SkipTest("yt_dlp not installed on host (available inside worker container)")
         print_banner("KIỂM THỬ ĐA NỀN TẢNG & ĐỊNH DẠNG (YOUTUBE, FACEBOOK, MP3 320K, MP4 HD)")
 
         results = []
