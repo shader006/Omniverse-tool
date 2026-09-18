@@ -19,6 +19,30 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
+# Tự động nạp cấu hình từ file .env nếu có (chuẩn bị chạy độc lập không cần thư viện ngoài)
+def _load_local_env():
+    candidates = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            k = k.strip()
+                            v = v.strip().strip("'\"")
+                            if k and k not in os.environ:
+                                os.environ[k] = v
+                break
+            except Exception:
+                pass
+
+_load_local_env()
+
 # ── Configuration ────────────────────────────────────────────────────────────
 DEFAULT_OBSERVE_URL = "http://localhost:8001"
 OBSERVE_URL = os.getenv("HIAI_OBSERVE_URL", DEFAULT_OBSERVE_URL).rstrip("/")

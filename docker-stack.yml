@@ -75,6 +75,11 @@ services:
       resources:
         limits:
           memory: 1024M
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
@@ -98,6 +103,11 @@ services:
       resources:
         limits:
           memory: 4096M
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003

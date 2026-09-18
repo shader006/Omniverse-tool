@@ -64,6 +64,10 @@ bug_report*.md
 semgrep_report*.json
 gitleaks*.json
 nuclei*.json
+pail-scan*.json
+Auto-Privilege/
+*.cve.*
+*.oval.xml
 
 # Node & Frontend
 node_modules/

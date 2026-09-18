@@ -18,6 +18,21 @@ import urllib.request
 import threading
 import time
 
+# Tự động nạp cấu hình từ .env nếu có
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for _p in _env_paths:
+        if os.path.exists(_p):
+            load_dotenv(_p)
+            break
+except ImportError:
+    pass
+
 # Thêm app vào sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from app.rmbg.remover import remove_background, get_birefnet_engine, free_system_memory
@@ -27,6 +42,7 @@ logger = logging.getLogger("worker_rmbg")
 
 _IS_WARMED_UP = False
 _ACTIVE_BACKEND = "None"
+_DEVICE = "cpu"
 _LAST_REQUEST_TIME = time.time()
 _ACTIVE_REQUESTS = 0
 _COMPLETED_REQUESTS = 0
@@ -34,7 +50,17 @@ _FAILED_REQUESTS = 0
 _STATE_LOCK = threading.Lock()
 
 IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "0"))  # 0 = Giữ thường trực trong RAM vĩnh viễn không giải phóng
-DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
+
+def _get_download_dir():
+    env_dir = os.getenv("DOWNLOAD_DIR")
+    if env_dir:
+        return env_dir
+    if os.path.exists("/app") and os.access("/app", os.W_OK):
+        return "/app/downloads"
+    local_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "downloads"))
+    return local_dir
+
+DOWNLOAD_DIR = _get_download_dir()
 
 # ── TELEMETRY QUEUE & SINGLE WORKER THREAD ──
 # Dùng Queue + 1 worker thread duy nhất, không tạo thread mới cho mỗi request
@@ -146,14 +172,15 @@ def send_otlp_trace(
         logger.warning("Telemetry queue đầy, bỏ qua trace để ưu tiên CPU.")
 
 def _warmup_worker():
-    global _IS_WARMED_UP, _ACTIVE_BACKEND
-    logger.info("🚀 [WARM-UP] Nạp sẵn BiRefNet-Lite (Intel OpenVINO) vào RAM...")
+    global _IS_WARMED_UP, _ACTIVE_BACKEND, _DEVICE
+    logger.info("🚀 [WARM-UP] Khởi tạo BiRefNet Engine (Ưu tiên GPU NVIDIA CUDA, fallback CPU)...")
     try:
         engine = get_birefnet_engine()
         if engine and engine.compiled_model is not None:
             _IS_WARMED_UP = True
             _ACTIVE_BACKEND = engine.backend
-            logger.info(f"✅ [WARM-UP] BiRefNet-Lite ({engine.backend.upper()}) sẵn sàng phục vụ.")
+            _DEVICE = getattr(engine, "device", "cpu")
+            logger.info(f"✅ [WARM-UP] BiRefNet-Lite sẵn sàng phục vụ trên {_DEVICE.upper()} (Backend: {_ACTIVE_BACKEND}).")
     except Exception as e:
         logger.warning(f"⚠️ [WARM-UP] Lỗi warm-up BiRefNet-Lite: {e}")
 
@@ -184,7 +211,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=_idle_monitor, daemon=True).start()
     yield
 
-app = FastAPI(title="BiRefNet-Lite OpenVINO Worker", version="2.1.0", lifespan=lifespan)
+app = FastAPI(title="BiRefNet-Lite Worker (GPU & CPU Fallback)", version="2.2.0", lifespan=lifespan)
  
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -200,6 +227,7 @@ def health_check():
         "status": "ready" if _IS_WARMED_UP else "warming",
         "service": "worker-rmbg",
         "model": "BiRefNet-Lite",
+        "device": _DEVICE,
         "backend": _ACTIVE_BACKEND,
         "warmed_up": _IS_WARMED_UP,
         "completed_requests": _COMPLETED_REQUESTS,
@@ -291,19 +319,20 @@ async def remove_bg(
         out_img.save(out_filepath, "PNG", optimize=False)
         file_size = os.path.getsize(out_filepath)
 
-        # Tạo preview chất lượng cao: Giữ độ nét tối đa (lên tới 1920px) với thuật toán LANCZOS
+        # Tạo preview chất lượng cao sắc nét (giữ nguyên độ phân giải gốc tới tối đa 2048px, chuẩn WebP ~80-150KB)
         orig_w, orig_h = out_img.size
-        max_dim = max(orig_w, orig_h)
-        if max_dim > 1920:
-            scale = 1920.0 / max_dim
+        max_preview_dim = 2048.0
+        resample_filter = getattr(getattr(Image, "Resampling", None), "LANCZOS", getattr(Image, "LANCZOS", 1))
+        if max(orig_w, orig_h) > max_preview_dim:
+            scale = max_preview_dim / max(orig_w, orig_h)
             thumb_w, thumb_h = max(1, int(orig_w * scale)), max(1, int(orig_h * scale))
-            preview_img = out_img.resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
+            preview_img = out_img.resize((thumb_w, thumb_h), resample_filter)
         else:
             preview_img = out_img
 
         preview_buf = io.BytesIO()
         try:
-            preview_img.save(preview_buf, format="WEBP", quality=92)
+            preview_img.save(preview_buf, format="WEBP", quality=92, method=4)
             b64_mime = "image/webp"
         except Exception:
             preview_buf.seek(0)
@@ -322,13 +351,14 @@ async def remove_bg(
 
         duration_ms = (time.perf_counter() - req_start) * 1000.0
         send_otlp_trace(
-            name=" └─ 🖼️ [Xử lý AI] Tách nền ảnh BiRefNet (OpenVINO)",
+            name=f" └─ 🖼️ [Xử lý AI] Tách nền ảnh {metadata.get('model_display', 'BiRefNet')}",
             duration_ms=duration_ms,
             attributes={
                 "http.route": "/api/remove-bg",
                 "http.method": "POST",
                 "http.status_code": 200,
-                "ai.model": "BiRefNet-Lite (Intel OpenVINO)",
+                "ai.model": metadata.get("model_display", "BiRefNet-Lite"),
+                "ai.device": metadata.get("device", "cpu"),
                 "ai.inference_ms": metadata.get("timing_ms", {}).get("inference", 0),
                 "ai.preprocess_ms": metadata.get("timing_ms", {}).get("preprocess", 0),
                 "ai.postprocess_ms": metadata.get("timing_ms", {}).get("postprocess", 0),
