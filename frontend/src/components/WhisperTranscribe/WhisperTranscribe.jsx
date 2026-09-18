@@ -101,6 +101,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     setIsTranscribing(true);
     setResultData(null);
 
+    const reqStartTime = performance.now();
     const formData = new FormData();
     formData.append('file', fileToTranscribe);
     formData.append('language', language);
@@ -126,6 +127,9 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       if (!res.ok || !data.success) {
         throw new Error(data.detail || data.error || (lang === 'en' ? 'Speech transcription failed.' : 'Quá trình trích xuất văn bản thất bại.'));
       }
+
+      const totalElapsedSec = Number(((performance.now() - reqStartTime) / 1000).toFixed(2));
+      data.total_e2e_time = totalElapsedSec;
 
       const blobUrl = URL.createObjectURL(fileToTranscribe);
       setMediaBlobUrl(blobUrl);
@@ -412,7 +416,14 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
                     </span>
                     <span className="meta-tag">{tr.whisper_result_lang} {(resultData.detected_language || (lang === 'en' ? 'en' : 'vi')).toUpperCase()}</span>
                     <span className="meta-tag">{tr.whisper_result_duration} {formatDurationHuman(resultData.audio_duration)}</span>
-                    <span className="meta-tag">{tr.whisper_result_process_time} {resultData.processing_time || 0}s</span>
+                    <span className="meta-tag" title="Thời gian mô hình AI Whisper nhận diện âm thanh trên GPU" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#34d399', fontWeight: 600 }}>
+                      ⚡ {tr.whisper_result_process_time} {resultData.processing_time || 0}s
+                    </span>
+                    {resultData.total_e2e_time ? (
+                      <span className="meta-tag" title="Tổng thời gian toàn trình từ lúc tải lên" style={{ background: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.35)', color: '#60a5fa', fontWeight: 600 }}>
+                        ⏱️ {tr.whisper_result_total_time} {resultData.total_e2e_time}s
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>

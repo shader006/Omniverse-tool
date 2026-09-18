@@ -1070,6 +1070,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('format', transcribeFormatSelect.value);
       }
 
+      const reqStartTime = performance.now();
       try {
         const res = await fetch('/api/transcribe', {
           method: 'POST',
@@ -1135,7 +1136,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tagModel) tagModel.textContent = `AI: ${rawModel}`;
         if (tagLang) tagLang.textContent = `Ngôn ngữ: ${(data.detected_language || 'vi').toUpperCase()}`;
         if (tagDuration) tagDuration.textContent = `Thời lượng: ${formatDuration(data.audio_duration)}`;
-        if (tagTime) tagTime.textContent = `Xử lý: ${data.processing_time || 0}s`;
+        const e2eSec = ((performance.now() - reqStartTime) / 1000).toFixed(2);
+        if (tagTime) tagTime.textContent = `AI: ${data.processing_time || 0}s • Toàn trình: ${e2eSec}s`;
 
         if (transcribeDownloadBtn) {
           transcribeDownloadBtn.href = data.download_url;
