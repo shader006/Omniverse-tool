@@ -14,7 +14,7 @@ import struct
 from contextlib import asynccontextmanager
 from typing import Optional, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("worker_whisper")
@@ -402,6 +402,29 @@ async def transcribe_media(
             os.remove(wav_path)
         if os.path.exists(json_out_file):
             os.remove(json_out_file)
+
+@app.get("/api/file/{filename}")
+async def get_whisper_file(filename: str):
+    """Phục vụ file phụ đề / audio cho Gateway proxy hoặc client tải về trực tiếp."""
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(DOWNLOAD_DIR, safe_name)
+    if not os.path.isfile(file_path):
+        logger.warning(f"File không tồn tại trên worker whisper: {file_path}")
+        raise HTTPException(status_code=404, detail="File không tồn tại hoặc đã hết hạn.")
+    
+    media_type = "application/octet-stream"
+    if safe_name.lower().endswith(".vtt"):
+        media_type = "text/vtt; charset=utf-8"
+    elif safe_name.lower().endswith((".srt", ".txt")):
+        media_type = "text/plain; charset=utf-8"
+    elif safe_name.lower().endswith(".json"):
+        media_type = "application/json; charset=utf-8"
+
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        filename=safe_name
+    )
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8002"))

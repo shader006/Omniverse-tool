@@ -8,7 +8,7 @@ import queue
 import re
 from typing import Optional, Union, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from PIL import Image
 import uvicorn
 
@@ -33,7 +33,7 @@ _COMPLETED_REQUESTS = 0
 _FAILED_REQUESTS = 0
 _STATE_LOCK = threading.Lock()
 
-IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "300"))  # 0 = Giữ thường trực trong RAM vĩnh viễn không giải phóng
+IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "0"))  # 0 = Giữ thường trực trong RAM vĩnh viễn không giải phóng
 DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
 
 # ── TELEMETRY QUEUE & SINGLE WORKER THREAD ──
@@ -291,15 +291,19 @@ async def remove_bg(
         out_img.save(out_filepath, "PNG", optimize=False)
         file_size = os.path.getsize(out_filepath)
 
-        # Tối ưu RAM: Resize trực tiếp sang ảnh nhỏ 320px mà KHÔNG gọi out_img.copy() (tránh cấp phát thêm ~97MB RAM)
+        # Tạo preview chất lượng cao: Giữ độ nét tối đa (lên tới 1920px) với thuật toán LANCZOS
         orig_w, orig_h = out_img.size
-        scale = min(320.0 / max(orig_w, 1), 320.0 / max(orig_h, 1), 1.0)
-        thumb_w, thumb_h = max(1, int(orig_w * scale)), max(1, int(orig_h * scale))
-        preview_img = out_img.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR)
+        max_dim = max(orig_w, orig_h)
+        if max_dim > 1920:
+            scale = 1920.0 / max_dim
+            thumb_w, thumb_h = max(1, int(orig_w * scale)), max(1, int(orig_h * scale))
+            preview_img = out_img.resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
+        else:
+            preview_img = out_img
 
         preview_buf = io.BytesIO()
         try:
-            preview_img.save(preview_buf, format="WEBP", quality=80)
+            preview_img.save(preview_buf, format="WEBP", quality=92)
             b64_mime = "image/webp"
         except Exception:
             preview_buf.seek(0)
@@ -311,7 +315,9 @@ async def remove_bg(
         b64_preview = f"data:{b64_mime};base64,{b64_str}"
 
         # Giải phóng biến tạm ngay lập tức
-        del preview_img, preview_buf, content, out_img
+        if preview_img is not out_img:
+            del preview_img
+        del preview_buf, content, out_img
         free_system_memory()
 
         duration_ms = (time.perf_counter() - req_start) * 1000.0
@@ -374,6 +380,27 @@ async def remove_bg(
         with _STATE_LOCK:
             _ACTIVE_REQUESTS = max(0, _ACTIVE_REQUESTS - 1)
             _LAST_REQUEST_TIME = time.time()
+
+@app.get("/api/file/{filename}")
+async def get_rmbg_file(filename: str):
+    """Phục vụ file ảnh đã tách nền cho Gateway proxy hoặc client tải về trực tiếp."""
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(DOWNLOAD_DIR, safe_name)
+    if not os.path.isfile(file_path):
+        logger.warning(f"File không tồn tại trên worker rmbg: {file_path}")
+        raise HTTPException(status_code=404, detail="File không tồn tại hoặc đã hết hạn.")
+    
+    media_type = "image/png"
+    if safe_name.lower().endswith(".webp"):
+        media_type = "image/webp"
+    elif safe_name.lower().endswith((".jpg", ".jpeg")):
+        media_type = "image/jpeg"
+
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        filename=safe_name
+    )
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8003"))

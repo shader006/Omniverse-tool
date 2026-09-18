@@ -492,7 +492,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
             {/* Comparison Slider */}
             <ComparisonSlider 
               beforeSrc={sourceDataUrl} 
-              afterSrc={resultData.previewBase64 || resultData.downloadUrl} 
+              afterSrc={resultData.downloadUrl || resultData.previewBase64} 
               lang={lang}
             />
 

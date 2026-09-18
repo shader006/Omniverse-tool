@@ -420,6 +420,32 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
 
   const durationMs = Math.round(performance.now() - startTime);
 
+  let transparentBlob = null;
+  if (data.download_url) {
+    try {
+      const blobResp = await fetch(data.download_url);
+      if (blobResp.ok) {
+        transparentBlob = await blobResp.blob();
+      }
+    } catch (e) {
+      console.warn('Không thể fetch transparentBlob từ download_url:', e);
+    }
+  }
+  if (!transparentBlob && data.preview_base64 && data.preview_base64.startsWith('data:')) {
+    try {
+      const byteString = atob(data.preview_base64.split(',')[1]);
+      const mimeString = data.preview_base64.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      transparentBlob = new Blob([ab], { type: mimeString });
+    } catch (e) {
+      // ignore
+    }
+  }
+
   return {
     success: true,
     engine: 'server',
@@ -427,7 +453,7 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
     filename: data.filename || 'removed_bg.png',
     downloadUrl: data.download_url,
     previewBase64: data.preview_base64 || data.download_url,
-    transparentBlob: null,
+    transparentBlob: transparentBlob,
     processingTimeMs: data.processing_time_ms || durationMs,
     resultSizeBytes: data.result_size_bytes || 0,
     metadata: data.metadata || {

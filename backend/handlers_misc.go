@@ -112,9 +112,9 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 func (s *Server) proxyFileFromWorkers(w http.ResponseWriter, r *http.Request, filename string) bool {
 	var workers []string
 	lowerName := strings.ToLower(filename)
-	if strings.HasPrefix(lowerName, "transcript_") || strings.HasPrefix(lowerName, "whisper_") {
+	if strings.HasPrefix(lowerName, "transcript_") || strings.HasPrefix(lowerName, "whisper_") || strings.HasSuffix(lowerName, ".vtt") || strings.HasSuffix(lowerName, ".srt") {
 		workers = []string{s.workerWhisperURL, s.workerRmbgURL}
-	} else if strings.HasPrefix(lowerName, "rmbg_") {
+	} else if strings.HasPrefix(lowerName, "rmbg_") || strings.Contains(lowerName, "nobg") {
 		workers = []string{s.workerRmbgURL, s.workerWhisperURL}
 	} else {
 		workers = []string{s.workerRmbgURL, s.workerWhisperURL}
