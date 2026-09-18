@@ -349,3 +349,78 @@ func TestSecurityProbeTracingAndPogocache(t *testing.T) {
 
 	t.Log("✅ [PASS] Tracer phát hiện Security Probe chính xác, không bỏ lọt health và Pogocache context hoạt động hoàn hảo.")
 }
+
+// 8. Kiểm tra cơ chế In-Gateway Auto-Failover cho Whisper & RMBG khi Primary sập
+func TestWhisperAndRmbgAutoFailover(t *testing.T) {
+	s, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Mock Fallback Server (trả về 200 thành công)
+	fallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if strings.Contains(r.URL.Path, "transcribe") {
+			_, _ = w.Write([]byte(`{"success":true,"text":"failover whisper success"}`))
+		} else if strings.Contains(r.URL.Path, "remove-bg") {
+			_, _ = w.Write([]byte(`{"success":true,"image":"failover rmbg success"}`))
+		}
+	}))
+	defer fallbackServer.Close()
+
+	// Primary Server giả lập sập hoàn toàn (trỏ vào port không tồn tại / từ chối kết nối)
+	deadPrimaryURL := "http://127.0.0.1:49999"
+
+	s.workerWhisperURL = deadPrimaryURL
+	s.workerWhisperFallbackURL = fallbackServer.URL
+	s.workerRmbgURL = deadPrimaryURL
+	s.workerRmbgFallbackURL = fallbackServer.URL
+
+	// Test Whisper Failover
+	var bufWhisper bytes.Buffer
+	writerWhisper := multipart.NewWriter(&bufWhisper)
+	partWhisper, err := writerWhisper.CreateFormFile("file", "test.mp3")
+	if err != nil {
+		t.Fatalf("Lỗi tạo form file: %v", err)
+	}
+	_, _ = partWhisper.Write([]byte("dummy audio content"))
+	_ = writerWhisper.Close()
+
+	reqWhisper := httptest.NewRequest("POST", "/api/transcribe", &bufWhisper)
+	reqWhisper.Header.Set("Content-Type", writerWhisper.FormDataContentType())
+	recWhisper := httptest.NewRecorder()
+
+	s.handleTranscribe(recWhisper, reqWhisper)
+	if recWhisper.Code != http.StatusOK {
+		t.Fatalf("handleTranscribe failover thất bại: mã HTTP %d, body: %s", recWhisper.Code, recWhisper.Body.String())
+	}
+	if !strings.Contains(recWhisper.Body.String(), "failover whisper success") {
+		t.Fatalf("handleTranscribe không nhận được phản hồi từ fallback server: %s", recWhisper.Body.String())
+	}
+
+	// Test RMBG Failover
+	var bufRmbg bytes.Buffer
+	writerRmbg := multipart.NewWriter(&bufRmbg)
+	partRmbg, err := writerRmbg.CreateFormFile("file", "test.png")
+	if err != nil {
+		t.Fatalf("Lỗi tạo form file rmbg: %v", err)
+	}
+	// Tạo ảnh PNG 1x1 pixel hợp lệ
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	_ = png.Encode(partRmbg, img)
+	_ = writerRmbg.Close()
+
+	reqRmbg := httptest.NewRequest("POST", "/api/remove-bg", &bufRmbg)
+	reqRmbg.Header.Set("Content-Type", writerRmbg.FormDataContentType())
+	recRmbg := httptest.NewRecorder()
+
+	s.handleRemoveBackground(recRmbg, reqRmbg)
+	if recRmbg.Code != http.StatusOK {
+		t.Fatalf("handleRemoveBackground failover thất bại: mã HTTP %d, body: %s", recRmbg.Code, recRmbg.Body.String())
+	}
+	if !strings.Contains(recRmbg.Body.String(), "failover rmbg success") {
+		t.Fatalf("handleRemoveBackground không nhận được phản hồi từ fallback server: %s", recRmbg.Body.String())
+	}
+
+	t.Log("✅ [PASS] In-Gateway Auto-Failover hoạt động hoàn hảo: khi Primary sập, Gateway tự động chuyển sang Fallback thành công!")
+}
+

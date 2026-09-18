@@ -38,13 +38,15 @@ type Server struct {
 	downloadDir      string
 	frontendDir      string
 	gotenbergLB      *GotenbergLoadBalancer
-	workerYtdlpURL   string
-	workerWhisperURL string
-	workerRmbgURL    string
-	workerPixelfixerURL string
-	workerPdf2docxURL   string
-	httpClient          *http.Client
-	httpLongClient      *http.Client
+	workerYtdlpURL           string
+	workerWhisperURL         string
+	workerWhisperFallbackURL string
+	workerRmbgURL            string
+	workerRmbgFallbackURL    string
+	workerPixelfixerURL      string
+	workerPdf2docxURL        string
+	httpClient               *http.Client
+	httpLongClient           *http.Client
 }
 
 func randomID() string {

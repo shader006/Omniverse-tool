@@ -113,11 +113,11 @@ func (s *Server) proxyFileFromWorkers(w http.ResponseWriter, r *http.Request, fi
 	var workers []string
 	lowerName := strings.ToLower(filename)
 	if strings.HasPrefix(lowerName, "transcript_") || strings.HasPrefix(lowerName, "whisper_") || strings.HasSuffix(lowerName, ".vtt") || strings.HasSuffix(lowerName, ".srt") {
-		workers = []string{s.workerWhisperURL, s.workerRmbgURL}
+		workers = []string{s.workerWhisperURL, s.workerWhisperFallbackURL, s.workerRmbgURL, s.workerRmbgFallbackURL}
 	} else if strings.HasPrefix(lowerName, "rmbg_") || strings.Contains(lowerName, "nobg") {
-		workers = []string{s.workerRmbgURL, s.workerWhisperURL}
+		workers = []string{s.workerRmbgURL, s.workerRmbgFallbackURL, s.workerWhisperURL, s.workerWhisperFallbackURL}
 	} else {
-		workers = []string{s.workerRmbgURL, s.workerWhisperURL}
+		workers = []string{s.workerRmbgURL, s.workerRmbgFallbackURL, s.workerWhisperURL, s.workerWhisperFallbackURL}
 	}
 
 	for _, workerURL := range workers {

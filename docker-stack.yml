@@ -29,7 +29,9 @@ services:
       - POGOCACHE_ADDR=tasks.pogocache:9401
       - WORKER_YTDLP_URL=http://tasks.worker-ytdlp:8001
       - WORKER_WHISPER_URL=${WORKER_WHISPER_URL:-http://pail:8002}
+      - WORKER_WHISPER_FALLBACK_URL=${WORKER_WHISPER_FALLBACK_URL:-http://tasks.worker-whisper:8002}
       - WORKER_RMBG_URL=${WORKER_RMBG_URL:-http://pail:8003}
+      - WORKER_RMBG_FALLBACK_URL=${WORKER_RMBG_FALLBACK_URL:-http://tasks.worker-rmbg:8003}
       - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://tasks.worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
@@ -68,18 +70,13 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
-      replicas: ${WORKER_WHISPER_REPLICAS:-0}
+      replicas: ${WORKER_WHISPER_REPLICAS:-1}
       endpoint_mode: dnsrr
       restart_policy:
         condition: on-failure
       resources:
         limits:
           memory: 1024M
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
@@ -95,7 +92,7 @@ services:
     security_opt:
       - no-new-privileges:true
     deploy:
-      replicas: ${WORKER_RMBG_REPLICAS:-0}
+      replicas: ${WORKER_RMBG_REPLICAS:-1}
       endpoint_mode: dnsrr
       restart_policy:
         condition: any
@@ -103,16 +100,11 @@ services:
       resources:
         limits:
           memory: 4096M
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
       - BIREFNET_CACHE_DIR=/home/appuser/.cache/birefnet
-      - IDLE_RECYCLE_SECONDS=300
+      - IDLE_RECYCLE_SECONDS=180
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     volumes:

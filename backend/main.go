@@ -49,7 +49,17 @@ func main() {
 
 	workerYtdlpURL := os.Getenv("WORKER_YTDLP_URL")
 	workerWhisperURL := os.Getenv("WORKER_WHISPER_URL")
+	workerWhisperFallbackURL := os.Getenv("WORKER_WHISPER_FALLBACK_URL")
+	if workerWhisperFallbackURL == "" {
+		workerWhisperFallbackURL = "http://tasks.worker-whisper:8002"
+	}
+
 	workerRmbgURL := os.Getenv("WORKER_RMBG_URL")
+	workerRmbgFallbackURL := os.Getenv("WORKER_RMBG_FALLBACK_URL")
+	if workerRmbgFallbackURL == "" {
+		workerRmbgFallbackURL = "http://tasks.worker-rmbg:8003"
+	}
+
 	workerPixelfixerURL := os.Getenv("WORKER_PIXELFIXER_URL")
 	if workerPixelfixerURL == "" {
 		workerPixelfixerURL = "http://worker-pixelfixer:8004"
@@ -75,14 +85,16 @@ func main() {
 	}
 
 	server := &Server{
-		pogo:                NewPogocacheEngine(pogoAddr, downloadDir),
-		mediaLimiter:        make(chan struct{}, maxMediaJobs),
-		downloadDir:         downloadDir,
-		frontendDir:         frontendDir,
-		gotenbergLB:         NewGotenbergLoadBalancer(gotenbergURL),
-		workerYtdlpURL:      workerYtdlpURL,
-		workerWhisperURL:    workerWhisperURL,
-		workerRmbgURL:       workerRmbgURL,
+		pogo:                     NewPogocacheEngine(pogoAddr, downloadDir),
+		mediaLimiter:             make(chan struct{}, maxMediaJobs),
+		downloadDir:              downloadDir,
+		frontendDir:              frontendDir,
+		gotenbergLB:              NewGotenbergLoadBalancer(gotenbergURL),
+		workerYtdlpURL:           workerYtdlpURL,
+		workerWhisperURL:         workerWhisperURL,
+		workerWhisperFallbackURL: workerWhisperFallbackURL,
+		workerRmbgURL:            workerRmbgURL,
+		workerRmbgFallbackURL:    workerRmbgFallbackURL,
 		workerPixelfixerURL: workerPixelfixerURL,
 		workerPdf2docxURL:   workerPdf2docxURL,
 		httpClient: &http.Client{

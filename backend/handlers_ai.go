@@ -117,11 +117,19 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Nếu có Worker Whisper Microservice -> Forward qua HTTP
+	// 1. Nếu có Worker Whisper Microservice -> Forward qua HTTP (hỗ trợ Primary & Fallback Failover)
+	var whisperWorkers []string
 	if s.workerWhisperURL != "" {
+		whisperWorkers = append(whisperWorkers, s.workerWhisperURL)
+	}
+	if s.workerWhisperFallbackURL != "" && s.workerWhisperFallbackURL != s.workerWhisperURL {
+		whisperWorkers = append(whisperWorkers, s.workerWhisperFallbackURL)
+	}
+
+	for idx, targetWorker := range whisperWorkers {
 		respBody, statusCode, callErr := s.forwardMultipartToWorker(
 			r.Context(),
-			s.workerWhisperURL,
+			targetWorker,
 			"/api/transcribe",
 			fileBytes,
 			originalFilename,
@@ -148,7 +156,10 @@ func (s *Server) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(respBody)
 			return
 		}
-		log.Printf("⚠️ [WORKER WHISPER] Gọi worker thất bại (%v), statusCode=%d", callErr, statusCode)
+		log.Printf("⚠️ [WORKER WHISPER] Gọi worker (%s) thất bại (%v), statusCode=%d", targetWorker, callErr, statusCode)
+		if idx < len(whisperWorkers)-1 {
+			log.Printf("🔄 [WORKER WHISPER] Tự động chuyển đổi sang worker dự phòng: %s", whisperWorkers[idx+1])
+		}
 	}
 
 	// 2. Fallback sang Go Native Transcribe Engine (whisper.cpp cục bộ)
@@ -285,54 +296,72 @@ func (s *Server) handleRemoveBackground(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// 1. Nếu có Worker RMBG Microservice -> Forward qua HTTP với retry 3 lần
+	// 1. Nếu có Worker RMBG Microservice -> Forward qua HTTP (hỗ trợ Primary & Fallback Failover)
+	var rmbgWorkers []string
 	if s.workerRmbgURL != "" {
+		rmbgWorkers = append(rmbgWorkers, s.workerRmbgURL)
+	}
+	if s.workerRmbgFallbackURL != "" && s.workerRmbgFallbackURL != s.workerRmbgURL {
+		rmbgWorkers = append(rmbgWorkers, s.workerRmbgFallbackURL)
+	}
+
+	if len(rmbgWorkers) > 0 {
 		alphaStr := "false"
 		if alphaMatting {
 			alphaStr = "true"
 		}
 
-		var respBody []byte
-		var statusCode int
-		var callErr error
+		for idx, targetWorker := range rmbgWorkers {
+			// Đối với remote worker, thử tối đa 2 lần để phát hiện failover nhanh
+			maxAttempts := 2
+			if idx > 0 {
+				maxAttempts = 1
+			}
 
-		// Retry tối đa 3 lần đề phòng Worker đang khởi động lại hoặc nạp lại OpenVINO
-		for attempt := 1; attempt <= 3; attempt++ {
-			respBody, statusCode, callErr = s.forwardMultipartToWorker(
-				r.Context(),
-				s.workerRmbgURL,
-				"/api/remove-bg",
-				fileBytes,
-				originalFilename,
-				"file",
-				map[string]string{
-					"model":         model,
-					"bg_color":      bgColor,
-					"alpha_matting": alphaStr,
-				},
-			)
-			if callErr == nil && statusCode == http.StatusOK {
-				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("X-Content-Type-Options", "nosniff")
-				w.WriteHeader(http.StatusOK)
-				// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
-				_, _ = w.Write(respBody)
-				return
+			var respBody []byte
+			var statusCode int
+			var callErr error
+
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
+				respBody, statusCode, callErr = s.forwardMultipartToWorker(
+					r.Context(),
+					targetWorker,
+					"/api/remove-bg",
+					fileBytes,
+					originalFilename,
+					"file",
+					map[string]string{
+						"model":         model,
+						"bg_color":      bgColor,
+						"alpha_matting": alphaStr,
+					},
+				)
+				if callErr == nil && statusCode == http.StatusOK {
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("X-Content-Type-Options", "nosniff")
+					w.WriteHeader(http.StatusOK)
+					// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
+					_, _ = w.Write(respBody)
+					return
+				}
+				// Nếu worker trả 400 (ví dụ client gửi sai tham số hoặc ảnh lỗi), không retry vô ích
+				if callErr == nil && statusCode == http.StatusBadRequest {
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("X-Content-Type-Options", "nosniff")
+					w.WriteHeader(http.StatusBadRequest)
+					// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
+					_, _ = w.Write(respBody)
+					return
+				}
+				if attempt < maxAttempts {
+					time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+				}
 			}
-			// Nếu worker trả 400 (ví dụ client gửi sai tham số hoặc ảnh lỗi), không retry vô ích
-			if callErr == nil && statusCode == http.StatusBadRequest {
-				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("X-Content-Type-Options", "nosniff")
-				w.WriteHeader(http.StatusBadRequest)
-				// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter - writing upstream JSON payload
-				_, _ = w.Write(respBody)
-				return
-			}
-			if attempt < 3 {
-				time.Sleep(time.Duration(attempt) * 600 * time.Millisecond)
+			log.Printf("⚠️ [WORKER RMBG] Gọi worker (%s) thất bại (%v), statusCode=%d", targetWorker, callErr, statusCode)
+			if idx < len(rmbgWorkers)-1 {
+				log.Printf("🔄 [WORKER RMBG] Tự động chuyển đổi sang worker dự phòng: %s", rmbgWorkers[idx+1])
 			}
 		}
-		log.Printf("⚠️ [WORKER RMBG] Gọi worker thất bại sau 3 lần thử (%v), statusCode=%d", callErr, statusCode)
 	}
 
 	// 2. Fallback sang CLI cục bộ (nếu có python3 trên máy chủ)
