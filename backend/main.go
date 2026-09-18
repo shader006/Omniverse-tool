@@ -183,6 +183,30 @@ func main() {
 		http.NotFound(w, r)
 	})
 
+	// Serve static AI models under /models/ with long-term caching and proper 404 (NEVER fallback to index.html)
+	mux.HandleFunc("/models/", func(w http.ResponseWriter, r *http.Request) {
+		relPath := strings.TrimPrefix(r.URL.Path, "/models/")
+		if isBlockedStaticFile(relPath) {
+			http.NotFound(w, r)
+			return
+		}
+		candidates := []string{
+			filepath.Join(frontendDir, "models", relPath),
+			filepath.Join(filepath.Dir(frontendDir), "models", relPath),
+			filepath.Join("/models", relPath),
+			filepath.Join("/app/models", relPath),
+			filepath.Join(".", "models", relPath),
+		}
+		for _, cand := range candidates {
+			if stat, err := os.Stat(cand); err == nil && !stat.IsDir() {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				http.ServeFile(w, r, cand)
+				return
+			}
+		}
+		http.NotFound(w, r)
+	})
+
 	// Serve Frontend Web UI (SPA Fallback)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {

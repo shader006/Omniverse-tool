@@ -6,6 +6,7 @@
  */
 
 export const WHISPER_MODEL_ID = 'onnx-community/whisper-tiny';
+export const LOCAL_WHISPER_MODEL_ID = 'whisper-tiny';
 
 let transcriberPipeline = null;
 let isPipelineLoading = false;
@@ -152,17 +153,41 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
       throw new Error('Trình duyệt không hỗ trợ WebGPU, chuyển sang máy chủ.');
     }
 
+    // 1. Kiểm tra xem Máy chủ nội bộ có sẵn mô hình Whisper hay không (/models/whisper-tiny)
+    let useLocalServer = false;
+    try {
+      const probe = await fetch('/models/whisper-tiny/config.json', { method: 'HEAD' });
+      if (probe.ok) {
+        useLocalServer = true;
+      }
+    } catch (_) {}
+
+    let targetModelId = WHISPER_MODEL_ID;
+    if (useLocalServer) {
+      console.log('⚡ [Whisper WebGPU] Phát hiện mô hình cục bộ trên Server! Tải siêu tốc từ /models/whisper-tiny...');
+      env.remoteHost = window.location.origin;
+      env.remotePathTemplate = 'models/{model}/';
+      targetModelId = LOCAL_WHISPER_MODEL_ID;
+    } else {
+      console.log('🌐 [Whisper WebGPU] Server chưa có sẵn model, dự phòng tải từ Hugging Face...');
+      env.remoteHost = 'https://huggingface.co';
+      env.remotePathTemplate = '{model}/resolve/{revision}/';
+      targetModelId = WHISPER_MODEL_ID;
+    }
+
     const cached = await isModelCached();
     if (cached) {
       onProgress('⚡ Đã tìm thấy Whisper trong Cache trình duyệt! Đang nạp mô hình vào WebGPU...', 15);
+    } else if (useLocalServer) {
+      onProgress('⚡ Đang tải mô hình Whisper AI từ Máy chủ nội bộ (Tốc độ LAN siêu nhanh)...', 10);
     } else {
       onProgress('Đang kết nối HuggingFace tải mô hình Whisper AI ONNX...', 10);
     }
 
-    const transcriber = await pipeline('automatic-speech-recognition', WHISPER_MODEL_ID, {
+    const transcriber = await pipeline('automatic-speech-recognition', targetModelId, {
       device: 'webgpu',
       dtype: {
-        encoder_model: 'fp32',
+        encoder_model: 'q4',
         decoder_model_merged: 'q4'
       },
       progress_callback: (p) => {
@@ -172,14 +197,14 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
           const totalMB = (p.total / 1024 / 1024).toFixed(1);
           const filePct = Math.round((p.loaded / p.total) * 100);
           const overallPct = Math.min(80, Math.round(filePct * 0.65) + 15);
-          onProgress(`Đang tải ${fileName}: ${loadedMB}/${totalMB} MB (${filePct}%)`, overallPct);
+          onProgress(`Đang nạp ${fileName}: ${loadedMB}/${totalMB} MB (${filePct}%)`, overallPct);
         } else if (p.status === 'done' && p.file && p.file.includes('decoder')) {
-          onProgress('Đã tải xong toàn bộ mô hình Whisper! Đang nạp vào WebGPU...', 80);
+          onProgress('Đã nạp xong file model! Đang biên dịch Shader WebGPU trên phần cứng của bạn...', 80);
         }
       }
     });
 
-    onProgress('Mô hình Whisper AI đã nạp vào WebGPU thành công!', 85);
+    onProgress('Mô hình Whisper AI đã sẵn sàng trên WebGPU!', 85);
     transcriberPipeline = transcriber;
     isPipelineLoading = false;
     return transcriber;

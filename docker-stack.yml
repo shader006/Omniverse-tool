@@ -40,6 +40,7 @@ services:
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
       - ${WORKSPACE_DIR:-.}/frontend:/frontend:ro
+      - ${WORKSPACE_DIR:-.}/models:/models:ro
     networks:
       - omniverse_net
 
