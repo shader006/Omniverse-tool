@@ -38,6 +38,8 @@ export BIREFNET_CACHE_DIR="${BIREFNET_CACHE_DIR:-$HOME/.cache/birefnet}"
 export PORT="${WORKER_RMBG_PORT:-${PORT:-8003}}"
 export IDLE_RECYCLE_SECONDS="${IDLE_RECYCLE_SECONDS:-180}"
 export TMPDIR="/mnt/data/ssd980/home/duongtbn/tmp"
+export RMBG_GPU_MEM_LIMIT_GB="${RMBG_GPU_MEM_LIMIT_GB:-2.0}"
+export CUDA_DEVICE_ID="${CUDA_DEVICE_ID:-0}"
 
 cd "$PROJECT_DIR/backend"
 while true; do

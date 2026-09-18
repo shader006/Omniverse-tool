@@ -231,12 +231,16 @@ class BiRefNetOpenVINOEngine:
                 }
                 providers.append(("TensorrtExecutionProvider", trt_opts))
 
+            cuda_device_id = int(os.getenv("CUDA_DEVICE_ID", os.getenv("RMBG_GPU_DEVICE_ID", "0")))
+            gpu_mem_limit_gb = float(os.getenv("RMBG_GPU_MEM_LIMIT_GB", "2.0"))
+            gpu_mem_limit_bytes = int(gpu_mem_limit_gb * 1024 * 1024 * 1024)
+
             if "CUDAExecutionProvider" in available_providers:
                 cuda_opts = {
-                    "device_id": 0,
+                    "device_id": cuda_device_id,
                     "arena_extend_strategy": "kSameAsRequested",
-                    "gpu_mem_limit": 6 * 1024 * 1024 * 1024,             # Trần cứng tối đa 6GB VRAM (thay vì tràn 11GB)
-                    "cudnn_conv_algo_search": "DEFAULT",
+                    "gpu_mem_limit": gpu_mem_limit_bytes,             # Trần cứng tối đa 2GB VRAM (thay vì 6GB)
+                    "cudnn_conv_algo_search": "HEURISTIC",            # Dùng heuristic tối ưu, tránh cấp phát workspace khổng lồ
                     "do_copy_in_default_stream": True,
                 }
                 providers.append(("CUDAExecutionProvider", cuda_opts))
