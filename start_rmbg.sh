@@ -36,7 +36,8 @@ export PYTHONPATH="$PROJECT_DIR/backend"
 export DOWNLOAD_DIR="${DOWNLOAD_DIR:-$PROJECT_DIR/downloads}"
 export BIREFNET_CACHE_DIR="${BIREFNET_CACHE_DIR:-$HOME/.cache/birefnet}"
 export PORT="${WORKER_RMBG_PORT:-${PORT:-8003}}"
-export IDLE_RECYCLE_SECONDS="${IDLE_RECYCLE_SECONDS:-0}"
+export IDLE_RECYCLE_SECONDS="${IDLE_RECYCLE_SECONDS:-180}"
+export TMPDIR="/mnt/data/ssd980/home/duongtbn/tmp"
 
 cd "$PROJECT_DIR/backend"
 while true; do

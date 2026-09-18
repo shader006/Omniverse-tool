@@ -411,25 +411,29 @@ async def remove_bg(
             _ACTIVE_REQUESTS = max(0, _ACTIVE_REQUESTS - 1)
             _LAST_REQUEST_TIME = time.time()
 
-@app.get("/api/file/{filename}")
-async def get_rmbg_file(filename: str):
-    """Phục vụ file ảnh đã tách nền cho Gateway proxy hoặc client tải về trực tiếp."""
-    safe_name = os.path.basename(filename)
-    file_path = os.path.join(DOWNLOAD_DIR, safe_name)
+@app.api_route("/api/file/{filename}", methods=["GET", "HEAD"])
+async def get_file(filename: str):
+    """Phục vụ file ảnh tĩnh đã xử lý tách nền từ thư mục DOWNLOAD_DIR."""
+    # Chống lỗ hổng Path Traversal
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join(DOWNLOAD_DIR, safe_filename)
     if not os.path.isfile(file_path):
         logger.warning(f"File không tồn tại trên worker rmbg: {file_path}")
         raise HTTPException(status_code=404, detail="File không tồn tại hoặc đã hết hạn.")
-    
-    media_type = "image/png"
-    if safe_name.lower().endswith(".webp"):
-        media_type = "image/webp"
-    elif safe_name.lower().endswith((".jpg", ".jpeg")):
+
+    ext = os.path.splitext(safe_filename)[1].lower()
+    media_type = "application/octet-stream"
+    if ext == ".png":
+        media_type = "image/png"
+    elif ext in [".jpg", ".jpeg"]:
         media_type = "image/jpeg"
+    elif ext == ".webp":
+        media_type = "image/webp"
 
     return FileResponse(
         file_path,
         media_type=media_type,
-        filename=safe_name
+        filename=safe_filename
     )
 
 if __name__ == "__main__":

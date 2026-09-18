@@ -484,16 +484,10 @@
     }
     if (!transparentBlob && data.preview_base64 && data.preview_base64.startsWith('data:')) {
       try {
-        const byteString = atob(data.preview_base64.split(',')[1]);
-        const mimeString = data.preview_base64.split(',')[0].split(':')[1].split(';')[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
-        }
-        transparentBlob = new Blob([ab], { type: mimeString });
+        const b64Res = await fetch(data.preview_base64);
+        transparentBlob = await b64Res.blob();
       } catch (e) {
-        // ignore
+        console.warn('Không thể tạo blob từ preview_base64:', e);
       }
     }
 
