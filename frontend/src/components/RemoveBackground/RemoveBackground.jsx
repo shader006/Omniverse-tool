@@ -499,7 +499,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
             <div className="result-actions">
               <a 
                 id="bg-download-btn" 
-                href={resultData.downloadUrl} 
+                href={resultData.previewBase64 || resultData.downloadUrl} 
                 download={resultData.filename || 'removed_bg.png'} 
                 className="btn-download-pdf"
                 style={{ textDecoration: 'none' }}

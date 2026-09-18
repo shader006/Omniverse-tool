@@ -75,6 +75,11 @@ services:
       resources:
         limits:
           memory: 1024M
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8002
@@ -98,6 +103,11 @@ services:
       resources:
         limits:
           memory: 4096M
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8003
@@ -212,7 +222,7 @@ services:
 
   tunnel:
     image: cloudflare/cloudflared:latest
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-eyJhIjoiNWNiYjk4Nzg3OWEwODcyM2FmYzQ3Nzg1MDIwZDkxZGYiLCJ0IjoiYTgwZDBjMGUtNGQxMy00ZjUyLTg0MDctOGRiZjMwNTllN2ZmIiwicyI6Ik5UWTJPRFJtWXpNdFlqa3pNaTAwWlRnNExUaGtOV0V0TXpNNU9XWmpabUUxTmpkbCJ9}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     security_opt:
       - no-new-privileges:true
     deploy:

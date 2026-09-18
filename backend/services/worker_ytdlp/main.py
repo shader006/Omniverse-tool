@@ -13,6 +13,21 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
+# Tự động nạp cấu hình từ .env nếu có
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for _p in _env_paths:
+        if os.path.exists(_p):
+            load_dotenv(_p)
+            break
+except ImportError:
+    pass
+
 # Thêm app vào sys.path để tái sử dụng module url_conver
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from app.url_conver.metadata import get_media_info

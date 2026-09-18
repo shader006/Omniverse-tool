@@ -1562,7 +1562,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Download Button
         if (bgDownloadBtn) {
-          bgDownloadBtn.href = result.downloadUrl;
+          bgDownloadBtn.href = result.previewBase64 || result.downloadUrl;
           bgDownloadBtn.setAttribute('download', result.filename || 'removed_bg.png');
         }
 

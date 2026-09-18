@@ -15,16 +15,68 @@ from contextlib import asynccontextmanager
 from typing import Optional, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
+import uvicorn
+
+# Tự động nạp cấu hình từ .env nếu có
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for _p in _env_paths:
+        if os.path.exists(_p):
+            load_dotenv(_p)
+            break
+except ImportError:
+    pass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("worker_whisper")
 
-DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
+def _get_download_dir():
+    env_dir = os.getenv("DOWNLOAD_DIR")
+    if env_dir:
+        return env_dir
+    if os.path.exists("/app") and os.access("/app", os.W_OK):
+        return "/app/downloads"
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "downloads"))
+
+def _get_whisper_bin():
+    env_bin = os.getenv("WHISPER_BIN")
+    if env_bin and os.path.exists(env_bin):
+        return env_bin
+    candidates = [
+        "/usr/local/bin/whisper-cli",
+        os.path.expanduser("~/whisper.cpp/build/bin/whisper-cli"),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "whisper.cpp", "build", "bin", "whisper-cli")),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return env_bin or "/usr/local/bin/whisper-cli"
+
+def _get_whisper_model():
+    env_model = os.getenv("WHISPER_MODEL_PATH")
+    if env_model and os.path.exists(env_model):
+        return env_model
+    candidates = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models", "whisper", "ggml-small.bin")),
+        os.path.expanduser("~/whisper.cpp/models/ggml-small.bin"),
+        "/app/models/whisper/ggml-small.bin",
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return env_model or "/app/models/whisper/ggml-small.bin"
+
+DOWNLOAD_DIR = _get_download_dir()
 TMP_DIR = os.path.join(DOWNLOAD_DIR, "tmp")
-WHISPER_BIN = os.getenv("WHISPER_BIN", "/usr/local/bin/whisper-cli")
-WHISPER_MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "/app/models/whisper/ggml-small.bin")
+WHISPER_BIN = _get_whisper_bin()
+WHISPER_MODEL_PATH = _get_whisper_model()
 HIAI_OBSERVE_URL = os.getenv("HIAI_OBSERVE_URL", "http://172.17.0.1:8001")
-HIAI_OBSERVE_API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "")  # Không hardcode secret fallback
+HIAI_OBSERVE_API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "")
 
 # ── TELEMETRY QUEUE & SINGLE WORKER THREAD ──
 _TRACE_QUEUE = queue.Queue(maxsize=1000)
@@ -131,38 +183,95 @@ def send_otlp_trace(
     except Exception:
         pass
 
-def _warmup_whisper():
-    """Nạp sẵn mô hình Whisper GGML (465MB) vào RAM và kích hoạt sẵn C++ inference pipeline."""
-    logger.info("🚀 [WARM-UP] Nạp sẵn mô hình Whisper GGML vào RAM...")
+_USE_GPU = False
+_GPU_CHECKED = False
+_GPU_DEVICE_NAME = "CPU"
+
+def _detect_and_warmup_whisper():
+    """Tự động kiểm tra khả năng hỗ trợ NVIDIA GPU (CUDA) và nạp sẵn mô hình vào VRAM/RAM."""
+    global _USE_GPU, _GPU_CHECKED, _GPU_DEVICE_NAME
+    logger.info("🚀 [WARM-UP] Bắt đầu kiểm tra phần cứng & nạp mô hình Whisper...")
+
+    dummy_wav = "/tmp/warmup_sine.wav"
     try:
-        if os.path.exists(WHISPER_MODEL_PATH):
-            with open(WHISPER_MODEL_PATH, "rb") as f:
-                _ = f.read()
-            
-            dummy_wav = "/tmp/warmup_sine.wav"
-            with wave.open(dummy_wav, "w") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(16000)
-                wf.writeframes(struct.pack('<1600h', *([0] * 1600)))
-            
+        with wave.open(dummy_wav, "w") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(struct.pack('<1600h', *([0] * 1600)))
+    except Exception as e:
+        logger.warning(f"Không thể tạo file audio sine test: {e}")
+
+    # 1. Thử nghiệm chạy whisper-cli với GPU CUDA (-dev 0)
+    gpu_success = False
+    if os.path.exists(WHISPER_BIN) and os.path.exists(WHISPER_MODEL_PATH):
+        try:
+            probe_cmd = [
+                WHISPER_BIN,
+                "-m", WHISPER_MODEL_PATH,
+                "-f", dummy_wav,
+                "-dev", "0",
+                "-t", "2",
+                "--output-txt",
+                "-of", "/tmp/warmup_gpu_out"
+            ]
+            res_probe = subprocess.run(
+                probe_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=15
+            )
+            if res_probe.returncode == 0:
+                gpu_success = True
+                _USE_GPU = True
+                _GPU_DEVICE_NAME = "NVIDIA CUDA GPU"
+                # Thử truy vấn tên model GPU chính xác
+                try:
+                    res_smi = subprocess.run(
+                        ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        timeout=5
+                    )
+                    if res_smi.returncode == 0 and res_smi.stdout.strip():
+                        first_gpu = res_smi.stdout.strip().split("\n")[0]
+                        _GPU_DEVICE_NAME = f"CUDA ({first_gpu})"
+                except Exception:
+                    pass
+                logger.info(f"🚀 [WARM-UP] Đã kích hoạt tăng tốc {_GPU_DEVICE_NAME} cho Whisper thành công!")
+            else:
+                logger.warning(f"⚠️ [WARM-UP] whisper-cli với GPU trả về mã lỗi {res_probe.returncode}. Sẽ dùng CPU fallback.")
+        except Exception as e_gpu:
+            logger.warning(f"⚠️ [WARM-UP] Không thể kích hoạt GPU ({e_gpu}). Sẽ dùng CPU fallback.")
+
+    if not gpu_success:
+        _USE_GPU = False
+        _GPU_DEVICE_NAME = "CPU (AVX2 Multithreading)"
+        try:
+            if os.path.exists(WHISPER_MODEL_PATH):
+                with open(WHISPER_MODEL_PATH, "rb") as f:
+                    _ = f.read()
             if os.path.exists(WHISPER_BIN):
                 subprocess.run(
-                    [WHISPER_BIN, "-m", WHISPER_MODEL_PATH, "-f", dummy_wav, "-t", "4", "--output-txt", "-of", "/tmp/warmup_out"],
+                    [WHISPER_BIN, "-m", WHISPER_MODEL_PATH, "-f", dummy_wav, "-ngl", "0", "-t", "4", "--output-txt", "-of", "/tmp/warmup_cpu_out"],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=10
                 )
-            logger.info("✅ [WARM-UP] Whisper GGML C++ Engine đã được nạp sẵn vào RAM và sẵn sàng xử lý tức thì.")
-    except Exception as e:
-        logger.warning(f"⚠️ [WARM-UP] Whisper warm-up warning: {e}")
+            logger.info("⚡ [WARM-UP] Whisper C++ Engine đã sẵn sàng trên CPU (AVX2 Multithreading).")
+        except Exception as e_cpu:
+            logger.warning(f"⚠️ [WARM-UP] Lỗi warm-up CPU: {e_cpu}")
+
+    _GPU_CHECKED = True
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    threading.Thread(target=_warmup_whisper, daemon=True).start()
+    threading.Thread(target=_detect_and_warmup_whisper, daemon=True).start()
     yield
 
-app = FastAPI(title="Worker Whisper Microservice", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Worker Whisper Microservice (GPU & CPU Fallback)", version="2.0.0", lifespan=lifespan)
  
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -176,6 +285,9 @@ def health_check():
     return {
         "status": "ok",
         "service": "worker-whisper",
+        "device": "gpu" if _USE_GPU else "cpu",
+        "gpu_available": _USE_GPU,
+        "backend": _GPU_DEVICE_NAME,
         "model_exists": os.path.exists(WHISPER_MODEL_PATH),
         "whisper_bin_exists": os.path.exists(WHISPER_BIN)
     }
@@ -269,28 +381,46 @@ async def transcribe_media(
                 detail=f"Thời lượng audio ({mins} phút {secs} giây) vượt quá giới hạn tối đa cho phép là 10 phút. Vui lòng chọn file ngắn hơn."
             )
 
-        # 2. Chạy whisper-cli tối ưu tốc độ, phân bổ tối đa 16 core CPU
+        # 2. Chạy whisper-cli ưu tiên GPU (CUDA -ngl 99), tự động fallback CPU nếu không có GPU hoặc gặp lỗi
         cpu_threads = str(min(os.cpu_count() or 16, 16))
-        cmd_whisper = [
-            WHISPER_BIN,
-            "-m", WHISPER_MODEL_PATH,
-            "-f", wav_path,
-            "-t", cpu_threads,
-            "-bs", "1",
-            "-bo", "1",
-            "-nf",
-            "-sns",
-            "-nth", "0.35",
-            "--output-json",
-            "-of", out_base
-        ]
-        if language and language != "auto":
-            cmd_whisper.extend(["-l", language])
-        if clean_task == "translate":
-            cmd_whisper.append("--translate")
+        actual_device = "gpu" if _USE_GPU else "cpu"
+        backend_name = _GPU_DEVICE_NAME if _USE_GPU else "CPU (AVX2 Multithreading)"
 
+        def _build_whisper_cmd(use_gpu: bool):
+            cmd = [
+                WHISPER_BIN,
+                "-m", WHISPER_MODEL_PATH,
+                "-f", wav_path,
+                "-bs", "1",
+                "-bo", "1",
+                "-nf",
+                "-sns",
+                "-nth", "0.35",
+                "--output-json",
+                "-of", out_base
+            ]
+            if use_gpu:
+                cmd.extend(["-dev", "0", "-t", "4"])
+            else:
+                cmd.extend(["-ng", "-t", cpu_threads])
+            if language and language != "auto":
+                cmd.extend(["-l", language])
+            if clean_task == "translate":
+                cmd.append("--translate")
+            return cmd
+
+        cmd_whisper = _build_whisper_cmd(_USE_GPU)
         start_t = time.perf_counter()
         res_wh = subprocess.run(cmd_whisper, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        # Nếu chạy GPU bị lỗi, tự động thử lại ngay lập tức với CPU đa luồng
+        if res_wh.returncode != 0 and _USE_GPU:
+            logger.warning(f"⚠️ Whisper GPU CUDA lỗi ({res_wh.stderr}). Tự động chuyển sang fallback CPU...")
+            cmd_whisper = _build_whisper_cmd(False)
+            res_wh = subprocess.run(cmd_whisper, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            actual_device = "cpu"
+            backend_name = "CPU (AVX2 Fallback)"
+
         proc_time = round(time.perf_counter() - start_t, 2)
 
         # [Issue 4] Kiểm tra returncode của whisper-cli
@@ -349,20 +479,23 @@ async def transcribe_media(
                     "audio_duration": duration_sec,
                     "detected_language": language,
                     "task": clean_task,
-                    "model": os.path.basename(WHISPER_MODEL_PATH)
+                    "model": os.path.basename(WHISPER_MODEL_PATH),
+                    "device": actual_device,
+                    "backend": backend_name
                 }
                 json.dump(export_json, out_f, ensure_ascii=False, indent=2)
             else:
                 out_f.write(text_content)
 
         send_otlp_trace(
-            name="    └─ 🎙️ [2/2] Nhận diện giọng nói AI (Whisper C++)",
+            name=f"    └─ 🎙️ [2/2] Nhận diện giọng nói AI ({backend_name})",
             duration_ms=proc_time * 1000.0,
             attributes={
                 "http.route": "/api/transcribe",
                 "http.method": "POST",
                 "http.status_code": 200,
-                "ai.model": "Whisper (GGML C++ Engine)",
+                "ai.model": f"Whisper ({backend_name})",
+                "ai.device": actual_device,
                 "ai.audio_duration_sec": duration_sec,
                 "ai.detected_language": language,
                 "ai.output_format": clean_format,
@@ -380,7 +513,9 @@ async def transcribe_media(
             "audio_duration": duration_sec,
             "processing_time": proc_time,
             "detected_language": language,
-            "model_used": os.path.basename(WHISPER_MODEL_PATH)
+            "model_used": os.path.basename(WHISPER_MODEL_PATH),
+            "device": actual_device,
+            "backend": backend_name
         }
     except HTTPException:
         raise
