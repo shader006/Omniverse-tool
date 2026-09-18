@@ -14,8 +14,9 @@ DEFAULT_DOWNLOAD_DIR = os.getenv(
 
 
 def generate_cache_key(url: str, media_format: str, quality: str) -> str:
-    """Tạo tiền tố MD5 nhất quán cho file tải"""
-    raw = f"{url.strip()}_{media_format.lower()}_{quality}"
+    """Tạo tiền tố MD5 nhất quán cho file tải dựa trên URL đã chuẩn hóa"""
+    cleaned = clean_url_key(url)
+    raw = f"{cleaned}_{media_format.lower()}_{quality}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:10]
 
 
@@ -23,24 +24,33 @@ def get_base_ydl_opts(media_format: str = "mp3") -> Dict[str, Any]:
     """Cấu hình tối ưu hóa tốc độ tải và Adaptive Concurrency theo định dạng"""
     is_audio = media_format in ("mp3", "m4a", "wav", "flac")
 
-    # Adaptive Concurrency: Audio dùng 4 fragments + 5MB buffer, Video dùng 8 fragments + 10MB buffer
-    concurrent_fragments = 4 if is_audio else 8
-    chunk_size = 5 * 1024 * 1024 if is_audio else 10 * 1024 * 1024
-
-    return {
+    opts: Dict[str, Any] = {
         'quiet': True,
         'no_warnings': True,
         'socket_timeout': 15,
-        'retries': 10,
-        'fragment_retries': 10,
+        'retries': 5,
+        'fragment_retries': 5,
         'skip_unavailable_fragments': True,
         'keepvideo': False,
         'nocheckcertificate': True,
         'noplaylist': True,
-        'concurrent_fragment_downloads': concurrent_fragments,
-        'http_chunk_size': chunk_size,
         'hls_prefer_native': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+            }
+        },
     }
+
+    if is_audio:
+        # Audio: Không giới hạn http_chunk_size để stream 1 kết nối duy nhất, giảm độ trễ mạng
+        opts['concurrent_fragment_downloads'] = 4
+    else:
+        # Video: 8 luồng song song với 10MB chunk
+        opts['concurrent_fragment_downloads'] = 8
+        opts['http_chunk_size'] = 10 * 1024 * 1024
+
+    return opts
 
 
 def run_download_task(
@@ -54,12 +64,24 @@ def run_download_task(
     """Tải và chuyển đổi định dạng Media với Adaptive Concurrency và FFmpeg"""
     cleaned_url = clean_url_key(url)
     os.makedirs(output_dir, exist_ok=True)
+    cache_prefix = generate_cache_key(cleaned_url, media_format, quality)
+
+    # Fast-path Disk Cache Check: Nếu file đã tồn tại và hợp lệ (> 1KB), trả về ngay lập tức (0ms)
+    try:
+        for fname in os.listdir(output_dir):
+            if fname.startswith(cache_prefix) and fname.endswith(f".{media_format}"):
+                fpath = os.path.join(output_dir, fname)
+                if os.path.isfile(fpath) and os.path.getsize(fpath) > 1024:
+                    if progress_callback:
+                        progress_callback(100.0, "Đã tìm thấy trong bộ nhớ đệm!")
+                    return fname
+    except Exception:
+        pass
 
     if progress_callback:
         progress_callback(10.0, "Đang lấy thông tin định dạng...")
 
     ydl_opts = get_base_ydl_opts(media_format)
-    cache_prefix = generate_cache_key(cleaned_url, media_format, quality)
 
     def hook(d):
         if d['status'] == 'downloading':

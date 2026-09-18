@@ -110,7 +110,16 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) proxyFileFromWorkers(w http.ResponseWriter, r *http.Request, filename string) bool {
-	workers := []string{s.workerRmbgURL, s.workerWhisperURL}
+	var workers []string
+	lowerName := strings.ToLower(filename)
+	if strings.HasPrefix(lowerName, "transcript_") || strings.HasPrefix(lowerName, "whisper_") {
+		workers = []string{s.workerWhisperURL, s.workerRmbgURL}
+	} else if strings.HasPrefix(lowerName, "rmbg_") {
+		workers = []string{s.workerRmbgURL, s.workerWhisperURL}
+	} else {
+		workers = []string{s.workerRmbgURL, s.workerWhisperURL}
+	}
+
 	for _, workerURL := range workers {
 		if workerURL == "" {
 			continue
@@ -132,7 +141,19 @@ func (s *Server) proxyFileFromWorkers(w http.ResponseWriter, r *http.Request, fi
 				}
 			}
 			w.WriteHeader(http.StatusOK)
-			_, _ = io.Copy(w, resp.Body)
+
+			// Lưu bản sao vào thư mục s.downloadDir cục bộ để lần sau phục vụ tức thì (0ms)
+			localPath := filepath.Join(s.downloadDir, filepath.Clean(filename))
+			tmpLocalPath := localPath + ".tmp"
+			localFile, err := os.OpenFile(tmpLocalPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err == nil {
+				multiWriter := io.MultiWriter(w, localFile)
+				_, _ = io.Copy(multiWriter, resp.Body)
+				_ = localFile.Close()
+				_ = os.Rename(tmpLocalPath, localPath)
+			} else {
+				_, _ = io.Copy(w, resp.Body)
+			}
 			return true
 		}
 		resp.Body.Close()

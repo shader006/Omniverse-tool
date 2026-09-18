@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -338,6 +339,15 @@ func CleanURLKey(rawURL string) string {
 func GenerateCacheKey(rawURL, mediaFormat, quality string) string {
 	cleaned := CleanURLKey(rawURL)
 	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
+	hasher := md5.New()
+	hasher.Write([]byte(raw))
+	return hex.EncodeToString(hasher.Sum(nil))[:10]
+}
+
+// GenerateCacheKeySHA256 giữ lại để tương thích ngược với các file cũ
+func GenerateCacheKeySHA256(rawURL, mediaFormat, quality string) string {
+	cleaned := CleanURLKey(rawURL)
+	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
 	hasher := sha256.New()
 	hasher.Write([]byte(raw))
 	return hex.EncodeToString(hasher.Sum(nil))[:10]
@@ -345,12 +355,13 @@ func GenerateCacheKey(rawURL, mediaFormat, quality string) string {
 
 func (pe *PogocacheEngine) FindCachedFile(rawURL, mediaFormat, quality string) (string, bool) {
 	prefixMD5 := GenerateCacheKey(rawURL, mediaFormat, quality)
+	prefixSha := GenerateCacheKeySHA256(rawURL, mediaFormat, quality)
 	
-	// Khóa SHA256 dự phòng để tương thích ngược
-	rawSha := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(rawURL), strings.ToLower(mediaFormat), quality)
-	hSha := sha256.New()
-	hSha.Write([]byte(rawSha))
-	prefixSha := hex.EncodeToString(hSha.Sum(nil))[:12]
+	// Khóa SHA256 độ dài 12 dự phòng cũ
+	rawSha12 := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(rawURL), strings.ToLower(mediaFormat), quality)
+	hSha12 := sha256.New()
+	hSha12.Write([]byte(rawSha12))
+	prefixSha12 := hex.EncodeToString(hSha12.Sum(nil))[:12]
 
 	entries, err := os.ReadDir(pe.downloadDir)
 	if err != nil {
@@ -363,7 +374,7 @@ func (pe *PogocacheEngine) FindCachedFile(rawURL, mediaFormat, quality string) (
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, prefixMD5) || strings.HasPrefix(name, prefixSha) {
+		if strings.HasPrefix(name, prefixMD5) || strings.HasPrefix(name, prefixSha) || strings.HasPrefix(name, prefixSha12) {
 			// Bỏ qua file tạm hoặc không đúng định dạng
 			lowerName := strings.ToLower(name)
 			if strings.HasSuffix(lowerName, ".part") || strings.HasSuffix(lowerName, ".ytdl") {
