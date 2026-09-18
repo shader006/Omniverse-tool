@@ -207,9 +207,9 @@ export async function loadBiRefNetClientEngine(onProgress) {
 
     const alreadyCached = await isModelCached();
     if (alreadyCached) {
-      onProgress(`⚡ Đã tìm thấy BiRefNet-Lite trong Cache trình duyệt! Đang khởi tạo tức thì trên ${deviceLabel}...`, 25);
+      onProgress('Đang nạp bộ xử lý AI từ bộ nhớ đệm...', 25);
     } else {
-      onProgress(`Đang tải mô hình BiRefNet-Lite ONNX lần đầu về Cache (${deviceLabel})...`, 25);
+      onProgress('Đang chuẩn bị bộ xử lý AI tách nền (Lần đầu dùng có thể mất thời gian hơn dự kiến)...', 25);
     }
 
     segmenterPipeline = await pipeline('image-segmentation', BIREFNET_MODEL_ID, {
@@ -218,13 +218,12 @@ export async function loadBiRefNetClientEngine(onProgress) {
       progress_callback: (progressInfo) => {
         if (progressInfo && progressInfo.status === 'progress' && progressInfo.total) {
           const pct = Math.min(85, Math.round(25 + (progressInfo.loaded / progressInfo.total) * 55));
-          const file = progressInfo.file || 'model.onnx';
-          onProgress(`Đang nạp mô hình BiRefNet-Lite (${file}): ${pct}%`, pct);
+          onProgress(`Đang chuẩn bị dữ liệu AI (${pct}%) • Lần đầu dùng có thể mất thời gian hơn dự kiến`, pct);
         }
       }
     });
 
-    onProgress('Mô hình BiRefNet-Lite trên Client đã sẵn sàng!', 85);
+    onProgress('Hệ thống AI tách nền đã sẵn sàng!', 85);
     return segmenterPipeline;
   })();
 
@@ -352,12 +351,12 @@ export async function processOnClient(imageFile, options = {}, onProgress = () =
 
   const durationMs = Math.round(performance.now() - startTime);
   const baseName = (imageFile.name || 'image').replace(/\.[^/.]+$/, '');
-  const outFilename = `${baseName}_birefnet_client.png`;
+  const outFilename = `${baseName}_cutout.png`;
 
   return {
     success: true,
-    engine: 'client-wasm',
-    engineDisplay: 'Trình duyệt (BiRefNet-Lite ONNX WebGPU/WASM)',
+    engine: 'client',
+    engineDisplay: '⚡ Xử lý Siêu Tốc (Cục bộ)',
     filename: outFilename,
     blob: finalResult.blob,
     downloadUrl: finalResult.downloadUrl,
@@ -368,9 +367,9 @@ export async function processOnClient(imageFile, options = {}, onProgress = () =
     width: finalResult.width,
     height: finalResult.height,
     metadata: {
-      engine: 'Client BiRefNet-Lite (Transformers.js)',
-      model_display: 'BiRefNet-Lite (Đồng nhất Model Server)',
-      execution_device: 'Client Device (Zero Server Load)',
+      engine: 'Client AI',
+      model_display: 'AI Tách Nền Tiêu Chuẩn',
+      execution_device: 'Local Device',
       timing_ms: { total: durationMs }
     }
   };
@@ -383,7 +382,7 @@ export function isMobileDevice() {
 }
 
 export async function processOnServer(imageFile, options = {}, onProgress = () => {}) {
-  onProgress('Đang gửi ảnh tới Máy chủ AI BiRefNet-Lite...', 30);
+  onProgress('Đang gửi ảnh tới hệ thống xử lý...', 30);
   const startTime = performance.now();
 
   const formData = new FormData();
@@ -392,7 +391,7 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
   formData.append('bg_color', options.bgColor || 'transparent');
   formData.append('alpha_matting', options.alphaMatting ? 'true' : 'false');
 
-  onProgress('Máy chủ đang phân tích mô hình BiRefNet-Lite OpenVINO SOTA...', 50);
+  onProgress('Hệ thống đang tiến hành bóc tách nền ảnh...', 50);
 
   let response;
   try {
@@ -404,7 +403,7 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
     throw new Error(`Không thể kết nối tới máy chủ (${netErr.message || 'Mất kết nối'}). Vui lòng kiểm tra lại mạng.`);
   }
 
-  onProgress('Đang nhận kết quả từ Máy chủ...', 90);
+  onProgress('Đang nhận kết quả từ máy chủ...', 90);
 
   const respText = await response.text();
   let data;
@@ -443,7 +442,7 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
   return {
     success: true,
     engine: 'server',
-    engineDisplay: 'Máy chủ (OpenVINO BiRefNet-Lite)',
+    engineDisplay: '☁️ Máy Chủ AI Tăng Tốc',
     filename: data.filename || 'removed_bg.png',
     downloadUrl: data.download_url,
     previewBase64: data.preview_base64 || data.download_url,
@@ -451,9 +450,9 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
     processingTimeMs: data.processing_time_ms || durationMs,
     resultSizeBytes: data.result_size_bytes || 0,
     metadata: data.metadata || {
-      engine: 'Server Python OpenVINO',
-      model_display: 'Server BiRefNet-Lite',
-      execution_device: 'Server CPU/GPU'
+      engine: 'Cloud AI',
+      model_display: 'AI Tách Nền Tiêu Chuẩn',
+      execution_device: 'Cloud Accelerator'
     }
   };
 }
@@ -466,7 +465,7 @@ export async function removeBackgroundHybrid(imageFile, options = {}, onProgress
 
   if (options.autoCompress !== false) {
     try {
-      onProgress('Đang phân tích & tối ưu hóa kích thước ảnh...', 5);
+      onProgress('Đang tối ưu hóa kích thước ảnh...', 5);
       const compResult = await compressAndResizeImage(imageFile, {
         maxDimension: options.maxDimension || 2048,
         quality: options.quality || 0.92
@@ -476,7 +475,7 @@ export async function removeBackgroundHybrid(imageFile, options = {}, onProgress
         compressionMeta = compResult;
         const origMB = (compResult.originalSize / 1024 / 1024).toFixed(1);
         const optMB = (compResult.optimizedSize / 1024 / 1024).toFixed(2);
-        onProgress(`Đã tối ưu hóa ảnh: ${origMB}MB -> ${optMB}MB (Giảm ${compResult.ratioReducedPercent}%)`, 10);
+        onProgress(`Đã tối ưu hóa ảnh: ${origMB}MB -> ${optMB}MB`, 10);
       }
     } catch (compErr) {
       console.warn('[RMBG] Bỏ qua bước nén ảnh do lỗi:', compErr);
@@ -494,11 +493,9 @@ export async function removeBackgroundHybrid(imageFile, options = {}, onProgress
     if (compressionMeta) clientResult.compressionMeta = compressionMeta;
     return clientResult;
   } catch (clientErr) {
-    console.warn('⚠️ [RMBG Client] Không thể tải/chạy trên trình duyệt, chuyển sang Server Fallback:', clientErr);
+    console.warn('Tự động chuyển tiếp sang Máy chủ xử lý:', clientErr);
 
-    const noticeText = isMobile
-      ? 'Thiết bị di động không hỗ trợ tải mô hình 224MB, đã tự động chuyển sang Máy chủ BiRefNet-Lite.'
-      : `Trình duyệt gặp sự cố (${clientErr.message || 'Mạng/RAM'}), đã tự động chuyển sang Máy chủ BiRefNet-Lite.`;
+    const noticeText = 'Đang tự động chuyển sang máy chủ xử lý tối ưu...';
 
     onProgress(noticeText, 30);
     await new Promise(r => setTimeout(r, 200));

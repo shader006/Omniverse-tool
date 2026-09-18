@@ -70,7 +70,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     if (lang === 'en') {
       return [
         { id: 1, start: 0.0, end: 4.2, text: "Welcome to Oniverse Tool - The multi-media suite with authentic 8-bit retro pixel style." },
-        { id: 2, start: 4.5, end: 9.8, text: "OpenAI Whisper AI automatically transcribes speech and detects timestamps with high precision." },
+        { id: 2, start: 4.5, end: 9.8, text: "Advanced AI automatically transcribes speech and detects timestamps with high precision." },
         { id: 3, start: 10.2, end: 16.5, text: "Supports real-time Live Synced Lyrics synchronization and raw text viewing." },
         { id: 4, start: 17.0, end: 23.4, text: "You can click any lyric segment below to seek and jump playback instantly." },
         { id: 5, start: 24.0, end: 29.5, text: "Export standard SRT, VTT, TXT, JSON subtitles and copy transcript in a single click." }
@@ -78,7 +78,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     }
     return [
       { id: 1, start: 0.0, end: 4.2, text: "Chào mừng bạn đến với Oniverse Tool - Bộ công cụ Media đa năng phong cách Pixel." },
-      { id: 2, start: 4.5, end: 9.8, text: "Công nghệ Whisper AI tự động nhận diện và bóc tách giọng nói với độ chính xác cao." },
+      { id: 2, start: 4.5, end: 9.8, text: "Hệ thống AI tự động nhận diện và bóc tách giọng nói với độ chính xác cao." },
       { id: 3, start: 10.2, end: 16.5, text: "Hỗ trợ đồng bộ lời bài hát trực tiếp (Live Synced Lyrics) và xem văn bản thô tiện lợi." },
       { id: 4, start: 17.0, end: 23.4, text: "Bạn có thể bấm vào bất kỳ câu nào để nghe phát lại đoạn âm thanh tương ứng." },
       { id: 5, start: 24.0, end: 29.5, text: "Xuất file phụ đề chuẩn SRT, VTT, TXT và sao chép văn bản chỉ với một cú nhấp chuột." }
@@ -87,7 +87,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
 
   const handleLoadDemoAudio = (e) => {
     if (e) e.stopPropagation();
-    const demoBlob = new Blob(['Demo audio content for whisper transcribe testing'], { type: 'audio/mp3' });
+    const demoBlob = new Blob(['Demo audio content for speech transcribe testing'], { type: 'audio/mp3' });
     const demoFile = new File([demoBlob], 'oniverse_voice_sample.mp3', { type: 'audio/mp3' });
     handleFileChange(demoFile);
   };
@@ -95,14 +95,14 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
   const handleStartTranscribe = async () => {
     let fileToTranscribe = selectedFile;
     if (!fileToTranscribe) {
-      const demoBlob = new Blob(['Demo audio content for whisper transcribe testing'], { type: 'audio/mp3' });
+      const demoBlob = new Blob(['Demo audio content for speech transcribe testing'], { type: 'audio/mp3' });
       fileToTranscribe = new File([demoBlob], 'oniverse_voice_sample.mp3', { type: 'audio/mp3' });
       setSelectedFile(fileToTranscribe);
     }
 
     setErrorMsg('');
     setIsTranscribing(true);
-    setProgressText('Đang kiểm tra khả năng tăng tốc WebGPU...');
+    setProgressText('Đang chuẩn bị bộ xử lý AI (Lần đầu dùng có thể mất thời gian hơn dự kiến)...');
     setProgressPercent(10);
     setResultData(null);
 
@@ -368,10 +368,13 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
           <div className="active-progress-banner" style={{ marginTop: '16px' }}>
             <div className="progress-info-row">
               <span>{progressText || tr.whisper_progress_banner}</span>
-              <span>{progressPercent ? `${progressPercent}%` : 'AI Cascade'}</span>
+              <span>{progressPercent ? `${progressPercent}%` : 'Đang xử lý'}</span>
             </div>
             <div className="progress-track">
               <div className="progress-bar-fill" style={{ width: `${progressPercent || 75}%`, background: 'linear-gradient(90deg, #9333ea, #3b82f6)' }}></div>
+            </div>
+            <div style={{ marginTop: '8px', fontSize: '0.82rem', color: '#a1a1aa', textAlign: 'center' }}>
+              ℹ️ Lần đầu dùng có thể mất thời gian hơn dự kiến
             </div>
           </div>
         )}
@@ -385,15 +388,12 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
                 <div className="result-header-text">
                   <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{tr.whisper_result_success}</h4>
                   <div className="transcribe-meta-tags">
-                    <span className="meta-tag" style={{ background: resultData.engine === 'client-webgpu' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)', borderColor: resultData.engine === 'client-webgpu' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(59, 130, 246, 0.4)', color: resultData.engine === 'client-webgpu' ? '#34d399' : '#60a5fa', fontWeight: 700 }}>
-                      {resultData.engineDisplay || (resultData.device === 'webgpu' ? '⚡ WebGPU (Client)' : '☁️ Server')}
-                    </span>
-                    <span className="meta-tag" style={{ background: 'rgba(147, 51, 234, 0.2)', borderColor: 'rgba(147, 51, 234, 0.4)', color: '#c084fc', fontWeight: 700 }}>
-                      AI: {rawModel || 'TINY / SMALL'}
+                    <span className="meta-tag" style={{ background: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#34d399', fontWeight: 700 }}>
+                      {resultData.engineDisplay || '⚡ Xử lý tự động'}
                     </span>
                     <span className="meta-tag">{tr.whisper_result_lang} {(resultData.detected_language || (lang === 'en' ? 'en' : 'vi')).toUpperCase()}</span>
                     <span className="meta-tag">{tr.whisper_result_duration} {formatDurationHuman(resultData.audio_duration)}</span>
-                    <span className="meta-tag" title="Thời gian mô hình AI Whisper nhận diện âm thanh" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#34d399', fontWeight: 600 }}>
+                    <span className="meta-tag" title="Thời gian AI phân tích và trích xuất giọng nói" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#34d399', fontWeight: 600 }}>
                       ⚡ {tr.whisper_result_process_time} {resultData.processing_time || 0}s
                     </span>
                     {resultData.total_e2e_time ? (

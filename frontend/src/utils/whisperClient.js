@@ -131,7 +131,7 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
 
   isPipelineLoading = true;
   pipelinePromise = (async () => {
-    onProgress('Đang tải thư viện AI Transformers.js (WebGPU)...', 5);
+    onProgress('Đang khởi tạo hệ thống AI...', 5);
 
     let transformers;
     try {
@@ -150,10 +150,10 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
 
     const hasWebGPU = await isWebGPUSupported();
     if (!hasWebGPU) {
-      throw new Error('Trình duyệt không hỗ trợ WebGPU, chuyển sang máy chủ.');
+      throw new Error('Thiết bị không hỗ trợ bộ tăng tốc đồ họa, chuyển sang chế độ máy chủ.');
     }
 
-    // 1. Kiểm tra xem Máy chủ nội bộ có sẵn mô hình Whisper hay không (/models/whisper-tiny)
+    // 1. Kiểm tra xem Máy chủ nội bộ có sẵn mô hình hay không
     let useLocalServer = false;
     try {
       const probe = await fetch('/models/whisper-tiny/config.json', { method: 'HEAD' });
@@ -164,12 +164,10 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
 
     let targetModelId = WHISPER_MODEL_ID;
     if (useLocalServer) {
-      console.log('⚡ [Whisper WebGPU] Phát hiện mô hình cục bộ trên Server! Tải siêu tốc từ /models/whisper-tiny...');
       env.remoteHost = window.location.origin;
       env.remotePathTemplate = 'models/{model}/';
       targetModelId = LOCAL_WHISPER_MODEL_ID;
     } else {
-      console.log('🌐 [Whisper WebGPU] Server chưa có sẵn model, dự phòng tải từ Hugging Face...');
       env.remoteHost = 'https://huggingface.co';
       env.remotePathTemplate = '{model}/resolve/{revision}/';
       targetModelId = WHISPER_MODEL_ID;
@@ -177,11 +175,9 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
 
     const cached = await isModelCached();
     if (cached) {
-      onProgress('⚡ Đã tìm thấy Whisper trong Cache trình duyệt! Đang nạp mô hình vào WebGPU...', 15);
-    } else if (useLocalServer) {
-      onProgress('⚡ Đang tải mô hình Whisper AI từ Máy chủ nội bộ (Tốc độ LAN siêu nhanh)...', 10);
+      onProgress('Đang nạp bộ xử lý AI từ bộ nhớ đệm...', 15);
     } else {
-      onProgress('Đang kết nối HuggingFace tải mô hình Whisper AI ONNX...', 10);
+      onProgress('Đang chuẩn bị bộ xử lý AI (Lần đầu dùng có thể mất thời gian hơn dự kiến)...', 10);
     }
 
     const transcriber = await pipeline('automatic-speech-recognition', targetModelId, {
@@ -192,19 +188,16 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
       },
       progress_callback: (p) => {
         if (p.status === 'progress' && p.total) {
-          const fileName = (p.file || '').split('/').pop() || 'model';
-          const loadedMB = (p.loaded / 1024 / 1024).toFixed(1);
-          const totalMB = (p.total / 1024 / 1024).toFixed(1);
           const filePct = Math.round((p.loaded / p.total) * 100);
           const overallPct = Math.min(80, Math.round(filePct * 0.65) + 15);
-          onProgress(`Đang nạp ${fileName}: ${loadedMB}/${totalMB} MB (${filePct}%)`, overallPct);
+          onProgress(`Đang tải dữ liệu AI (${filePct}%) • Lần đầu dùng có thể mất thời gian hơn dự kiến`, overallPct);
         } else if (p.status === 'done' && p.file && p.file.includes('decoder')) {
-          onProgress('Đã nạp xong file model! Đang biên dịch Shader WebGPU trên phần cứng của bạn...', 80);
+          onProgress('Đang tối ưu hóa bộ xử lý trên thiết bị của bạn...', 80);
         }
       }
     });
 
-    onProgress('Mô hình Whisper AI đã sẵn sàng trên WebGPU!', 85);
+    onProgress('Hệ thống AI đã sẵn sàng xử lý!', 85);
     transcriberPipeline = transcriber;
     isPipelineLoading = false;
     return transcriber;
@@ -219,21 +212,14 @@ export async function loadWhisperClientEngine(onProgress = () => {}) {
 
 export async function transcribeOnClient(audioFile, options = {}, onProgress = () => {}) {
   const startTime = performance.now();
-  console.time('⏱️ [Whisper WebGPU] Tổng thời gian');
 
-  onProgress('Đang phân tích và giải mã tín hiệu âm thanh (16kHz)...', 5);
-  console.time('⏱️ [Whisper WebGPU] 1. Giải mã Audio');
+  onProgress('Đang phân tích tín hiệu âm thanh...', 5);
   const { audioData, duration } = await decodeAudioToMono16k(audioFile);
-  console.timeEnd('⏱️ [Whisper WebGPU] 1. Giải mã Audio');
-  console.log(`[Whisper WebGPU] Đã giải mã audio: thời lượng ${duration}s, ${audioData.length} samples 16kHz`);
 
-  onProgress('Đang khởi tạo bộ suy luận Whisper WebGPU...', 15);
-  console.time('⏱️ [Whisper WebGPU] 2. Tải & Nạp Model');
+  onProgress('Đang chuẩn bị bộ xử lý AI (Lần đầu dùng có thể mất thời gian hơn dự kiến)...', 15);
   const transcriber = await loadWhisperClientEngine(onProgress);
-  console.timeEnd('⏱️ [Whisper WebGPU] 2. Tải & Nạp Model');
 
-  onProgress(`AI WebGPU đang nhận diện giọng nói (thời lượng audio: ${duration}s)...`, 85);
-  console.time('⏱️ [Whisper WebGPU] 3. Suy luận AI WebGPU');
+  onProgress(`Đang nhận diện giọng nói (Thời lượng: ${duration}s)...`, 85);
 
   const langCode = options.language && options.language !== 'auto' ? options.language : null;
   const taskName = options.task || 'transcribe';
@@ -245,10 +231,8 @@ export async function transcribeOnClient(audioFile, options = {}, onProgress = (
     chunk_length_s: 30,
     stride_length_s: 5
   });
-  console.timeEnd('⏱️ [Whisper WebGPU] 3. Suy luận AI WebGPU');
-  console.timeEnd('⏱️ [Whisper WebGPU] Tổng thời gian');
 
-  onProgress('Đang trích xuất cấu trúc phụ đề...', 95);
+  onProgress('Đang trích xuất cấu trúc văn bản...', 95);
 
   const rawChunks = Array.isArray(output.chunks) ? output.chunks : [];
   const segments = rawChunks.map((chunk, idx) => {
@@ -287,8 +271,8 @@ export async function transcribeOnClient(audioFile, options = {}, onProgress = (
 
   return {
     success: true,
-    engine: 'client-webgpu',
-    engineDisplay: '⚡ Trình duyệt (Whisper WebGPU • 0 tải Server)',
+    engine: 'client',
+    engineDisplay: '⚡ Xử lý Siêu Tốc (Cục bộ)',
     filename: `${baseName}.${format}`,
     download_url: downloadUrl,
     text: fullText,
@@ -296,15 +280,15 @@ export async function transcribeOnClient(audioFile, options = {}, onProgress = (
     audio_duration: duration,
     processing_time: durationMs,
     detected_language: langCode || 'vi',
-    model_used: 'Whisper-Tiny (WebGPU q4)',
-    device: 'webgpu',
-    backend: 'Client WebGPU'
+    model_used: 'AI Tiêu Chuẩn',
+    device: 'local',
+    backend: 'Cục bộ'
   };
 }
 
 export async function transcribeOnServer(audioFile, options = {}, onProgress = () => {}) {
   const reqStartTime = performance.now();
-  onProgress('Đang gửi âm thanh tới Máy chủ AI...', 10);
+  onProgress('Đang xử lý âm thanh trên máy chủ AI...', 10);
 
   const formData = new FormData();
   formData.append('file', audioFile);
@@ -334,36 +318,29 @@ export async function transcribeOnServer(audioFile, options = {}, onProgress = (
 
   const totalElapsedSec = Number(((performance.now() - reqStartTime) / 1000).toFixed(2));
   data.total_e2e_time = totalElapsedSec;
-
-  const backendName = data.backend || (data.device === 'gpu' ? 'Máy chủ GPU Pail (RTX 3090)' : 'Máy chủ Dự phòng Shader (CPU i9)');
-  data.engineDisplay = data.backend?.includes('3090')
-    ? '🚀 Máy chủ GPU Pail (RTX 3090 CUDA)'
-    : '💻 Máy chủ Dự phòng Shader (CPU i9)';
+  data.engineDisplay = '☁️ Máy Chủ AI Tăng Tốc';
+  data.model_used = 'AI Tiêu Chuẩn';
 
   return data;
 }
 
 /**
- * Luồng hợp nhất 3 tầng tự động:
- * Tầng 1: WebGPU trên trình duyệt (ưu tiên cao nhất)
- * Tầng 2: Máy chủ remote Pail (RTX 3090)
- * Tầng 3: Máy chủ local Shader (CPU i9)
+ * Luồng hợp nhất tự động:
+ * Tầng 1: Xử lý cục bộ trên thiết bị
+ * Tầng 2: Máy chủ đám mây tăng tốc
  */
 export async function transcribeHybrid(audioFile, options = {}, onProgress = () => {}) {
   const hasWebGPU = await isWebGPUSupported();
   const isMobile = isMobileDevice();
 
-  // 1. Thử nghiệm WebGPU trên trình duyệt (ưu tiên số 1)
   if (hasWebGPU && !isMobile) {
     try {
-      console.log('🚀 [Whisper] Đang khởi động suy luận Client WebGPU...');
       return await transcribeOnClient(audioFile, options, onProgress);
-    } catch (webgpuErr) {
-      console.warn('⚠️ [Whisper WebGPU Client] Lỗi/Không thể chạy WebGPU, chuyển tiếp sang Máy chủ:', webgpuErr);
-      onProgress('⚡ WebGPU gặp lỗi, đang tự động chuyển tiếp sang Máy chủ (Pail ➡️ Shader)...', 25);
+    } catch (localErr) {
+      console.warn('Chuyển tiếp sang xử lý máy chủ:', localErr);
+      onProgress('Đang tự động chuyển tiếp sang máy chủ xử lý tối ưu...', 25);
     }
   }
 
-  // 2. Tự động gửi lên Server (Server có failover Pail RTX 3090 -> Shader CPU i9)
   return await transcribeOnServer(audioFile, options, onProgress);
 }
