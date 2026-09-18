@@ -124,12 +124,16 @@ _RESAMPLE_BICUBIC = getattr(getattr(Image, "Resampling", None), "BICUBIC", getat
 
 
 def _preload_nvidia_libs():
-    """Tự động preload các thư viện CUDA/cuDNN từ site-packages nếu có để ONNX Runtime GPU tìm thấy libcudnn."""
+    """Tự động preload các thư viện CUDA/cuDNN/TensorRT từ site-packages nếu có để ONNX Runtime GPU tìm thấy libcudnn và libnvinfer."""
     try:
         import ctypes
         import site
         for base_p in site.getsitepackages():
-            for sub in [os.path.join("nvidia", "cudnn", "lib"), os.path.join("nvidia", "cublas", "lib")]:
+            for sub in [
+                os.path.join("nvidia", "cudnn", "lib"),
+                os.path.join("nvidia", "cublas", "lib"),
+                "tensorrt_libs",
+            ]:
                 target_dir = os.path.join(base_p, sub)
                 if os.path.exists(target_dir):
                     for fname in sorted(os.listdir(target_dir)):
@@ -208,17 +212,38 @@ class BiRefNetOpenVINOEngine:
             self.device = "none"
 
     def _init_engine(self):
-        # ── ƯU TIÊN 1: Khởi tạo GPU NVIDIA CUDA qua ONNX Runtime GPU ──
+        # ── ƯU TIÊN 1: Khởi tạo GPU với NVIDIA TensorRT FP16 (hoặc CUDA với giới hạn trần VRAM) ──
         try:
             import onnxruntime as ort
             available_providers = ort.get_available_providers()
+            trt_cache_dir = os.path.join(os.path.dirname(self.model_path), "trt_cache")
+            os.makedirs(trt_cache_dir, exist_ok=True)
+
+            providers = []
+            enable_trt = os.getenv("ENABLE_TENSORRT", "false").strip().lower() in ("true", "1", "yes")
+            if enable_trt and "TensorrtExecutionProvider" in available_providers:
+                trt_opts = {
+                    "device_id": 0,
+                    "trt_max_workspace_size": 2 * 1024 * 1024 * 1024,  # Khống chế 2GB Workspace VRAM
+                    "trt_fp16_enable": True,                             # Tăng tốc FP16
+                    "trt_engine_cache_enable": True,                     # Lưu cache .engine trên ổ đĩa để tái sử dụng
+                    "trt_engine_cache_path": trt_cache_dir,
+                }
+                providers.append(("TensorrtExecutionProvider", trt_opts))
+
             if "CUDAExecutionProvider" in available_providers:
                 cuda_opts = {
                     "device_id": 0,
                     "arena_extend_strategy": "kSameAsRequested",
+                    "gpu_mem_limit": 6 * 1024 * 1024 * 1024,             # Trần cứng tối đa 6GB VRAM (thay vì tràn 11GB)
                     "cudnn_conv_algo_search": "DEFAULT",
                     "do_copy_in_default_stream": True,
                 }
+                providers.append(("CUDAExecutionProvider", cuda_opts))
+
+            providers.append("CPUExecutionProvider")
+
+            if len(providers) > 1:
                 sess_opts = ort.SessionOptions()
                 sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
                 sess_opts.log_severity_level = 3  # Ẩn các log cảnh báo verbose không cần thiết
@@ -226,19 +251,25 @@ class BiRefNetOpenVINOEngine:
                 session = ort.InferenceSession(
                     self.model_path,
                     sess_options=sess_opts,
-                    providers=[("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"],
+                    providers=providers,
                 )
                 active_providers = session.get_providers()
-                if "CUDAExecutionProvider" in active_providers:
+                if "TensorrtExecutionProvider" in active_providers:
+                    self.compiled_model = session
+                    self.backend = "tensorrt"
+                    self.device = "gpu"
+                    logger.info("⚡ [GPU TensorRT] BiRefNet-Lite đã nạp thành công với TensorRT Engine FP16.")
+                    return
+                elif "CUDAExecutionProvider" in active_providers:
                     self.compiled_model = session
                     self.backend = "cuda"
                     self.device = "gpu"
                     logger.info("🚀 [GPU CUDA] BiRefNet-Lite đã nạp thành công trên GPU NVIDIA (CUDAExecutionProvider).")
                     return
                 else:
-                    logger.warning("⚠️ CUDAExecutionProvider không được kích hoạt thực tế, chuyển sang CPU fallback...")
-        except Exception as e_cuda:
-            logger.warning(f"⚠️ Không thể khởi động GPU CUDA ({e_cuda}). Tự động chuyển sang fallback CPU...")
+                    logger.warning("⚠️ Không kích hoạt được GPU TensorRT/CUDA, chuyển sang CPU fallback...")
+        except Exception as e_gpu:
+            logger.warning(f"⚠️ Không thể khởi động GPU TensorRT/CUDA ({e_gpu}). Tự động chuyển sang fallback CPU...")
 
         # ── ƯU TIÊN 2: Fallback sang OpenVINO CPU ──
         try:
@@ -320,7 +351,7 @@ class BiRefNetOpenVINOEngine:
                 results = infer_req.infer({0: tensor})
                 out_tensor = list(results.values())[0]
                 del infer_req, results
-            elif self.backend in ("cuda", "onnxruntime", "onnxruntime_cpu"):
+            elif self.backend in ("tensorrt", "cuda", "onnxruntime", "onnxruntime_cpu"):
                 try:
                     input_name = self.compiled_model.get_inputs()[0].name
                     results = self.compiled_model.run(None, {input_name: tensor})
@@ -329,7 +360,7 @@ class BiRefNetOpenVINOEngine:
                 except Exception as e_run:
                     logger.warning(f"Lỗi runtime inference backend '{self.backend}': {e_run}")
                     # Nếu đang chạy GPU mà bị lỗi, tự động chuyển về CPU ngay lập tức
-                    if self.backend == "cuda":
+                    if self.backend in ("tensorrt", "cuda"):
                         logger.info("Đang tự động chuyển đổi engine sang CPU fallback...")
                         self._init_cpu_fallback()
                         if self.backend == "openvino":
@@ -443,7 +474,9 @@ def remove_background(
             rgba.putalpha(mask)
             output_img = rgba
             device = getattr(engine, "device", "cpu")
-            if engine.backend == "cuda":
+            if engine.backend == "tensorrt":
+                backend_display = "BiRefNet-Lite (NVIDIA TensorRT FP16)"
+            elif engine.backend == "cuda":
                 backend_display = "BiRefNet-Lite (CUDA GPU)"
             elif engine.backend == "openvino":
                 backend_display = "BiRefNet-Lite (OpenVINO CPU)"

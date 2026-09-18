@@ -8,7 +8,7 @@ import queue
 import re
 from typing import Optional, Union, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from PIL import Image
 import uvicorn
 
@@ -408,6 +408,26 @@ async def remove_bg(
         with _STATE_LOCK:
             _ACTIVE_REQUESTS = max(0, _ACTIVE_REQUESTS - 1)
             _LAST_REQUEST_TIME = time.time()
+
+@app.api_route("/api/file/{filename}", methods=["GET", "HEAD"])
+async def get_file(filename: str):
+    """Phục vụ file ảnh tĩnh đã xử lý tách nền từ thư mục DOWNLOAD_DIR."""
+    # Chống lỗ hổng Path Traversal
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join(DOWNLOAD_DIR, safe_filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File không tồn tại hoặc đã hết hạn.")
+
+    ext = os.path.splitext(safe_filename)[1].lower()
+    media_type = "application/octet-stream"
+    if ext == ".png":
+        media_type = "image/png"
+    elif ext in [".jpg", ".jpeg"]:
+        media_type = "image/jpeg"
+    elif ext == ".webp":
+        media_type = "image/webp"
+
+    return FileResponse(file_path, media_type=media_type)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8003"))

@@ -1509,6 +1509,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const resp = await fetch('/api/remove-bg', { method: 'POST', body: formData });
           result = await resp.json();
           if (!result.success) throw new Error(result.detail || 'Lỗi server');
+          result.downloadUrl = result.downloadUrl || result.download_url;
+          result.previewBase64 = result.previewBase64 || result.preview_base64 || result.download_url;
+          result.filename = result.filename || 'removed_bg.png';
         }
 
         if (!result || !result.success) {
@@ -1520,7 +1523,7 @@ document.addEventListener('DOMContentLoaded', () => {
           URL.revokeObjectURL(currentResultDownloadUrl);
         }
         lastTransparentBlob = result.transparentBlob || null;
-        currentResultDownloadUrl = result.downloadUrl;
+        currentResultDownloadUrl = result.downloadUrl || result.download_url;
 
         // Ẩn tiến trình, hiện kết quả
         if (bgProgressCard) bgProgressCard.classList.add('hidden');
@@ -1531,7 +1534,7 @@ document.addEventListener('DOMContentLoaded', () => {
           bgCompareBeforeImg.src = bgSourceDataUrl;
         }
 
-        const resultImgSrc = result.previewBase64 || result.downloadUrl;
+        const resultImgSrc = result.previewBase64 || result.preview_base64 || result.downloadUrl || result.download_url;
         if (bgCompareAfterImg) {
           bgCompareAfterImg.src = resultImgSrc;
           bgCompareAfterImg.alt = selectedBgFile ? `Hình ảnh sau khi tách nền: ${selectedBgFile.name}` : 'Hình ảnh sau khi đã tách nền trong suốt';

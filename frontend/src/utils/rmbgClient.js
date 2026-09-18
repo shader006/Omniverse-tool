@@ -420,6 +420,16 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
 
   const durationMs = Math.round(performance.now() - startTime);
 
+  let transparentBlob = null;
+  if (data.preview_base64 && data.preview_base64.startsWith('data:')) {
+    try {
+      const b64Res = await fetch(data.preview_base64);
+      transparentBlob = await b64Res.blob();
+    } catch (e) {
+      console.warn('Không thể tạo blob từ preview_base64:', e);
+    }
+  }
+
   return {
     success: true,
     engine: 'server',
@@ -427,7 +437,7 @@ export async function processOnServer(imageFile, options = {}, onProgress = () =
     filename: data.filename || 'removed_bg.png',
     downloadUrl: data.download_url,
     previewBase64: data.preview_base64 || data.download_url,
-    transparentBlob: null,
+    transparentBlob: transparentBlob,
     processingTimeMs: data.processing_time_ms || durationMs,
     resultSizeBytes: data.result_size_bytes || 0,
     metadata: data.metadata || {
