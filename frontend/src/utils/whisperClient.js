@@ -311,16 +311,28 @@ export async function transcribeHybrid(audioFile, options = {}, onProgress = () 
   const hasWebGPU = await isWebGPUSupported();
   const isMobile = isMobileDevice();
 
-  // 1. Thử nghiệm WebGPU trên trình duyệt (trên Desktop có hỗ trợ WebGPU)
+  // 1. Thử nghiệm WebGPU trên trình duyệt nếu đã có sẵn trong Cache
+  // Nếu chưa có trong cache (tránh download 300MB từ HF) hoặc nếu WebGPU quá 8s -> Lập tức chuyển sang Máy chủ
   if (hasWebGPU && !isMobile) {
-    try {
-      return await transcribeOnClient(audioFile, options, onProgress);
-    } catch (webgpuErr) {
-      console.warn('⚠️ [Whisper WebGPU Client] Lỗi WebGPU, tự động chuyển tiếp sang Máy chủ:', webgpuErr);
-      onProgress('⚡ WebGPU gặp sự cố, đang tự động chuyển tiếp sang Máy chủ GPU Pail / Shader...', 20);
+    const cached = await isModelCached();
+    if (cached) {
+      try {
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('WebGPU quá hạn 8s, tự động chuyển tiếp sang máy chủ')), 8000)
+        );
+        return await Promise.race([
+          transcribeOnClient(audioFile, options, onProgress),
+          timeoutPromise
+        ]);
+      } catch (webgpuErr) {
+        console.warn('⚠️ [Whisper WebGPU Client] WebGPU không khả dụng hoặc timeout, chuyển tiếp sang Máy chủ:', webgpuErr);
+        onProgress('⚡ Đang chuyển tiếp sang Máy chủ AI (Pail RTX 3090 / Shader)...', 25);
+      }
+    } else {
+      console.info('ℹ️ [Whisper] Chưa có cache mô hình cục bộ, chuyển tiếp lên Máy chủ AI siêu tốc (Pail RTX 3090 / Shader).');
     }
   }
 
-  // 2. Tự động chuyển tiếp lên Server (Server đã có cơ chế failover Pail -> Shader)
+  // 2. Tự động gửi lên Server (Server đã có cơ chế failover Pail -> Shader)
   return await transcribeOnServer(audioFile, options, onProgress);
 }
