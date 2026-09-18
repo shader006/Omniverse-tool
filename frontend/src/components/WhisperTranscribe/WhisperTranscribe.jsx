@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { formatFileBytes, formatDurationHuman } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
+import { transcribeHybrid } from '../../utils/whisperClient';
 import SyncedLyrics from './SyncedLyrics';
 import RawTextView from './RawTextView';
 
@@ -11,6 +12,8 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
   const [language, setLanguage] = useState('auto');
   const [format, setFormat] = useState('txt');
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [progressText, setProgressText] = useState('');
+  const [progressPercent, setProgressPercent] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [resultData, setResultData] = useState(null);
   const [mediaBlobUrl, setMediaBlobUrl] = useState('');
@@ -99,37 +102,28 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
 
     setErrorMsg('');
     setIsTranscribing(true);
+    setProgressText('Đang kiểm tra khả năng tăng tốc WebGPU...');
+    setProgressPercent(10);
     setResultData(null);
 
     const reqStartTime = performance.now();
-    const formData = new FormData();
-    formData.append('file', fileToTranscribe);
-    formData.append('language', language);
-    formData.append('format', format);
 
     try {
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData
-      });
-
-      const respText = await res.text();
-      let data;
-      try {
-        data = JSON.parse(respText);
-      } catch (parseErr) {
-        if (respText.includes('<!DOCTYPE') || respText.includes('<html')) {
-          throw new Error(lang === 'en' ? `Server is busy or restarting (HTTP ${res.status}). Please try again shortly.` : `Máy chủ đang bận hoặc đang khởi động lại (HTTP ${res.status}). Vui lòng thử lại sau giây lát.`);
+      const data = await transcribeHybrid(
+        fileToTranscribe,
+        {
+          language,
+          format,
+          task: 'transcribe'
+        },
+        (msg, pct) => {
+          if (msg) setProgressText(msg);
+          if (typeof pct === 'number') setProgressPercent(pct);
         }
-        throw new Error((lang === 'en' ? 'Invalid server response: ' : 'Phản hồi từ máy chủ không hợp lệ: ') + respText.slice(0, 80));
-      }
-
-      if (!res.ok || !data.success) {
-        throw new Error(data.detail || data.error || (lang === 'en' ? 'Speech transcription failed.' : 'Quá trình trích xuất văn bản thất bại.'));
-      }
+      );
 
       const totalElapsedSec = Number(((performance.now() - reqStartTime) / 1000).toFixed(2));
-      data.total_e2e_time = totalElapsedSec;
+      if (!data.total_e2e_time) data.total_e2e_time = totalElapsedSec;
 
       const blobUrl = URL.createObjectURL(fileToTranscribe);
       setMediaBlobUrl(blobUrl);
@@ -137,29 +131,9 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       setLyricsView('live');
       setIsTranscribing(false);
     } catch (err) {
-      // Fallback giả lập dữ liệu mẫu để chạy qua luôn kiểm tra giao diện xuất file
-      console.warn('Whisper server offline, simulating transcribe result for UI preview:', err);
-      setTimeout(() => {
-        const demoSegments = getDemoSegments();
-        const demoFullText = demoSegments.map(s => s.text).join('\n\n');
-        const dummyBlob = new Blob([demoFullText], { type: 'text/plain;charset=utf-8' });
-        const dummyDownloadUrl = URL.createObjectURL(dummyBlob);
-        const fileName = fileToTranscribe?.name ? fileToTranscribe.name.replace(/\.[^/.]+$/, '') : 'oniverse_voice_sample';
-
-        setResultData({
-          success: true,
-          detected_language: language === 'auto' ? (lang === 'en' ? 'en' : 'vi') : language,
-          audio_duration: 29.5,
-          processing_time: 1.2,
-          model_used: 'whisper-small',
-          filename: `${fileName}.${format}`,
-          download_url: dummyDownloadUrl,
-          text: demoFullText,
-          segments: demoSegments
-        });
-        setLyricsView('live');
-        setIsTranscribing(false);
-      }, 700);
+      console.error('[Whisper] Transcribe error:', err);
+      setErrorMsg(err.message || (lang === 'en' ? 'Speech transcription failed.' : 'Quá trình trích xuất văn bản thất bại.'));
+      setIsTranscribing(false);
     }
   };
 
@@ -393,11 +367,11 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
         {isTranscribing && (
           <div className="active-progress-banner" style={{ marginTop: '16px' }}>
             <div className="progress-info-row">
-              <span>{tr.whisper_progress_banner}</span>
-              <span>Silero VAD</span>
+              <span>{progressText || tr.whisper_progress_banner}</span>
+              <span>{progressPercent ? `${progressPercent}%` : 'AI Cascade'}</span>
             </div>
             <div className="progress-track">
-              <div className="progress-bar-fill" style={{ width: '75%', background: 'linear-gradient(90deg, #9333ea, #3b82f6)' }}></div>
+              <div className="progress-bar-fill" style={{ width: `${progressPercent || 75}%`, background: 'linear-gradient(90deg, #9333ea, #3b82f6)' }}></div>
             </div>
           </div>
         )}
@@ -411,12 +385,15 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
                 <div className="result-header-text">
                   <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{tr.whisper_result_success}</h4>
                   <div className="transcribe-meta-tags">
+                    <span className="meta-tag" style={{ background: resultData.engine === 'client-webgpu' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(59, 130, 246, 0.2)', borderColor: resultData.engine === 'client-webgpu' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(59, 130, 246, 0.4)', color: resultData.engine === 'client-webgpu' ? '#34d399' : '#60a5fa', fontWeight: 700 }}>
+                      {resultData.engineDisplay || (resultData.device === 'webgpu' ? '⚡ WebGPU (Client)' : '☁️ Server')}
+                    </span>
                     <span className="meta-tag" style={{ background: 'rgba(147, 51, 234, 0.2)', borderColor: 'rgba(147, 51, 234, 0.4)', color: '#c084fc', fontWeight: 700 }}>
-                      AI: {rawModel || 'SMALL'}
+                      AI: {rawModel || 'TINY / SMALL'}
                     </span>
                     <span className="meta-tag">{tr.whisper_result_lang} {(resultData.detected_language || (lang === 'en' ? 'en' : 'vi')).toUpperCase()}</span>
                     <span className="meta-tag">{tr.whisper_result_duration} {formatDurationHuman(resultData.audio_duration)}</span>
-                    <span className="meta-tag" title="Thời gian mô hình AI Whisper nhận diện âm thanh trên GPU" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#34d399', fontWeight: 600 }}>
+                    <span className="meta-tag" title="Thời gian mô hình AI Whisper nhận diện âm thanh" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#34d399', fontWeight: 600 }}>
                       ⚡ {tr.whisper_result_process_time} {resultData.processing_time || 0}s
                     </span>
                     {resultData.total_e2e_time ? (
