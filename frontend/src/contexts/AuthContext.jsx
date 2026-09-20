@@ -9,7 +9,7 @@ import {
   GithubAuthProvider,
   updateProfile,
 } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth, isFirebaseConfigured } from '../lib/firebase';
 
 // ============================================================
 // Auth Context
@@ -107,14 +107,26 @@ export function AuthProvider({ children }) {
     return user.getIdToken(forceRefresh);
   };
 
+  /** Đăng nhập mô phỏng (dành cho chế độ Test / Local khi chưa có Firebase Key) */
+  const loginDemo = (name = 'Demo Gamer', email = 'gamer@omniverse.local') => {
+    setUser({
+      displayName: name,
+      email: email,
+      photoURL: null,
+      getIdToken: () => Promise.resolve('mock-dev-token')
+    });
+  };
+
   const value = {
     user,           // Firebase User object (null nếu chưa đăng nhập)
     loading,        // Đang kiểm tra session?
     isLoggedIn: !!user,
+    isFirebaseConfigured,
     loginEmail,
     register,
     loginGoogle,
     loginGitHub,
+    loginDemo,
     logout,
     getIdToken,
   };

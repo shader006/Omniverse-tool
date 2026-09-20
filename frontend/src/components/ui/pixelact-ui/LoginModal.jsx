@@ -19,8 +19,9 @@ const FIREBASE_ERRORS = {
 };
 
 function parseFirebaseError(err) {
-  if (!err || !err.code) return 'Đã xảy ra lỗi. Vui lòng thử lại.';
-  return FIREBASE_ERRORS[err.code] || err.message || 'Đã xảy ra lỗi không xác định.';
+  if (!err) return 'Đã xảy ra lỗi. Vui lòng thử lại.';
+  if (err.code && FIREBASE_ERRORS[err.code]) return FIREBASE_ERRORS[err.code];
+  return err.message || 'Đã xảy ra lỗi không xác định.';
 }
 
 // ─── SVG Icons ───────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ const GitHubIcon = () => (
 // ─── Component chính ──────────────────────────────────────────────────────────
 
 export default function LoginModal({ isOpen, onClose, lang = 'vi' }) {
-  const { loginEmail, loginGoogle, loginGitHub, register } = useAuth();
+  const { loginEmail, loginGoogle, loginGitHub, loginDemo, register, isFirebaseConfigured } = useAuth();
 
   const [activeTab, setActiveTab]     = useState('login');
   const [email, setEmail]             = useState('');
@@ -111,6 +112,10 @@ export default function LoginModal({ isOpen, onClose, lang = 'vi' }) {
   // ── OAuth: Google ──────────────────────────────────────────
   const handleGoogle = async () => {
     setError('');
+    if (!isFirebaseConfigured) {
+      setError('Firebase chưa được cấu hình API Key trong file .env (VITE_FIREBASE_API_KEY). Bạn có thể bấm nút "Đăng nhập Test" bên dưới để dùng thử!');
+      return;
+    }
     setOauthLoading('google');
     try {
       await loginGoogle();
@@ -127,6 +132,10 @@ export default function LoginModal({ isOpen, onClose, lang = 'vi' }) {
   // ── OAuth: GitHub ──────────────────────────────────────────
   const handleGitHub = async () => {
     setError('');
+    if (!isFirebaseConfigured) {
+      setError('Firebase chưa được cấu hình API Key trong file .env (VITE_FIREBASE_API_KEY). Bạn có thể bấm nút "Đăng nhập Test" bên dưới để dùng thử!');
+      return;
+    }
     setOauthLoading('github');
     try {
       await loginGitHub();
@@ -184,6 +193,47 @@ export default function LoginModal({ isOpen, onClose, lang = 'vi' }) {
               ? 'SIGN IN TO SETUP ONE-CLICK ACCESS'
               : 'CREATE ACCOUNT FOR UNLIMITED ACCESS'}
           </h3>
+
+          {!isFirebaseConfigured && (
+            <div style={{
+              background: '#1a1f2c',
+              border: '2px solid #eab308',
+              padding: '12px 14px',
+              marginBottom: '16px',
+              fontFamily: "'Press Start 2P', monospace",
+              textAlign: 'left'
+            }}>
+              <div style={{ color: '#facc15', fontSize: '0.62rem', lineHeight: '1.6', marginBottom: '8px' }}>
+                ⚠️ CHƯA CẤU HÌNH FIREBASE API KEY TRONG FILE .env
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: '0.52rem', lineHeight: '1.5', marginBottom: '10px' }}>
+                Để đăng nhập Google thật, hãy thêm VITE_FIREBASE_API_KEY vào .env. Hiện tại bạn có thể đăng nhập thử nghiệm ngay bên dưới:
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  loginDemo();
+                  handleSuccess();
+                }}
+                style={{
+                  background: '#22c55e',
+                  color: '#052e16',
+                  border: '2px solid #15803d',
+                  padding: '8px 12px',
+                  fontFamily: "'Press Start 2P', monospace",
+                  fontSize: '0.62rem',
+                  cursor: 'pointer',
+                  boxShadow: '2px 2px 0 #000',
+                  fontWeight: 'bold',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                🎮 ĐĂNG NHẬP TEST (DEMO USER)
+              </button>
+            </div>
+          )}
 
           {/* OAuth Buttons */}
           <div className="pixel-oauth-group">
