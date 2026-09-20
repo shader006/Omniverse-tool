@@ -214,7 +214,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
       previewBase64: demoUrl,
       downloadUrl: demoUrl,
       processingTimeMs: 420,
-      engineDisplay: 'BiRefNet-Lite (AI SOTA)',
+      engineDisplay: '⚡ Xử lý tự động',
       filename: 'oniverse_logo_removed_bg.png'
     });
   };
