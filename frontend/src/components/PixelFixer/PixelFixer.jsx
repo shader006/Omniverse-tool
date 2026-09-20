@@ -131,6 +131,75 @@ const processCanvasPixelArt = (imgSource, config = {}) => {
   });
 };
 
+// ==========================================
+// Custom Retro Pixel Select Dropdown Component
+// ==========================================
+function PixelCustomSelect({ icon, label, value, options, onChange, disabled }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (selectRef.current && !selectRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const selectedOption = options.find((opt) => String(opt.value) === String(value)) || options[0];
+
+  return (
+    <div className="pixel-setting-col" ref={selectRef}>
+      <label 
+        className="pixel-setting-label" 
+        style={{ cursor: disabled ? 'not-allowed' : 'pointer', userSelect: 'none' }}
+        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+      >
+        {icon}
+        {label}
+      </label>
+      
+      <div className={`pixel-custom-select-wrapper ${isOpen ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="pixel-custom-select-btn"
+          disabled={disabled}
+          onClick={() => setIsOpen((prev) => !prev)}
+        >
+          <span className="pixel-select-btn-text">{selectedOption?.label}</span>
+          <svg className={`pixel-select-chevron ${isOpen ? 'open' : ''}`} viewBox="0 0 10 6" width="10" height="6" fill="currentColor">
+            <path d="M0 0l5 6 5-6z" />
+          </svg>
+        </button>
+
+        {isOpen && (
+          <div className="pixel-custom-options-menu">
+            {options.map((opt) => {
+              const isSelected = String(opt.value) === String(value);
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`pixel-custom-option-item ${isSelected ? 'active' : ''}`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setIsOpen(false);
+                  }}
+                >
+                  <span className="pixel-option-dot">{isSelected ? '▶' : '•'}</span>
+                  <span className="pixel-option-label">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PixelFixer({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
 
@@ -152,30 +221,13 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [customColors, setCustomColors] = useState(16);
   const [sourceDimensions, setSourceDimensions] = useState(null);
 
-  useEffect(() => {
-    if (!sourceUrl) {
-      setSourceDimensions(null);
-      return;
-    }
-    const img = new Image();
-    img.onload = () => {
-      if (img.naturalWidth && img.naturalHeight) {
-        setSourceDimensions({ width: img.naturalWidth, height: img.naturalHeight });
-      }
-    };
-    img.src = sourceUrl;
-  }, [sourceUrl]);
-
-  const sourceAspectRatio = sourceDimensions 
-    ? `${sourceDimensions.width} / ${sourceDimensions.height}` 
-    : 'auto';
-
-  // Grid Controls
-  const [gridMode, setGridMode] = useState('auto'); // 'auto' | 'preset' | 'step' | 'custom'
-  const [presetGridSize, setPresetGridSize] = useState('32x32');
-  const [presetStepSize, setPresetStepSize] = useState('3');
+  // Custom Size & Stats Controls (Chỉnh thông số resize theo ý muốn)
+  const [origDimensions, setOrigDimensions] = useState({ w: 0, h: 0 });
   const [customCols, setCustomCols] = useState(32);
   const [customRows, setCustomRows] = useState(32);
+  const [customStepX, setCustomStepX] = useState(3.0);
+  const [customStepY, setCustomStepY] = useState(3.0);
+  const [keepAspect, setKeepAspect] = useState(true);
 
   // Stats
   const [gridInfo, setGridInfo] = useState({
@@ -186,6 +238,180 @@ export default function PixelFixer({ lang = 'vi' }) {
     consensus: '98.5%',
     algo: 'Rayon 2-Stage'
   });
+
+  // Sync custom inputs whenever gridInfo updates
+  useEffect(() => {
+    if (gridInfo.cols) setCustomCols(gridInfo.cols);
+    if (gridInfo.rows) setCustomRows(gridInfo.rows);
+    if (gridInfo.stepX) setCustomStepX(gridInfo.stepX);
+    if (gridInfo.stepY) setCustomStepY(gridInfo.stepY);
+  }, [gridInfo]);
+
+  useEffect(() => {
+    if (!sourceUrl) {
+      setSourceDimensions(null);
+      setOrigDimensions({ w: 0, h: 0 });
+      return;
+    }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (w && h) {
+        setSourceDimensions({ width: w, height: h });
+        setOrigDimensions({ w, h });
+      }
+    };
+    img.src = sourceUrl;
+  }, [sourceUrl]);
+
+  const sourceAspectRatio = sourceDimensions 
+    ? `${sourceDimensions.width} / ${sourceDimensions.height}` 
+    : 'auto';
+
+  // Lấy định dạng ảnh thực tế của file đầu vào (PNG, JPG, WEBP,...)
+  const getImageFormat = () => {
+    if (!selectedFile) return 'PNG';
+    if (selectedFile.name) {
+      const parts = selectedFile.name.split('.');
+      if (parts.length > 1) {
+        const ext = parts.pop().toUpperCase();
+        if (ext === 'JPEG') return 'JPG';
+        return ext;
+      }
+    }
+    if (selectedFile.type) {
+      const sub = selectedFile.type.split('/')[1]?.toUpperCase();
+      if (sub === 'JPEG') return 'JPG';
+      if (sub) return sub;
+    }
+    return 'PNG';
+  };
+  const imgFormat = getImageFormat();
+
+  // Grid Controls
+  const [gridMode, setGridMode] = useState('auto'); // 'auto' | 'preset' | 'step' | 'custom'
+  const [presetGridSize, setPresetGridSize] = useState('32x32');
+  const [presetStepSize, setPresetStepSize] = useState('3');
+
+  const handleColsChange = (val) => {
+    setCustomCols(val);
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 4 || num > 512) return;
+
+    let newRows = customRows;
+    const origW = origDimensions.w || sourceDimensions?.width;
+    const origH = origDimensions.h || sourceDimensions?.height;
+    if (keepAspect && origW && origH) {
+      newRows = Math.max(4, Math.min(512, Math.round(num * (origH / origW))));
+      setCustomRows(newRows);
+    }
+
+    const newStepX = origW ? (origW / num).toFixed(2) : customStepX;
+    const newStepY = origH ? (origH / newRows).toFixed(2) : customStepY;
+    setCustomStepX(newStepX);
+    setCustomStepY(newStepY);
+
+    processFix(selectedFile, {
+      customCols: num,
+      customRows: newRows,
+      customStepX: newStepX,
+      customStepY: newStepY
+    });
+  };
+
+  const handleRowsChange = (val) => {
+    setCustomRows(val);
+    const num = parseInt(val, 10);
+    if (isNaN(num) || num < 4 || num > 512) return;
+
+    let newCols = customCols;
+    const origW = origDimensions.w || sourceDimensions?.width;
+    const origH = origDimensions.h || sourceDimensions?.height;
+    if (keepAspect && origW && origH) {
+      newCols = Math.max(4, Math.min(512, Math.round(num * (origW / origH))));
+      setCustomCols(newCols);
+    }
+
+    const newStepX = origW ? (origW / newCols).toFixed(2) : customStepX;
+    const newStepY = origH ? (origH / num).toFixed(2) : customStepY;
+    setCustomStepX(newStepX);
+    setCustomStepY(newStepY);
+
+    processFix(selectedFile, {
+      customCols: newCols,
+      customRows: num,
+      customStepX: newStepX,
+      customStepY: newStepY
+    });
+  };
+
+  const handleStepXChange = (val) => {
+    setCustomStepX(val);
+    const num = parseFloat(val);
+    const origW = origDimensions.w || sourceDimensions?.width;
+    const origH = origDimensions.h || sourceDimensions?.height;
+    if (isNaN(num) || num <= 0.1 || !origW) return;
+
+    const newCols = Math.max(4, Math.min(512, Math.round(origW / num)));
+    let newRows = customRows;
+    if (keepAspect && origH) {
+      newRows = Math.max(4, Math.min(512, Math.round(newCols * (origH / origW))));
+      setCustomRows(newRows);
+    }
+    setCustomCols(newCols);
+
+    processFix(selectedFile, {
+      customCols: newCols,
+      customRows: newRows,
+      customStepX: num
+    });
+  };
+
+  const handleStepYChange = (val) => {
+    setCustomStepY(val);
+    const num = parseFloat(val);
+    const origW = origDimensions.w || sourceDimensions?.width;
+    const origH = origDimensions.h || sourceDimensions?.height;
+    if (isNaN(num) || num <= 0.1 || !origH) return;
+
+    const newRows = Math.max(4, Math.min(512, Math.round(origH / num)));
+    let newCols = customCols;
+    if (keepAspect && origW) {
+      newCols = Math.max(4, Math.min(512, Math.round(newRows * (origW / origH))));
+      setCustomCols(newCols);
+    }
+    setCustomRows(newRows);
+
+    processFix(selectedFile, {
+      customCols: newCols,
+      customRows: newRows,
+      customStepY: num
+    });
+  };
+
+  const handleQuickResize = (sizeW, sizeH) => {
+    setCustomCols(sizeW);
+    setCustomRows(sizeH);
+    const origW = origDimensions.w || sourceDimensions?.width;
+    const origH = origDimensions.h || sourceDimensions?.height;
+    const newStepX = origW ? (origW / sizeW).toFixed(2) : (sizeW > 0 ? (origW || 96) / sizeW : 3);
+    const newStepY = origH ? (origH / sizeH).toFixed(2) : (sizeH > 0 ? (origH || 96) / sizeH : 3);
+    setCustomStepX(newStepX);
+    setCustomStepY(newStepY);
+
+    processFix(selectedFile, {
+      customCols: sizeW,
+      customRows: sizeH,
+      customStepX: newStepX,
+      customStepY: newStepY
+    });
+  };
+
+  const handleResetSize = () => {
+    processFix(selectedFile, { resetDimensions: true });
+  };
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -348,8 +574,9 @@ export default function PixelFixer({ lang = 'vi' }) {
     const gMode = overrides.gridMode || gridMode;
     const gPreset = overrides.presetGridSize || presetGridSize;
     const gStep = overrides.presetStepSize || presetStepSize;
-    const cCols = overrides.customCols !== undefined ? overrides.customCols : customCols;
-    const cRows = overrides.customRows !== undefined ? overrides.customRows : customRows;
+    const resetDimensions = overrides.resetDimensions || false;
+    const cCols = !resetDimensions ? (overrides.customCols !== undefined ? overrides.customCols : customCols) : undefined;
+    const cRows = !resetDimensions ? (overrides.customRows !== undefined ? overrides.customRows : customRows) : undefined;
 
     setIsProcessing(true);
     setErrorMsg('');
@@ -382,7 +609,7 @@ export default function PixelFixer({ lang = 'vi' }) {
       if (step > 0) {
         queryParams += `&step_x=${step}&step_y=${step}`;
       }
-    } else if (gMode === 'custom') {
+    } else if (cCols && cRows && !resetDimensions) {
       const cols = parseInt(cCols, 10);
       const rows = parseInt(cRows, 10);
       if (cols > 0 && rows > 0) {
@@ -428,12 +655,13 @@ export default function PixelFixer({ lang = 'vi' }) {
       }
       console.warn('PixelFixer API call error, using Canvas fallback:', err);
       try {
-        const fallbackRes = await processCanvasPixelArt(targetFile, {
+        const fallbackRes = await processCanvasPixelArt(targetFile || sourceUrl, {
           topology: top,
           scale: scl,
           palette: pal,
           customCols: cCols,
-          customRows: cRows
+          customRows: cRows,
+          resetDimensions
         });
         setResultBlob(fallbackRes.blob);
         if (resultUrl) URL.revokeObjectURL(resultUrl);
@@ -760,7 +988,9 @@ export default function PixelFixer({ lang = 'vi' }) {
                 </div>
 
                 {/* Floating Corner Tags */}
-                <span className="pixel-compare-tag pixel-tag-before">{tr.pixel_slider_before}</span>
+                <span className="pixel-compare-tag pixel-tag-before">
+                  {lang === 'vi' ? `GỐC (${imgFormat})` : `ORIGINAL (${imgFormat})`}
+                </span>
                 <span className="pixel-compare-tag pixel-tag-after">{tr.pixel_slider_after}</span>
               </div>
             )}
@@ -769,7 +999,7 @@ export default function PixelFixer({ lang = 'vi' }) {
               <div className="pixel-side-container">
                 <div className="pixel-side-panel">
                   <div className="pixel-side-header">
-                    <span>{tr.pixel_slider_before}</span>
+                    <span>{lang === 'vi' ? `GỐC (${imgFormat})` : `ORIGINAL (${imgFormat})`}</span>
                   </div>
                   <div className="pixel-side-body pixel-checker-bg">
                     <img 
@@ -814,24 +1044,102 @@ export default function PixelFixer({ lang = 'vi' }) {
               </div>
             )}
 
-            {/* Grid Parameters Stats Bar */}
+            {/* Grid Parameters Stats Bar - Cho phép chỉnh thông số để resize */}
             <div className="pixel-grid-stats-bar">
-              <div className="pixel-stat-item">
+              {/* Sprite Dimensions (Cols x Rows) - Editable */}
+              <div className="pixel-stat-item pixel-stat-item--editable" title="Chỉnh kích thước sprite để resize theo ý muốn">
                 <span className="pixel-stat-label">{tr.pixel_cols_rows}</span>
-                <span className="pixel-stat-val">{gridInfo.cols} × {gridInfo.rows} px</span>
+                <div className="pixel-stat-input-group">
+                  <input 
+                    type="number" 
+                    min="4" 
+                    max="512" 
+                    className="pixel-stat-input"
+                    value={customCols}
+                    onChange={(e) => handleColsChange(e.target.value)}
+                  />
+                  <span className="pixel-stat-sep">×</span>
+                  <input 
+                    type="number" 
+                    min="4" 
+                    max="512" 
+                    className="pixel-stat-input"
+                    value={customRows}
+                    onChange={(e) => handleRowsChange(e.target.value)}
+                  />
+                  <span className="pixel-stat-unit">px</span>
+                  <button 
+                    type="button" 
+                    className={`pixel-stat-lock-btn ${keepAspect ? 'active' : ''}`}
+                    onClick={() => setKeepAspect(!keepAspect)}
+                    title={keepAspect ? 'Đang khóa tỉ lệ khung hình' : 'Tỉ lệ tự do'}
+                  >
+                    {keepAspect ? '🔒' : '🔓'}
+                  </button>
+                </div>
               </div>
-              <div className="pixel-stat-item">
+
+              {/* Step X - Editable */}
+              <div className="pixel-stat-item pixel-stat-item--editable" title="Bước lưới trục X (Step X)">
                 <span className="pixel-stat-label">{tr.pixel_step_x}</span>
-                <span className="pixel-stat-val">{gridInfo.stepX} px</span>
+                <div className="pixel-stat-input-group">
+                  <input 
+                    type="number" 
+                    step="0.05"
+                    min="0.5" 
+                    max="100" 
+                    className="pixel-stat-input pixel-stat-input--step"
+                    value={customStepX}
+                    onChange={(e) => handleStepXChange(e.target.value)}
+                  />
+                  <span className="pixel-stat-unit">px</span>
+                </div>
               </div>
-              <div className="pixel-stat-item">
+
+              {/* Step Y - Editable */}
+              <div className="pixel-stat-item pixel-stat-item--editable" title="Bước lưới trục Y (Step Y)">
                 <span className="pixel-stat-label">{tr.pixel_step_y}</span>
-                <span className="pixel-stat-val">{gridInfo.stepY} px</span>
+                <div className="pixel-stat-input-group">
+                  <input 
+                    type="number" 
+                    step="0.05"
+                    min="0.5" 
+                    max="100" 
+                    className="pixel-stat-input pixel-stat-input--step"
+                    value={customStepY}
+                    onChange={(e) => handleStepYChange(e.target.value)}
+                  />
+                  <span className="pixel-stat-unit">px</span>
+                </div>
               </div>
+
               <div className="pixel-stat-item">
                 <span className="pixel-stat-label">{tr.pixel_consensus}</span>
                 <span className="pixel-stat-val pixel-stat-val-highlight">{gridInfo.consensus}</span>
               </div>
+            </div>
+
+            {/* Quick Size Presets Bar */}
+            <div className="pixel-size-presets-bar">
+              <span className="pixel-size-presets-label">Resize:</span>
+              {[16, 24, 32, 48, 64, 128].map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  className={`pixel-size-pill ${customCols === size && customRows === size ? 'active' : ''}`}
+                  onClick={() => handleQuickResize(size, size)}
+                >
+                  {size}×{size}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="pixel-size-pill pixel-size-pill--auto"
+                onClick={handleResetSize}
+                title="Tự động tính toán lại theo lưới pixel gốc"
+              >
+                Auto Fit
+              </button>
             </div>
 
             {/* Modern Settings Options Grid */}
@@ -951,31 +1259,23 @@ export default function PixelFixer({ lang = 'vi' }) {
 
               {/* Option 2: Palette Quantization */}
               <div className="pixel-setting-col">
-                <label className="pixel-setting-label">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="13.5" cy="6.5" r=".5"></circle>
-                    <circle cx="17.5" cy="10.5" r=".5"></circle>
-                    <circle cx="8.5" cy="7.5" r=".5"></circle>
-                    <circle cx="6.5" cy="12.5" r=".5"></circle>
-                    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"></path>
-                  </svg>
-                  {tr.pixel_palette_label}
-                </label>
-                <select 
-                  className="pixel-select"
+                <PixelCustomSelect
+                  icon={<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"></path></svg>}
+                  label={tr.pixel_palette_label}
                   value={palette}
-                  onChange={(e) => {
-                    const newPalette = e.target.value;
-                    setPalette(newPalette);
-                    processFix(selectedFile, { palette: newPalette });
+                  disabled={isProcessing}
+                  options={[
+                    { value: 'auto', label: tr.pixel_palette_auto },
+                    { value: 'pico8', label: tr.pixel_palette_pico8 },
+                    { value: 'gameboy', label: tr.pixel_palette_gameboy },
+                    { value: 'nes', label: tr.pixel_palette_nes },
+                    { value: 'custom', label: tr.pixel_palette_custom }
+                  ]}
+                  onChange={(val) => {
+                    setPalette(val);
+                    processFix(selectedFile, { palette: val });
                   }}
-                >
-                  <option value="auto">{tr.pixel_palette_auto}</option>
-                  <option value="pico8">{tr.pixel_palette_pico8}</option>
-                  <option value="gameboy">{tr.pixel_palette_gameboy}</option>
-                  <option value="nes">{tr.pixel_palette_nes}</option>
-                  <option value="custom">{tr.pixel_palette_custom}</option>
-                </select>
+                />
 
                 {palette === 'custom' && (
                   <div className="pixel-custom-colors-box">
@@ -997,78 +1297,55 @@ export default function PixelFixer({ lang = 'vi' }) {
               </div>
 
               {/* Option 3: Resolution Scale */}
-              <div className="pixel-setting-col">
-                <label className="pixel-setting-label">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="15 3 21 3 21 9"></polyline>
-                    <polyline points="9 21 3 21 3 15"></polyline>
-                    <line x1="21" y1="3" x2="14" y2="10"></line>
-                    <line x1="3" y1="21" x2="10" y2="14"></line>
-                  </svg>
-                  {tr.pixel_scale_label}
-                </label>
-                <select 
-                  className="pixel-select"
-                  value={scaleFactor}
-                  onChange={(e) => {
-                    const newScale = e.target.value;
-                    setScaleFactor(newScale);
-                    processFix(selectedFile, { scale: newScale });
-                  }}
-                >
-                  <option value="1">{tr.pixel_scale_native}</option>
-                  <option value="2">{tr.pixel_scale_2x}</option>
-                  <option value="3">{tr.pixel_scale_3x}</option>
-                  <option value="4">{tr.pixel_scale_4x}</option>
-                  <option value="0">{tr.pixel_scale_keep}</option>
-                </select>
-              </div>
+              <PixelCustomSelect
+                icon={<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>}
+                label={tr.pixel_scale_label}
+                value={scaleFactor}
+                disabled={isProcessing}
+                options={[
+                  { value: '1', label: tr.pixel_scale_native },
+                  { value: '2', label: tr.pixel_scale_2x },
+                  { value: '3', label: tr.pixel_scale_3x },
+                  { value: '4', label: tr.pixel_scale_4x },
+                  { value: '0', label: tr.pixel_scale_keep }
+                ]}
+                onChange={(val) => {
+                  setScaleFactor(val);
+                  processFix(selectedFile, { scale: val });
+                }}
+              />
 
               {/* Option 4: Engine Mode */}
-              <div className="pixel-setting-col">
-                <label className="pixel-setting-label">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                  </svg>
-                  {tr.pixel_engine_label}
-                </label>
-                <select 
-                  className="pixel-select"
-                  value={engineMode}
-                  onChange={(e) => {
-                    const newMode = e.target.value;
-                    setEngineMode(newMode);
-                    processFix(selectedFile, { engine: newMode });
-                  }}
-                >
-                  <option value="fast">{tr.pixel_engine_fast}</option>
-                  <option value="advanced">{tr.pixel_engine_advanced}</option>
-                </select>
-              </div>
+              <PixelCustomSelect
+                icon={<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>}
+                label={tr.pixel_engine_label}
+                value={engineMode}
+                disabled={isProcessing}
+                options={[
+                  { value: 'fast', label: tr.pixel_engine_fast },
+                  { value: 'advanced', label: tr.pixel_engine_advanced }
+                ]}
+                onChange={(val) => {
+                  setEngineMode(val);
+                  processFix(selectedFile, { engine: val });
+                }}
+              />
 
               {/* Option 5: Topology */}
-              <div className="pixel-setting-col">
-                <label className="pixel-setting-label">
-                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                    <line x1="3" y1="9" x2="21" y2="9"></line>
-                    <line x1="9" y1="21" x2="9" y2="9"></line>
-                  </svg>
-                  {tr.pixel_topology_label}
-                </label>
-                <select 
-                  className="pixel-select"
-                  value={topology}
-                  onChange={(e) => {
-                    const newTop = e.target.value;
-                    setTopology(newTop);
-                    processFix(selectedFile, { topology: newTop });
-                  }}
-                >
-                  <option value="uniform">{tr.pixel_topology_uniform}</option>
-                  <option value="elastic">{tr.pixel_topology_elastic}</option>
-                </select>
-              </div>
+              <PixelCustomSelect
+                icon={<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>}
+                label={tr.pixel_topology_label}
+                value={topology}
+                disabled={isProcessing}
+                options={[
+                  { value: 'uniform', label: tr.pixel_topology_uniform },
+                  { value: 'elastic', label: tr.pixel_topology_elastic }
+                ]}
+                onChange={(val) => {
+                  setTopology(val);
+                  processFix(selectedFile, { topology: val });
+                }}
+              />
             </div>
 
             {/* Error notification */}
