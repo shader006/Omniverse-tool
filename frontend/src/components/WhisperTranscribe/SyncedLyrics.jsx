@@ -23,6 +23,17 @@ export default function SyncedLyrics({ segments, currentTime, onSeek, fullText, 
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Auto scroll smoothly to keep active subtitle segment centered
+  useEffect(() => {
+    if (activeLineRef.current) {
+      activeLineRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+    }
+  }, [currentTime]);
+
   return (
     <div id="lyrics-sync-view" className="spotify-lyrics-card">
       <div className="spotify-lyrics-header">
@@ -47,30 +58,34 @@ export default function SyncedLyrics({ segments, currentTime, onSeek, fullText, 
 
       <div className="spotify-lyrics-body" id="transcribe-lyrics-container">
         {(!segments || segments.length === 0) ? (
-          <div className="spotify-lyrics-line past" style={{ textAlign: 'center', padding: '30px 0' }}>
+          <div className="spotify-lyric-item past-lyric" style={{ textAlign: 'center', padding: '30px 0', justifyContent: 'center' }}>
             {tr.whisper_lyrics_empty}
           </div>
         ) : (
           segments.map((seg, idx) => {
             const start = seg.start ?? 0;
-            const end = seg.end ?? (start + 2);
-            const isActive = currentTime >= start && currentTime <= end;
-            const isPast = currentTime > end;
+            const nextSeg = segments[idx + 1];
+            const end = nextSeg ? nextSeg.start : (seg.end ?? (start + 3));
+            const isActive = currentTime >= start && currentTime < end;
+            const isPast = currentTime >= end;
 
-            let lineClass = 'spotify-lyrics-line';
-            if (isActive) lineClass += ' active';
-            else if (isPast) lineClass += ' past';
+            let lineClass = 'spotify-lyric-item spotify-lyrics-line';
+            if (isActive) lineClass += ' active-lyric active';
+            else if (isPast) lineClass += ' past-lyric past';
 
             return (
               <div
                 key={idx}
                 ref={isActive ? activeLineRef : null}
                 className={lineClass}
-                onClick={() => onSeek(start)}
+                onClick={() => onSeek && onSeek(start)}
                 title={tr.whisper_lyrics_click_seek}
               >
-                <span className="lyrics-time-pill">{formatTimestamp(start)}</span>
-                <span className="lyrics-text">{seg.text}</span>
+                <span className="spotify-lyric-time lyrics-time-pill">
+                  {isActive && <span className="lyric-play-icon">▶</span>}
+                  {formatTimestamp(start)}
+                </span>
+                <span className="spotify-lyric-text lyrics-text">{seg.text}</span>
               </div>
             );
           })
