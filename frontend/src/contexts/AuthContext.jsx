@@ -34,12 +34,21 @@ export function AuthProvider({ children }) {
 
   // Lắng nghe thay đổi auth state (đăng nhập / đăng xuất / token refresh)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
+    if (!auth) {
+      setUser(null);
       setLoading(false);
-    });
-    // Cleanup khi component unmount
-    return () => unsubscribe();
+      return;
+    }
+    try {
+      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        setUser(firebaseUser);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('[AuthContext] onAuthStateChanged warning:', err);
+      setLoading(false);
+    }
   }, []);
 
   // ──────────────────────────────────────────────────────────
@@ -47,13 +56,15 @@ export function AuthProvider({ children }) {
   // ──────────────────────────────────────────────────────────
 
   /** Đăng nhập bằng email + password */
-  const loginEmail = (email, password) =>
-    signInWithEmailAndPassword(auth, email, password);
+  const loginEmail = (email, password) => {
+    if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
+    return signInWithEmailAndPassword(auth, email, password);
+  };
 
   /** Đăng ký tài khoản mới bằng email + password */
   const register = async (email, password, displayName) => {
+    if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
     const credential = await createUserWithEmailAndPassword(auth, email, password);
-    // Cập nhật display name ngay sau khi tạo account
     if (displayName) {
       await updateProfile(credential.user, { displayName });
     }
@@ -65,17 +76,26 @@ export function AuthProvider({ children }) {
   // ──────────────────────────────────────────────────────────
 
   /** Đăng nhập bằng Google — dùng provider singleton */
-  const loginGoogle = () => signInWithPopup(auth, googleProvider);
+  const loginGoogle = () => {
+    if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
+    return signInWithPopup(auth, googleProvider);
+  };
 
   /** Đăng nhập bằng GitHub — dùng provider singleton */
-  const loginGitHub = () => signInWithPopup(auth, githubProvider);
+  const loginGitHub = () => {
+    if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
+    return signInWithPopup(auth, githubProvider);
+  };
 
   // ──────────────────────────────────────────────────────────
   // Utilities
   // ──────────────────────────────────────────────────────────
 
   /** Đăng xuất */
-  const logout = () => signOut(auth);
+  const logout = () => {
+    if (!auth) return Promise.resolve();
+    return signOut(auth);
+  };
 
   /**
    * Lấy ID Token hiện tại (tự động refresh nếu hết hạn).
@@ -83,7 +103,7 @@ export function AuthProvider({ children }) {
    * @param {boolean} forceRefresh - Bắt buộc refresh ngay cả khi chưa hết hạn
    */
   const getIdToken = (forceRefresh = false) => {
-    if (!user) return Promise.resolve(null);
+    if (!auth || !user) return Promise.resolve(null);
     return user.getIdToken(forceRefresh);
   };
 
