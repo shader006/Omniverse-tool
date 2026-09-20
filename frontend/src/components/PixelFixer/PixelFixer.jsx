@@ -15,15 +15,16 @@ const processCanvasPixelArt = (imgSource, config = {}) => {
         const origW = img.naturalWidth || img.width;
         const origH = img.naturalHeight || img.height;
 
-        // Step kích thước pixel grid: ưu tiên customCols / customRows do người dùng chỉnh
+        // Step kích thước pixel grid: ưu tiên customCols / customRows khi ở chế độ custom
         const step = config.topology === 'elastic' ? 2 : 3;
         const autoCols = Math.max(8, Math.min(256, Math.round(origW / step)));
         const autoRows = Math.max(8, Math.min(256, Math.round(origH / step)));
 
-        const cols = (config.customCols && !config.resetDimensions)
+        const isCustom = config.gridMode === 'custom' || (!config.resetDimensions && config.customCols && config.gridMode !== 'auto');
+        const cols = (isCustom && config.customCols)
           ? Math.max(4, Math.min(512, parseInt(config.customCols, 10)))
           : autoCols;
-        const rows = (config.customRows && !config.resetDimensions)
+        const rows = (isCustom && config.customRows)
           ? Math.max(4, Math.min(512, parseInt(config.customRows, 10)))
           : autoRows;
 
@@ -296,6 +297,7 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [presetStepSize, setPresetStepSize] = useState('3');
 
   const handleColsChange = (val) => {
+    setGridMode('custom');
     setCustomCols(val);
     const num = parseInt(val, 10);
     if (isNaN(num) || num < 4 || num > 512) return;
@@ -314,6 +316,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     setCustomStepY(newStepY);
 
     processFix(selectedFile, {
+      gridMode: 'custom',
       customCols: num,
       customRows: newRows,
       customStepX: newStepX,
@@ -322,6 +325,7 @@ export default function PixelFixer({ lang = 'vi' }) {
   };
 
   const handleRowsChange = (val) => {
+    setGridMode('custom');
     setCustomRows(val);
     const num = parseInt(val, 10);
     if (isNaN(num) || num < 4 || num > 512) return;
@@ -340,6 +344,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     setCustomStepY(newStepY);
 
     processFix(selectedFile, {
+      gridMode: 'custom',
       customCols: newCols,
       customRows: num,
       customStepX: newStepX,
@@ -348,6 +353,7 @@ export default function PixelFixer({ lang = 'vi' }) {
   };
 
   const handleStepXChange = (val) => {
+    setGridMode('step');
     setCustomStepX(val);
     const num = parseFloat(val);
     const origW = origDimensions.w || sourceDimensions?.width;
@@ -363,6 +369,8 @@ export default function PixelFixer({ lang = 'vi' }) {
     setCustomCols(newCols);
 
     processFix(selectedFile, {
+      gridMode: 'step',
+      presetStepSize: num,
       customCols: newCols,
       customRows: newRows,
       customStepX: num
@@ -370,6 +378,7 @@ export default function PixelFixer({ lang = 'vi' }) {
   };
 
   const handleStepYChange = (val) => {
+    setGridMode('step');
     setCustomStepY(val);
     const num = parseFloat(val);
     const origW = origDimensions.w || sourceDimensions?.width;
@@ -385,6 +394,8 @@ export default function PixelFixer({ lang = 'vi' }) {
     setCustomRows(newRows);
 
     processFix(selectedFile, {
+      gridMode: 'step',
+      presetStepSize: num,
       customCols: newCols,
       customRows: newRows,
       customStepY: num
@@ -392,6 +403,7 @@ export default function PixelFixer({ lang = 'vi' }) {
   };
 
   const handleQuickResize = (sizeW, sizeH) => {
+    setGridMode('custom');
     setCustomCols(sizeW);
     setCustomRows(sizeH);
     const origW = origDimensions.w || sourceDimensions?.width;
@@ -402,6 +414,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     setCustomStepY(newStepY);
 
     processFix(selectedFile, {
+      gridMode: 'custom',
       customCols: sizeW,
       customRows: sizeH,
       customStepX: newStepX,
@@ -410,7 +423,8 @@ export default function PixelFixer({ lang = 'vi' }) {
   };
 
   const handleResetSize = () => {
-    processFix(selectedFile, { resetDimensions: true });
+    setGridMode('auto');
+    processFix(selectedFile, { gridMode: 'auto', resetDimensions: true });
   };
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -462,7 +476,9 @@ export default function PixelFixer({ lang = 'vi' }) {
     setResultUrl('');
     setResultBlob(null);
 
-    processFix(file, overrides || {});
+    // Khi nạp ảnh mới, luôn ưu tiên chế độ Auto Grid trừ khi có yêu cầu khác
+    setGridMode('auto');
+    processFix(file, { gridMode: 'auto', resetDimensions: true, ...(overrides || {}) });
   };
 
   const handlePresetSelect = (presetKey) => {
@@ -605,17 +621,18 @@ export default function PixelFixer({ lang = 'vi' }) {
         queryParams += `&cols=${cols}&rows=${rows}`;
       }
     } else if (gMode === 'step') {
-      const step = parseFloat(gStep);
+      const step = parseFloat(gStep || customStepX);
       if (step > 0) {
         queryParams += `&step_x=${step}&step_y=${step}`;
       }
-    } else if (cCols && cRows && !resetDimensions) {
+    } else if (gMode === 'custom' && cCols && cRows && !resetDimensions) {
       const cols = parseInt(cCols, 10);
       const rows = parseInt(cRows, 10);
       if (cols > 0 && rows > 0) {
         queryParams += `&cols=${cols}&rows=${rows}`;
       }
     }
+    // LƯU Ý: Nếu gMode === 'auto', TUYỆT ĐỐI KHÔNG thêm &cols hay &rows để backend Rust tự động chạy FFT / Correlation detection!
 
     try {
       const res = await fetch(`/api/pixel/fix?${queryParams}`, {
@@ -630,10 +647,12 @@ export default function PixelFixer({ lang = 'vi' }) {
       }
 
       // Parse grid headers
-      const cols = res.headers.get('X-Grid-Cols') || 32;
-      const rows = res.headers.get('X-Grid-Rows') || 32;
-      const stepX = parseFloat(res.headers.get('X-Grid-StepX') || '3.0').toFixed(2);
-      const stepY = parseFloat(res.headers.get('X-Grid-StepY') || '3.0').toFixed(2);
+      const rawCols = res.headers.get('X-Grid-Cols');
+      const rawRows = res.headers.get('X-Grid-Rows');
+      const cols = rawCols ? parseInt(rawCols, 10) : 32;
+      const rows = rawRows ? parseInt(rawRows, 10) : 32;
+      const stepX = parseFloat(res.headers.get('X-Grid-StepX') || res.headers.get('X-Grid-Stepx') || '3.0').toFixed(2);
+      const stepY = parseFloat(res.headers.get('X-Grid-StepY') || res.headers.get('X-Grid-Stepy') || '3.0').toFixed(2);
 
       const rawConsensus = res.headers.get('X-Grid-Consensus') || '98.5';
       const consensusDisplay = !isNaN(Number(rawConsensus))
@@ -1126,7 +1145,7 @@ export default function PixelFixer({ lang = 'vi' }) {
                 <button
                   key={size}
                   type="button"
-                  className={`pixel-size-pill ${customCols === size && customRows === size ? 'active' : ''}`}
+                  className={`pixel-size-pill ${gridMode === 'custom' && customCols === size && customRows === size ? 'active' : ''}`}
                   onClick={() => handleQuickResize(size, size)}
                 >
                   {size}×{size}
@@ -1134,7 +1153,7 @@ export default function PixelFixer({ lang = 'vi' }) {
               ))}
               <button
                 type="button"
-                className="pixel-size-pill pixel-size-pill--auto"
+                className={`pixel-size-pill pixel-size-pill--auto ${gridMode === 'auto' ? 'active' : ''}`}
                 onClick={handleResetSize}
                 title="Tự động tính toán lại theo lưới pixel gốc"
               >
