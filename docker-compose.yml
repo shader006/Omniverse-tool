@@ -10,6 +10,9 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./frontend:/frontend:ro
+      # Firebase Service Account JSON — đặt file tại ./secrets/firebase-sa.json
+      # KHÔNG commit file này lên git!
+      - ./secrets/firebase-sa.json:/run/secrets/firebase-sa.json:ro
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - FRONTEND_DIR=/frontend
@@ -23,6 +26,9 @@ services:
       - MAX_MEDIA_CONCURRENT_JOBS=4
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+      # Firebase Auth
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-sa.json
     depends_on:
       - gotenberg
       - pogocache
