@@ -224,7 +224,7 @@ export default function FileConverter({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-quick-sample"
-                onClick={handleLoadDemoFile}
+                onClick={(e) => { e.stopPropagation(); handleLoadDemoFile(); }}
               >
                 {tr.file_sample_btn}
               </button>
