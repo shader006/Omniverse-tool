@@ -10,6 +10,9 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./frontend:/frontend:ro
+      # Firebase Service Account JSON — đặt file tại ./secrets/firebase-sa.json
+      # KHÔNG commit file này lên git!
+      - ./secrets/firebase-sa.json:/run/secrets/firebase-sa.json:ro
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - FRONTEND_DIR=/frontend
@@ -21,6 +24,9 @@ services:
       - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://worker-pdf2docx:8005
       - MAX_MEDIA_CONCURRENT_JOBS=4
+      # Firebase Auth
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-sa.json
     depends_on:
       - gotenberg
       - pogocache

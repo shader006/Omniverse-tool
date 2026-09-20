@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -152,5 +154,62 @@ func rateLimitMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// ─── Auth Middleware ──────────────────────────────────────────────────────────
+
+// authMiddleware bảo vệ route — yêu cầu Firebase Bearer token hợp lệ.
+//
+// Nếu Firebase chưa được cấu hình (dev mode), middleware bỏ qua kiểm tra.
+// Header format: Authorization: Bearer <firebase-id-token>
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// ── Dev mode: Firebase chưa cấu hình → bypass ──────
+		if firebaseAuth == nil {
+			log.Printf("⚠️  [Auth] BYPASS %s (dev mode — cấu hình FIREBASE_PROJECT_ID để bật)", r.URL.Path)
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// ── Lấy token từ Authorization header ──────────────
+		authHeader := r.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			writeAuthError(w, "Yêu cầu đăng nhập để sử dụng tính năng này.", http.StatusUnauthorized)
+			return
+		}
+
+		idToken := strings.TrimPrefix(authHeader, "Bearer ")
+		if idToken == "" {
+			writeAuthError(w, "Token không hợp lệ.", http.StatusUnauthorized)
+			return
+		}
+
+		// ── Xác minh token với Firebase (offline verify) ────────
+		decoded, err := verifyFirebaseToken(r.Context(), idToken)
+		if err != nil {
+			log.Printf("🔒 [Auth] Token verify thất bại từ %s: %v", getClientIP(r), err)
+			writeAuthError(w, "Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.", http.StatusUnauthorized)
+			return
+		}
+
+		// ── Gắn UID + Email vào context để handler dùng ─────────
+		ctx := context.WithValue(r.Context(), contextKeyUID, decoded.UID)
+		if email, ok := decoded.Claims["email"].(string); ok {
+			ctx = context.WithValue(ctx, contextKeyEmail, email)
+		}
+
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// writeAuthError trả về JSON lỗi 401 chuẩn.
+func writeAuthError(w http.ResponseWriter, message string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error":   message,
+		"code":    "AUTH_REQUIRED",
 	})
 }

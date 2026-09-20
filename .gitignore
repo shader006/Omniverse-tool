@@ -49,6 +49,13 @@ data/
 .env
 .env.local
 .env.*.local
+# Firebase Service Account keys — KHÔNG BAO GIỜ commit lên git!
+*-service-account.json
+firebase-*.json
+*-firebase-adminsdk-*.json
+serviceAccountKey.json
+# Thư mục secrets (chứa credentials)
+secrets/
 
 # Sub-projects & external repos
 hiai-observe/

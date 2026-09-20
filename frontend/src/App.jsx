@@ -9,6 +9,7 @@ import RemoveBackground from './components/RemoveBackground/RemoveBackground';
 import PixelFixer from './components/PixelFixer/PixelFixer';
 import Footer from './components/Footer';
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
+import { AuthProvider } from './contexts/AuthContext';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home'); // 'home' | 'tools'
@@ -61,42 +62,44 @@ export default function App() {
   };
 
   return (
-    <div className="app-root">
-      {currentPage === 'home' ? (
-        /* TRANG CHỦ: PIXEL HERO RIÊNG BIỆT (KHÔNG CÒN GỘP CHUNG VỚI TOOLS) */
-        <PixelHero 
-          onExploreTools={() => navigateToTools()}
-          onSelectTool={(toolId) => navigateToTools(toolId)}
-          onOpenLogin={() => setIsLoginOpen(true)}
-          lang={lang}
-          onToggleLang={toggleLang}
-        />
-      ) : (
-        /* TRANG TOOLS: TRANG RIÊNG BIỆT CÓ THANH NAV TIỆN LỢI */
-        <div id="tools-page" className="workspace-section" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-          <ToolsNavbar 
-            onGoHome={navigateToHome} 
-            onOpenLogin={() => setIsLoginOpen(true)} 
+    <AuthProvider>
+      <div className="app-root">
+        {currentPage === 'home' ? (
+          /* TRANG CHỦ: PIXEL HERO RIÊNG BIỆT (KHÔNG CÒN GỘP CHUNG VỚI TOOLS) */
+          <PixelHero 
+            onExploreTools={() => navigateToTools()}
+            onSelectTool={(toolId) => navigateToTools(toolId)}
+            onOpenLogin={() => setIsLoginOpen(true)}
             lang={lang}
             onToggleLang={toggleLang}
           />
+        ) : (
+          /* TRANG TOOLS: TRANG RIÊNG BIỆT CÓ THANH NAV TIỆN LỢI */
+          <div id="tools-page" className="workspace-section" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+            <ToolsNavbar 
+              onGoHome={navigateToHome} 
+              onOpenLogin={() => setIsLoginOpen(true)} 
+              lang={lang}
+              onToggleLang={toggleLang}
+            />
 
-          <main className="container" style={{ flex: 1, paddingTop: '10px' }}>
-            <ModeSwitcher currentMode={currentMode} onSelectMode={handleSelectMode} lang={lang} />
+            <main className="container" style={{ flex: 1, paddingTop: '10px' }}>
+              <ModeSwitcher currentMode={currentMode} onSelectMode={handleSelectMode} lang={lang} />
 
-            {currentMode === 'url' && <UrlDownloader lang={lang} />}
-            {currentMode === 'file' && <FileConverter lang={lang} />}
-            {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
-            {currentMode === 'bg' && <RemoveBackground lang={lang} />}
-            {currentMode === 'pixel' && <PixelFixer lang={lang} />}
-          </main>
+              {currentMode === 'url' && <UrlDownloader lang={lang} />}
+              {currentMode === 'file' && <FileConverter lang={lang} />}
+              {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
+              {currentMode === 'bg' && <RemoveBackground lang={lang} />}
+              {currentMode === 'pixel' && <PixelFixer lang={lang} />}
+            </main>
 
-          <Footer lang={lang} />
-        </div>
-      )}
+            <Footer lang={lang} />
+          </div>
+        )}
 
-      {/* Modal đăng nhập dùng chung ở cả 2 view */}
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} lang={lang} />
-    </div>
+        {/* Modal đăng nhập dùng chung ở cả 2 view */}
+        <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} lang={lang} />
+      </div>
+    </AuthProvider>
   );
 }

@@ -95,10 +95,12 @@ func main() {
 	mux.HandleFunc("/health", server.handleHealth)
 	mux.HandleFunc("/api/health", server.handleHealth)
 	mux.HandleFunc("/api/info", server.handleInfo)
-	mux.HandleFunc("/api/download", server.handleDownload)
-	mux.HandleFunc("/api/convert/file", server.handleConvertFile)
-	mux.HandleFunc("/api/transcribe", server.handleTranscribe)
-	mux.HandleFunc("/api/remove-bg", server.handleRemoveBackground)
+	// Protected routes — yêu cầu Firebase token hợp lệ
+	mux.Handle("/api/download", authMiddleware(http.HandlerFunc(server.handleDownload)))
+	mux.Handle("/api/convert/file", authMiddleware(http.HandlerFunc(server.handleConvertFile)))
+	mux.Handle("/api/transcribe", authMiddleware(http.HandlerFunc(server.handleTranscribe)))
+	mux.Handle("/api/remove-bg", authMiddleware(http.HandlerFunc(server.handleRemoveBackground)))
+	// Public routes — không cần đăng nhập
 	mux.HandleFunc("/api/pixel/detect", server.handlePixelDetect)
 	mux.HandleFunc("/api/pixel/fix", server.handlePixelFix)
 	mux.HandleFunc("/api/pixel/health", server.handlePixelHealth)
@@ -168,6 +170,7 @@ func main() {
 	}
 
 	initTracer()
+	initFirebase() // Khởi tạo Firebase Admin SDK
 	log.Printf("🚀 [OMNIVERSE GO SERVER] Đang lắng nghe tại http://0.0.0.0:%s (OTLP Tracing Active)", port)
 	handler := tracingMiddleware(corsMiddleware(rateLimitMiddleware(mux)))
 	tlsCert := os.Getenv("TLS_CERT_FILE")
