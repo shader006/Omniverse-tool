@@ -1,7 +1,38 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../../hooks/useAuth';
 import './tools-navbar.css';
 
 export default function ToolsNavbar({ onGoHome, onOpenLogin, lang = 'vi', onToggleLang }) {
+  const { user, isLoggedIn, logout } = useAuth();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // Đóng menu khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    setShowUserMenu(false);
+    try {
+      await logout();
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+  };
+
+  // Lấy tên hiển thị: displayName -> email prefix -> 'User'
+  const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
+  // Lấy avatar: photoURL -> fallback chữ cái đầu
+  const avatarUrl = user?.photoURL || null;
+  const avatarInitial = displayName.charAt(0).toUpperCase();
+
   return (
     <header className="pixel-tools-navbar">
       <div className="pixel-tools-nav-inner">
@@ -26,15 +57,6 @@ export default function ToolsNavbar({ onGoHome, onOpenLogin, lang = 'vi', onTogg
               <span className="pixel-nav-link-item active">
                 {lang === 'vi' ? 'Công cụ AI' : 'AI Tools'}
               </span>
-            </li>
-            <li>
-              <button 
-                type="button" 
-                className="pixel-nav-link-item" 
-                onClick={onOpenLogin}
-              >
-                {lang === 'vi' ? 'Đăng nhập' : 'Sign In'}
-              </button>
             </li>
           </ul>
         </div>
@@ -73,6 +95,72 @@ export default function ToolsNavbar({ onGoHome, onOpenLogin, lang = 'vi', onTogg
             </svg>
             <span className="pixel-lang-tag">{(lang || 'vi').toUpperCase()}</span>
           </button>
+
+          {/* ── User Avatar Chip SÁT BÊN PHẢI (khi đã login) hoặc Nút Đăng nhập (chưa login) ── */}
+          {isLoggedIn ? (
+            <div className="pixel-user-chip-wrapper" ref={menuRef}>
+              <button
+                type="button"
+                className="pixel-user-chip"
+                onClick={() => setShowUserMenu((prev) => !prev)}
+                title={user?.email || displayName}
+              >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt=""
+                    className="pixel-user-avatar"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="pixel-user-avatar pixel-user-avatar--initial">
+                    {avatarInitial}
+                  </span>
+                )}
+                <span className="pixel-user-name">{displayName}</span>
+                <svg className="pixel-user-caret" viewBox="0 0 10 6" fill="currentColor" width="10" height="6">
+                  <path d="M0 0l5 6 5-6z" />
+                </svg>
+              </button>
+
+              {/* ── Dropdown Menu ── */}
+              {showUserMenu && (
+                <div className="pixel-user-dropdown">
+                  <div className="pixel-user-dropdown-header">
+                    <span className="pixel-user-dropdown-email">{user?.email}</span>
+                    <span className="pixel-user-dropdown-provider">
+                      {user?.providerData?.[0]?.providerId === 'google.com'
+                        ? '🔵 Google'
+                        : user?.providerData?.[0]?.providerId === 'github.com'
+                          ? '⚫ GitHub'
+                          : '📧 Email'}
+                    </span>
+                  </div>
+                  <div className="pixel-user-dropdown-divider" />
+                  <button
+                    type="button"
+                    className="pixel-user-dropdown-item pixel-user-dropdown-item--logout"
+                    onClick={handleLogout}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                      <polyline points="16 17 21 12 16 7"/>
+                      <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    {lang === 'vi' ? 'Đăng xuất' : 'Sign Out'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button 
+              type="button" 
+              className="pixel-nav-link-item pixel-tools-nav-login" 
+              onClick={onOpenLogin}
+            >
+              {lang === 'vi' ? 'Đăng nhập' : 'Sign In'}
+            </button>
+          )}
         </div>
       </div>
     </header>

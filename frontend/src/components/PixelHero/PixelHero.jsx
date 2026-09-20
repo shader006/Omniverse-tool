@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/pixelact-ui/button';
 import LoginModal from '@/components/ui/pixelact-ui/LoginModal';
+import { useAuth } from '../../hooks/useAuth';
 import './pixel-hero.css';
 
 export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, lang = 'vi', onToggleLang }) {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const { user, isLoggedIn } = useAuth();
 
   const handleOpenTools = (e) => {
     if (e) e.preventDefault();
@@ -55,16 +57,6 @@ export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, l
                 {lang === 'vi' ? 'Công cụ AI' : 'AI Tools'}
               </a>
             </li>
-            <li>
-              <button 
-                type="button" 
-                className="pixel-nav-link" 
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
-                onClick={handleStartNow}
-              >
-                {lang === 'vi' ? 'Đăng nhập' : 'Sign In'}
-              </button>
-            </li>
           </ul>
 
           {/* Nút chuyển đổi ngôn ngữ ở góc trên bên phải */}
@@ -81,6 +73,29 @@ export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, l
             </svg>
             <span className="pixel-hero-lang-tag">{(lang || 'vi').toUpperCase()}</span>
           </button>
+
+          {/* ── Sát bên phải: User Avatar Badge (khi đã login) hoặc Login ── */}
+          {isLoggedIn ? (
+            <span className="pixel-nav-link pixel-hero-user-badge" title={user?.email || user?.displayName}>
+              {user?.photoURL ? (
+                <img src={user.photoURL} alt="" className="pixel-hero-user-mini-avatar" referrerPolicy="no-referrer" />
+              ) : (
+                <span className="pixel-hero-user-mini-avatar pixel-hero-user-mini-avatar--initial">
+                  {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
+                </span>
+              )}
+              <span className="pixel-hero-user-hi">{user?.displayName || user?.email?.split('@')[0] || 'User'}</span>
+            </span>
+          ) : (
+            <button 
+              type="button" 
+              className="pixel-nav-link" 
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+              onClick={handleStartNow}
+            >
+              {lang === 'vi' ? 'Đăng nhập' : 'Sign In'}
+            </button>
+          )}
         </div>
       </header>
 

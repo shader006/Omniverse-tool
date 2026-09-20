@@ -40,8 +40,9 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     setSelectedFile(file);
     if (mediaBlobUrl) {
       URL.revokeObjectURL(mediaBlobUrl);
-      setMediaBlobUrl('');
     }
+    const blobUrl = URL.createObjectURL(file);
+    setMediaBlobUrl(blobUrl);
   };
 
   const handleDrop = (e) => {
@@ -85,19 +86,76 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     ];
   };
 
+  const generateDemoWavBlob = (duration = 30) => {
+    try {
+      const sampleRate = 16000;
+      const numSamples = Math.floor(sampleRate * duration);
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+
+      const writeString = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+
+      writeString(0, 'RIFF');
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeString(8, 'WAVE');
+      writeString(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeString(36, 'data');
+      view.setUint32(40, numSamples * 2, true);
+
+      const chords = [
+        [261.63, 329.63, 392.00], // C
+        [196.00, 246.94, 293.66], // G
+        [220.00, 261.63, 329.63], // Am
+        [174.61, 220.00, 261.63], // F
+      ];
+      let offset = 44;
+      for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        const chordIdx = Math.floor((t / 3.5) % chords.length);
+        const chord = chords[chordIdx];
+        const noteIdx = Math.floor((t * 2.5) % chord.length);
+        const freq = chord[noteIdx];
+        const noteTime = (t * 2.5) % 1;
+        const env = Math.sin(noteTime * Math.PI) * 0.22;
+        const sample = Math.sin(2 * Math.PI * freq * t) * env;
+        const s = Math.max(-1, Math.min(1, sample));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+      }
+
+      return new Blob([buffer], { type: 'audio/wav' });
+    } catch (err) {
+      console.warn('WAV generation fallback error:', err);
+      return null;
+    }
+  };
+
   const handleLoadDemoAudio = (e) => {
     if (e) e.stopPropagation();
-    const demoBlob = new Blob(['Demo audio content for speech transcribe testing'], { type: 'audio/mp3' });
-    const demoFile = new File([demoBlob], 'oniverse_voice_sample.mp3', { type: 'audio/mp3' });
-    handleFileChange(demoFile);
+    const demoWav = generateDemoWavBlob(30);
+    if (demoWav) {
+      const demoFile = new File([demoWav], 'oniverse_voice_sample.wav', { type: 'audio/wav' });
+      handleFileChange(demoFile);
+    }
   };
 
   const handleStartTranscribe = async () => {
     let fileToTranscribe = selectedFile;
     if (!fileToTranscribe) {
-      const demoBlob = new Blob(['Demo audio content for speech transcribe testing'], { type: 'audio/mp3' });
-      fileToTranscribe = new File([demoBlob], 'oniverse_voice_sample.mp3', { type: 'audio/mp3' });
-      setSelectedFile(fileToTranscribe);
+      const demoWav = generateDemoWavBlob(30);
+      if (demoWav) {
+        fileToTranscribe = new File([demoWav], 'oniverse_voice_sample.wav', { type: 'audio/wav' });
+        setSelectedFile(fileToTranscribe);
+      }
     }
 
     setErrorMsg('');
@@ -125,8 +183,10 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       const totalElapsedSec = Number(((performance.now() - reqStartTime) / 1000).toFixed(2));
       if (!data.total_e2e_time) data.total_e2e_time = totalElapsedSec;
 
-      const blobUrl = URL.createObjectURL(fileToTranscribe);
-      setMediaBlobUrl(blobUrl);
+      if (fileToTranscribe) {
+        const blobUrl = URL.createObjectURL(fileToTranscribe);
+        setMediaBlobUrl(blobUrl);
+      }
       setResultData(data);
       setLyricsView('live');
       setIsTranscribing(false);
@@ -152,8 +212,23 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     const dummyBlob = new Blob([demoFullText], { type: 'text/plain;charset=utf-8' });
     const dummyDownloadUrl = URL.createObjectURL(dummyBlob);
 
-    const demoAudioFile = new File(['Dummy audio content'], 'oniverse_voice_sample.mp3', { type: 'audio/mp3' });
-    setSelectedFile(demoAudioFile);
+    let audioUrl = '';
+    if (selectedFile && selectedFile.size > 1000 && !selectedFile.name.includes('dummy')) {
+      audioUrl = URL.createObjectURL(selectedFile);
+    } else {
+      const demoWav = generateDemoWavBlob(30);
+      if (demoWav) {
+        audioUrl = URL.createObjectURL(demoWav);
+        const demoAudioFile = new File([demoWav], 'oniverse_voice_sample.wav', { type: 'audio/wav' });
+        setSelectedFile(demoAudioFile);
+      }
+    }
+
+    if (mediaBlobUrl) {
+      URL.revokeObjectURL(mediaBlobUrl);
+    }
+    setMediaBlobUrl(audioUrl);
+    setCurrentTime(0);
     setErrorMsg('');
     setIsTranscribing(false);
     setResultData({
