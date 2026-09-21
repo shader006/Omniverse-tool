@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     uvicorn[standard]>=0.32.0 \
     python-multipart>=0.0.12 \
     pillow>=10.0.0 \
-    numpy>=1.26.0
+    numpy>=1.26.0 \
+    onnxruntime>=1.18.0
 
 COPY services/worker_upscaler/ /app/services/worker_upscaler/
 

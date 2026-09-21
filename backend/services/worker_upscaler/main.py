@@ -149,16 +149,57 @@ def send_otlp_trace(
     except Exception:
         pass
 
-# ── ENGINE REALPLKSR SOTA RECONSTRUCTION ──
-# Triển khai thuật toán Partial Large Kernel Conv 17x17 với xử lý đa luồng CPU / GPU
-def run_realplksr_upscale(image: Image.Image, scale: int = 4) -> Image.Image:
-    """
-    RealPLKSR Native Edge Reconstruction Engine:
-    - Stage 1: Anti-aliased high order Lanczos interpolation
-    - Stage 2: Color space decoupling (YCbCr split)
-    - Stage 3: Partial Large Kernel (17x17) High-Frequency Gradient Reconstruction on Luminance
-    - Stage 4: Micro-contrast clarity & edge de-haloing
-    """
+# ── ONNX RUNTIME REALPLKSR ENGINE ──
+_ORT_SESSIONS = {}
+
+def get_ort_session(scale: int = 4):
+    if scale not in (2, 4):
+        scale = 4
+    if scale in _ORT_SESSIONS:
+        return _ORT_SESSIONS[scale]
+
+    try:
+        import onnxruntime as ort
+    except ImportError:
+        logger.warning("onnxruntime chưa được cài đặt; fallback sang bộ lọc.")
+        return None
+
+    possible_paths = [
+        f"/models/realplksr/model_x{scale}.onnx",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "models", "realplksr", f"model_x{scale}.onnx")),
+        os.path.abspath(os.path.join("models", "realplksr", f"model_x{scale}.onnx")),
+    ]
+
+    model_path = None
+    for p in possible_paths:
+        if os.path.isfile(p):
+            model_path = p
+            break
+
+    if not model_path:
+        logger.warning(f"Không tìm thấy file model_x{scale}.onnx tại {possible_paths}")
+        return None
+
+    try:
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = min(8, os.cpu_count() or 4)
+        sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        available_providers = ort.get_available_providers()
+        providers = []
+        if "CUDAExecutionProvider" in available_providers:
+            providers.append("CUDAExecutionProvider")
+        providers.append("CPUExecutionProvider")
+
+        session = ort.InferenceSession(model_path, sess_options=sess_options, providers=providers)
+        logger.info(f"✅ [ONNX Runtime] Đã nạp thành công mô hình RealPLKSR {scale}x từ {model_path} bằng {providers[0]}")
+        _ORT_SESSIONS[scale] = session
+        return session
+    except Exception as e:
+        logger.error(f"Lỗi khi khởi tạo ONNX session ({scale}x): {e}")
+        return None
+
+def _run_fallback_filter_upscale(image: Image.Image, scale: int = 4) -> Image.Image:
     orig_w, orig_h = image.size
     target_w = orig_w * scale
     target_h = orig_h * scale
@@ -166,39 +207,95 @@ def run_realplksr_upscale(image: Image.Image, scale: int = 4) -> Image.Image:
     if image.mode != "RGB":
         image = image.convert("RGB")
 
-    # 1. Upscale nền đa bậc (Anti-aliased Lanczos)
     upscaled = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-    # 2. Tách kênh YCbCr để cô lập độ sáng và màu sắc
     ycbcr = upscaled.convert("YCbCr")
     y, cb, cr = ycbcr.split()
 
-    # 3. Thuật toán Partial Large Kernel:
-    # Kết hợp kernel lớn (khử mờ toàn cảnh) + kernel nhỏ (bắt chi tiết vi mô)
     large_kernel_detail = y.filter(ImageFilter.UnsharpMask(radius=3.5, percent=185, threshold=1))
     micro_edge_detail = large_kernel_detail.filter(ImageFilter.UnsharpMask(radius=1.2, percent=120, threshold=0))
 
-    # 4. Tái hợp nhất kênh màu và khôi phục RGB
     reconstructed_ycbcr = Image.merge("YCbCr", (micro_edge_detail, cb, cr))
     final_img = reconstructed_ycbcr.convert("RGB")
-
-    # 5. Tăng cường độ sắc nét cục bộ (Edge Sharpening Filter)
     final_img = final_img.filter(ImageFilter.EDGE_ENHANCE_MORE)
 
-    # 6. Tinh chỉnh nhẹ nhàng Contrast để loại bỏ cảm giác mờ sương (Defog / De-blur)
     contrast_enhancer = ImageEnhance.Contrast(final_img)
     final_img = contrast_enhancer.enhance(1.08)
 
     color_enhancer = ImageEnhance.Color(final_img)
     final_img = color_enhancer.enhance(1.05)
-
     return final_img
+
+def _run_onnx_tiled_upscale(session, image: Image.Image, scale: int = 4) -> Image.Image:
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+
+    orig_w, orig_h = image.size
+    tile_size = 512 if scale == 2 else 256
+    out_tile_size = 1024
+
+    target_w = orig_w * scale
+    target_h = orig_h * scale
+
+    output_image = Image.new("RGB", (target_w, target_h))
+    img_np = np.array(image, dtype=np.float32) / 255.0
+
+    num_tiles_x = (orig_w + tile_size - 1) // tile_size
+    num_tiles_y = (orig_h + tile_size - 1) // tile_size
+
+    for ty in range(num_tiles_y):
+        for tx in range(num_tiles_x):
+            sx = tx * tile_size
+            sy = ty * tile_size
+            sw = min(tile_size, orig_w - sx)
+            sh = min(tile_size, orig_h - sy)
+
+            tile = img_np[sy:sy+sh, sx:sx+sw, :]
+
+            if sh < tile_size or sw < tile_size:
+                pad_tile = np.zeros((tile_size, tile_size, 3), dtype=np.float32)
+                pad_tile[:sh, :sw, :] = tile
+                tile_input = pad_tile
+            else:
+                tile_input = tile
+
+            tensor_in = np.transpose(tile_input, (2, 0, 1))[np.newaxis, :, :, :].astype(np.float32)
+
+            outputs = session.run(["output"], {"input": tensor_in})
+            out_tensor = outputs[0][0]
+
+            out_np = np.transpose(out_tensor, (1, 2, 0))
+            out_np = np.clip(out_np * 255.0, 0, 255).astype(np.uint8)
+
+            out_tile_img = Image.fromarray(out_np, mode="RGB")
+
+            valid_out_w = sw * scale
+            valid_out_h = sh * scale
+            cropped_tile = out_tile_img.crop((0, 0, valid_out_w, valid_out_h))
+
+            output_image.paste(cropped_tile, (sx * scale, sy * scale))
+
+    return output_image
+
+def run_realplksr_upscale(image: Image.Image, scale: int = 4) -> Image.Image:
+    if scale not in (2, 4):
+        scale = 4
+
+    session = get_ort_session(scale)
+    if session is not None:
+        try:
+            return _run_onnx_tiled_upscale(session, image, scale)
+        except Exception as e:
+            logger.error(f"Lỗi khi chạy ONNX RealPLKSR ({scale}x): {e}; fallback sang Lanczos")
+
+    return _run_fallback_filter_upscale(image, scale)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
-    logger.info("🚀 [worker-upscaler] RealPLKSR Native Engine running on port 8006 (CPU/GPU Turbo Ready)")
+    logger.info("🚀 [worker-upscaler] RealPLKSR Native Engine starting on port 8006 (CPU/GPU Turbo Ready)")
+    # Tiền nạp trước ONNX session trong background thread
+    threading.Thread(target=lambda: (get_ort_session(4), get_ort_session(2)), daemon=True).start()
     yield
     logger.info("🛑 [worker-upscaler] Shutting down...")
 
@@ -206,11 +303,13 @@ app = FastAPI(title="Omniverse RealPLKSR Super-Resolution Service", lifespan=lif
 
 @app.get("/health")
 def health_check():
+    sess4 = get_ort_session(4)
+    model_name = "RealPLKSR ONNX Neural Network (Active)" if sess4 else "RealPLKSR Heuristic Engine"
     return {
         "status": "ok",
         "service": "worker-upscaler",
-        "model": "RealPLKSR (Partial Large Kernel SOTA)",
-        "hardware": "CPU (Multithreading) / GPU Ready"
+        "model": model_name,
+        "hardware": "CPU (Multithreading AVX2) / GPU Ready"
     }
 
 @app.post("/api/upscale")
