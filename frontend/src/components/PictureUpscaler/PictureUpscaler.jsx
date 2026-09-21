@@ -92,7 +92,11 @@ export default function PictureUpscaler({ lang = 'vi' }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressText, setProgressText] = useState('');
   const [sliderPos, setSliderPos] = useState(50);
-  const [zoomLevel, setZoomLevel] = useState(1); // 1, 2, 4
+  const [zoomLevel, setZoomLevel] = useState(1); // 1, 2, 4, 8
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [isHoldingOriginal, setIsHoldingOriginal] = useState(false);
+  const [viewMode, setViewMode] = useState('slider'); // 'slider' | 'side-by-side'
   const [engineUsed, setEngineUsed] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [imageMeta, setImageMeta] = useState(null);
@@ -101,6 +105,7 @@ export default function PictureUpscaler({ lang = 'vi' }) {
   const fileInputRef = useRef(null);
   const sliderContainerRef = useRef(null);
   const isDraggingSlider = useRef(false);
+  const panStartRef = useRef({ x: 0, y: 0, initialPanX: 0, initialPanY: 0 });
 
   useEffect(() => {
     return () => {
@@ -108,6 +113,27 @@ export default function PictureUpscaler({ lang = 'vi' }) {
       if (previewUpscaled && previewUpscaled.startsWith('blob:')) URL.revokeObjectURL(previewUpscaled);
     };
   }, [previewOriginal, previewUpscaled]);
+
+  // Phím tắt Space để giữ và nhấp nháy so sánh ảnh Gốc và 4K
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space' && previewUpscaled && !['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) {
+        e.preventDefault();
+        setIsHoldingOriginal(true);
+      }
+    };
+    const handleKeyUp = (e) => {
+      if (e.code === 'Space') {
+        setIsHoldingOriginal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [previewUpscaled]);
 
   const handleFile = (file) => {
     if (!file) return;
@@ -191,13 +217,15 @@ export default function PictureUpscaler({ lang = 'vi' }) {
             img.onerror = reject;
           });
 
+          const t0 = performance.now();
           // Thực thi mô hình neural RealPLKSR ONNX trực tiếp trên WebGPU
           const result = await runWebGPURealPLKSR(img, scaleFactor, (msg) => {
             setProgressText(msg);
           });
+          const elapsed = Math.round(performance.now() - t0);
 
           setPreviewUpscaled(result.upscaledUrl);
-          setEngineUsed('⚡ On-Device WebGPU (RealPLKSR ONNX Neural)');
+          setEngineUsed(`⚡ WebGPU: ${result.gpuHardware || 'Card GPU'} (${elapsed}ms)`);
           setIsProcessing(false);
           return;
         } catch (webgpuErr) {
@@ -240,20 +268,38 @@ export default function PictureUpscaler({ lang = 'vi' }) {
     }
   };
 
-  const handleSliderMove = (clientX) => {
-    if (!sliderContainerRef.current) return;
-    const rect = sliderContainerRef.current.getBoundingClientRect();
-    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
-    const percent = Math.round((x / rect.width) * 100);
-    setSliderPos(percent);
+  const handleZoomChange = (newZoom) => {
+    setZoomLevel(newZoom);
+    if (newZoom === 1) {
+      setPan({ x: 0, y: 0 });
+    }
   };
 
-  const handleMouseDown = () => { isDraggingSlider.current = true; };
-  const handleMouseUp = () => { isDraggingSlider.current = false; };
-  const handleMouseMove = (e) => {
-    if (isDraggingSlider.current) {
-      handleSliderMove(e.clientX);
+  const handleStageMouseDown = (e) => {
+    if (zoomLevel > 1) {
+      setIsPanning(true);
+      panStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        initialPanX: pan.x,
+        initialPanY: pan.y,
+      };
     }
+  };
+
+  const handleStageMouseMove = (e) => {
+    if (isPanning) {
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      setPan({
+        x: panStartRef.current.initialPanX + dx,
+        y: panStartRef.current.initialPanY + dy,
+      });
+    }
+  };
+
+  const handleStageMouseUp = () => {
+    setIsPanning(false);
   };
 
   const currentModelMeta = UPSCALE_MODELS.find(m => m.id === selectedModel) || UPSCALE_MODELS[0];
@@ -430,29 +476,84 @@ export default function PictureUpscaler({ lang = 'vi' }) {
 
             {previewUpscaled && (
               <div className="comparison-section">
-                <div className="comparison-meta-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div className="comparison-meta-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <div className="meta-pill meta-original">
                       <span>GỐC: {imageMeta?.width}×{imageMeta?.height}</span>
                     </div>
                     <div className="meta-pill meta-result">
                       <span>✨ RealPLKSR x{scaleFactor}: {imageMeta ? `${imageMeta.width * scaleFactor}×${imageMeta.height * scaleFactor}` : ''}</span>
                     </div>
-                  </div>
-
-                  {/* Zoom Controls & Engine Badge */}
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     {engineUsed && (
                       <span style={{ fontSize: '0.72rem', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '3px 8px', borderRadius: '4px', fontWeight: 600 }}>
                         {engineUsed}
                       </span>
                     )}
+                  </div>
+
+                  {/* Comparison Controls: Hold to compare, View mode, Zoom */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Hold to compare button */}
+                    <button
+                      type="button"
+                      className={`btn-hold-compare ${isHoldingOriginal ? 'active' : ''}`}
+                      onMouseDown={() => setIsHoldingOriginal(true)}
+                      onMouseUp={() => setIsHoldingOriginal(false)}
+                      onTouchStart={() => setIsHoldingOriginal(true)}
+                      onTouchEnd={() => setIsHoldingOriginal(false)}
+                      title={lang === 'vi' ? 'Nhấn giữ nút hoặc nhấn giữ phím Space để chớp xem ảnh gốc' : 'Press & hold or Space to compare'}
+                    >
+                      <span>👁️</span>
+                      <span>
+                        {isHoldingOriginal
+                          ? (lang === 'vi' ? 'ĐANG XEM ẢNH GỐC' : 'VIEWING ORIGINAL')
+                          : (lang === 'vi' ? 'Giữ Chuột Xem Gốc (Space)' : 'Hold to Compare (Space)')}
+                      </span>
+                    </button>
+
+                    {/* View Mode Toggle */}
+                    <div style={{ display: 'flex', background: '#1e293b', padding: '2px', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('slider')}
+                        style={{
+                          padding: '3px 8px',
+                          background: viewMode === 'slider' ? '#0284c7' : 'transparent',
+                          color: viewMode === 'slider' ? '#fff' : '#94a3b8',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        {lang === 'vi' ? '◫ Trượt' : '◫ Slider'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('side-by-side')}
+                        style={{
+                          padding: '3px 8px',
+                          background: viewMode === 'side-by-side' ? '#0284c7' : 'transparent',
+                          color: viewMode === 'side-by-side' ? '#fff' : '#94a3b8',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        {lang === 'vi' ? '◫ Song Song' : '◫ Side-by-Side'}
+                      </button>
+                    </div>
+
+                    {/* Zoom Levels */}
                     <div className="zoom-btn-group" style={{ display: 'flex', background: '#1e293b', padding: '2px', borderRadius: '6px', border: '1px solid #334155' }}>
-                      {[1, 2, 4].map(z => (
+                      {[1, 2, 4, 8].map(z => (
                         <button
                           key={z}
                           type="button"
-                          onClick={() => setZoomLevel(z)}
+                          onClick={() => handleZoomChange(z)}
                           style={{
                             padding: '3px 8px',
                             background: zoomLevel === z ? '#0284c7' : 'transparent',
@@ -464,61 +565,147 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                             fontWeight: 600
                           }}
                         >
-                          {z}x Zoom
+                          {z === 8 ? '8x (Pixel)' : `${z}x`}
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                <div
-                  className="before-after-container"
-                  ref={sliderContainerRef}
-                >
-                  {/* Layer 1: Upscaled Image */}
-                  <img 
-                    src={previewUpscaled} 
-                    alt="Upscaled" 
-                    className="img-compare img-after" 
-                    style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
-                  />
-
-                  {/* Layer 2: Clipped Original Image */}
+                {/* VIEW MODE 1: SIDE-BY-SIDE */}
+                {viewMode === 'side-by-side' && (
                   <div 
-                    className="img-compare-clipped" 
-                    style={{ 
-                      clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)`,
-                    }}
+                    className={`comparison-side-by-side ${zoomLevel > 1 ? (isPanning ? 'is-panning' : 'is-zoomed') : ''}`}
+                    onMouseDown={handleStageMouseDown}
+                    onMouseMove={handleStageMouseMove}
+                    onMouseUp={handleStageMouseUp}
+                    onMouseLeave={handleStageMouseUp}
                   >
-                    <img 
-                      src={previewOriginal} 
-                      alt="Original" 
-                      className="img-compare img-before" 
-                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
-                    />
-                  </div>
-
-                  {/* Divider Line & Knob */}
-                  <div className="slider-divider-bar" style={{ left: `${sliderPos}%` }}>
-                    <div className="slider-handle-circle">
-                      <span>◀▶</span>
+                    <div className="side-box">
+                      <img 
+                        src={previewOriginal} 
+                        alt="Original" 
+                        className="img-before" 
+                        style={{ 
+                          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
+                          transformOrigin: 'center' 
+                        }} 
+                      />
+                      <span className="slider-badge badge-before">
+                        GỐC ({imageMeta?.width}×{imageMeta?.height})
+                      </span>
+                    </div>
+                    <div className="side-box">
+                      <img 
+                        src={previewUpscaled} 
+                        alt="Upscaled" 
+                        className="img-after" 
+                        style={{ 
+                          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
+                          transformOrigin: 'center' 
+                        }} 
+                      />
+                      <span className="slider-badge badge-after">
+                        ✨ REALPLKSR {scaleFactor}x ({imageMeta ? imageMeta.width * scaleFactor : ''}×{imageMeta ? imageMeta.height * scaleFactor : ''})
+                      </span>
                     </div>
                   </div>
+                )}
 
-                  {/* Input Range Covering entire stage for 100% smooth dragging */}
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={sliderPos}
-                    onChange={(e) => setSliderPos(Number(e.target.value))}
-                    className="slider-range-overlay"
-                    aria-label="Before after comparison slider"
-                  />
+                {/* VIEW MODE 2: SPLIT SLIDER */}
+                {viewMode === 'slider' && (
+                  <div
+                    className={`before-after-container ${zoomLevel > 1 ? (isPanning ? 'is-panning' : 'is-zoomed') : ''}`}
+                    ref={sliderContainerRef}
+                    onMouseDown={handleStageMouseDown}
+                    onMouseMove={handleStageMouseMove}
+                    onMouseUp={handleStageMouseUp}
+                    onMouseLeave={handleStageMouseUp}
+                  >
+                    {/* Layer 1: Upscaled Image (hoặc toàn bộ gốc khi bấm Hold to compare) */}
+                    <img 
+                      src={isHoldingOriginal ? previewOriginal : previewUpscaled} 
+                      alt="Upscaled" 
+                      className={`img-compare ${isHoldingOriginal ? 'img-before' : 'img-after'}`} 
+                      style={{ 
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
+                        transformOrigin: 'center' 
+                      }} 
+                    />
 
-                  <span className="slider-badge badge-before">GỐC</span>
-                  <span className="slider-badge badge-after">{scaleFactor}x HD</span>
-                </div>
+                    {/* Layer 2: Clipped Original Image */}
+                    {!isHoldingOriginal && (
+                      <div 
+                        className="img-compare-clipped" 
+                        style={{ 
+                          clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)`,
+                        }}
+                      >
+                        <img 
+                          src={previewOriginal} 
+                          alt="Original" 
+                          className="img-compare img-before" 
+                          style={{ 
+                            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
+                            transformOrigin: 'center' 
+                          }} 
+                        />
+                      </div>
+                    )}
+
+                    {/* Divider Line & Knob */}
+                    {!isHoldingOriginal && (
+                      <>
+                        <div className="slider-divider-bar" style={{ left: `${sliderPos}%` }}>
+                          <div className="slider-handle-circle">
+                            <span>◀▶</span>
+                          </div>
+                        </div>
+
+                        {/* Overlay slider khi zoom 1x */}
+                        {zoomLevel === 1 && (
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            value={sliderPos}
+                            onChange={(e) => setSliderPos(Number(e.target.value))}
+                            className="slider-range-overlay"
+                            aria-label="Before after comparison slider"
+                          />
+                        )}
+                      </>
+                    )}
+
+                    <span className="slider-badge badge-before">
+                      {isHoldingOriginal 
+                        ? '👁️ ĐANG XEM ẢNH GỐC (THẢ CHUỘT ĐỂ XEM 4X)' 
+                        : `GỐC (${imageMeta?.width}×${imageMeta?.height})`}
+                    </span>
+                    {!isHoldingOriginal && (
+                      <span className="slider-badge badge-after">
+                        ✨ REALPLKSR {scaleFactor}x HD
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Sub-slider khi đang zoom > 1x (để vừa rê chuột Pan vừa chỉnh được đường trượt) */}
+                {viewMode === 'slider' && zoomLevel > 1 && !isHoldingOriginal && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px', padding: '6px 14px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '6px' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Vị Trí Ranh Giới So Sánh:</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={sliderPos}
+                      onChange={(e) => setSliderPos(Number(e.target.value))}
+                      style={{ flex: 1, accentColor: '#38bdf8', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 700, minWidth: '35px' }}>{sliderPos}%</span>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>💡 Kéo chuột trên ảnh để di chuyển góc nhìn (Pan)</span>
+                  </div>
+                )}
 
                 <div className="result-actions" style={{ marginTop: '20px' }}>
                   <a

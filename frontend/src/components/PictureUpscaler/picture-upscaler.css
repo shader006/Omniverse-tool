@@ -296,13 +296,22 @@
 .before-after-container {
   position: relative;
   width: 100%;
-  height: 480px;
+  height: 540px;
+  max-height: 75vh;
   border-radius: 8px;
   overflow: hidden;
   border: 2px solid #334155;
   user-select: none;
   cursor: col-resize;
   background: #020617;
+}
+
+.before-after-container.is-zoomed {
+  cursor: grab;
+}
+
+.before-after-container.is-panning {
+  cursor: grabbing;
 }
 
 .img-compare {
@@ -313,6 +322,17 @@
   height: 100%;
   object-fit: contain;
   pointer-events: none;
+  will-change: transform;
+}
+
+/* Ảnh gốc áp dụng pixelated rendering để làm nổi bật sự vỡ hạt của độ phân giải thấp */
+.img-before {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.img-after {
+  image-rendering: auto;
 }
 
 .img-compare-clipped {
@@ -351,7 +371,7 @@
   background: #38bdf8;
   pointer-events: none;
   transform: translateX(-50%);
-  box-shadow: 0 0 10px #38bdf8;
+  box-shadow: 0 0 12px #38bdf8;
   z-index: 10;
 }
 
@@ -360,8 +380,8 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   background: #0f172a;
   border: 2px solid #38bdf8;
   border-radius: 50%;
@@ -370,29 +390,99 @@
   justify-content: center;
   color: #38bdf8;
   font-size: 11px;
-  box-shadow: 0 0 16px rgba(56, 189, 248, 0.8);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.8);
 }
 
 .slider-badge {
   position: absolute;
   bottom: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
   font-family: var(--font-heading);
-  font-size: 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
   pointer-events: none;
+  z-index: 25;
 }
 
 .badge-before {
   left: 12px;
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(15, 23, 42, 0.88);
   color: #94a3b8;
   border: 1px solid #334155;
+  backdrop-filter: blur(4px);
 }
 
 .badge-after {
   right: 12px;
-  background: rgba(2, 132, 199, 0.85);
+  background: rgba(2, 132, 199, 0.88);
   color: #ffffff;
   border: 1px solid #38bdf8;
+  backdrop-filter: blur(4px);
 }
+
+/* Side by side comparison layout */
+.comparison-side-by-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+  height: 540px;
+  max-height: 75vh;
+}
+
+.side-box {
+  position: relative;
+  height: 100%;
+  background: #020617;
+  border: 2px solid #334155;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.side-box img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.btn-hold-compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #1e293b;
+  color: #f59e0b;
+  border: 1px solid #d97706;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.btn-hold-compare:active,
+.btn-hold-compare.active {
+  background: #f59e0b;
+  color: #0f172a;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.6);
+  transform: scale(0.97);
+}
+
+@media (max-width: 768px) {
+  .comparison-side-by-side {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .side-box {
+    height: 320px;
+  }
+}
+

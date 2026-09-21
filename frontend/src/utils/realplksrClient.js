@@ -33,6 +33,27 @@ export async function isWebGPUSupported() {
 }
 
 /**
+ * Lấy tên phần cứng GPU thực tế của máy người dùng
+ */
+export async function getGPUHardwareInfo() {
+  try {
+    if (!navigator.gpu) return null;
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) return null;
+    if (adapter.info) {
+      return adapter.info.description || `${adapter.info.vendor || ''} ${adapter.info.architecture || ''}`.trim() || 'WebGPU Device';
+    }
+    if (adapter.requestAdapterInfo) {
+      const info = await adapter.requestAdapterInfo();
+      return info.description || `${info.vendor || ''} ${info.architecture || ''}`.trim() || 'WebGPU Device';
+    }
+    return 'WebGPU Accelerator';
+  } catch (_) {
+    return 'WebGPU Accelerator';
+  }
+}
+
+/**
  * Tải mô hình với báo cáo tiến trình (Progress Callback) và lưu vào Cache Storage
  */
 async function fetchModelWithProgress(url, onProgress) {
@@ -254,10 +275,13 @@ export async function runWebGPURealPLKSR(imageElement, scale = 4, onProgress = n
   const blob = await new Promise((resolve) => outCanvas.toBlob(resolve, 'image/png'));
   const upscaledUrl = URL.createObjectURL(blob);
 
+  const gpuHardware = (await getGPUHardwareInfo()) || 'GPU Accelerator';
+
   return {
     upscaledUrl,
     width: targetW,
     height: targetH,
-    modelName: `RealPLKSR (2024 SOTA ONNX WebGPU)`,
+    gpuHardware,
+    modelName: `RealPLKSR ONNX (${gpuHardware})`,
   };
 }
