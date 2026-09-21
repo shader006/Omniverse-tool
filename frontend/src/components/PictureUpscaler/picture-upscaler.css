@@ -306,14 +306,6 @@
   background: #020617;
 }
 
-.before-after-container.is-zoomed {
-  cursor: grab;
-}
-
-.before-after-container.is-panning {
-  cursor: grabbing;
-}
-
 .img-compare {
   position: absolute;
   top: 0;
@@ -322,7 +314,6 @@
   height: 100%;
   object-fit: contain;
   pointer-events: none;
-  will-change: transform;
 }
 
 /* Ảnh gốc áp dụng pixelated rendering để làm nổi bật sự vỡ hạt của độ phân giải thấp */

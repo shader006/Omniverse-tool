@@ -28,9 +28,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressText, setProgressText] = useState('');
   const [sliderPos, setSliderPos] = useState(50);
-  const [zoomLevel, setZoomLevel] = useState(1); // 1, 2, 4, 8
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
   const [isHoldingOriginal, setIsHoldingOriginal] = useState(false);
   const [viewMode, setViewMode] = useState('slider'); // 'slider' | 'side-by-side'
   const [engineUsed, setEngineUsed] = useState('');
@@ -40,15 +37,20 @@ export default function PictureUpscaler({ lang = 'vi' }) {
 
   const fileInputRef = useRef(null);
   const sliderContainerRef = useRef(null);
-  const isDraggingSlider = useRef(false);
-  const panStartRef = useRef({ x: 0, y: 0, initialPanX: 0, initialPanY: 0 });
+  const originalBlobUrlRef = useRef('');
+  const upscaledBlobUrlRef = useRef('');
 
+  // Chỉ dọn dẹp blob URL khi component unmount hoàn toàn
   useEffect(() => {
     return () => {
-      if (previewOriginal && previewOriginal.startsWith('blob:')) URL.revokeObjectURL(previewOriginal);
-      if (previewUpscaled && previewUpscaled.startsWith('blob:')) URL.revokeObjectURL(previewUpscaled);
+      if (originalBlobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(originalBlobUrlRef.current);
+      }
+      if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(upscaledBlobUrlRef.current);
+      }
     };
-  }, [previewOriginal, previewUpscaled]);
+  }, []);
 
   // Phím tắt Space để giữ và nhấp nháy so sánh ảnh Gốc và 4K
   useEffect(() => {
@@ -79,7 +81,18 @@ export default function PictureUpscaler({ lang = 'vi' }) {
     }
     setErrorMsg('');
     setSelectedFile(file);
+
+    // Dọn dẹp URL cũ trước khi tạo URL mới cho file mới
+    if (originalBlobUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(originalBlobUrlRef.current);
+    }
+    if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(upscaledBlobUrlRef.current);
+    }
+
     const objectUrl = URL.createObjectURL(file);
+    originalBlobUrlRef.current = objectUrl;
+    upscaledBlobUrlRef.current = '';
     setPreviewOriginal(objectUrl);
     setPreviewUpscaled('');
 
@@ -160,6 +173,10 @@ export default function PictureUpscaler({ lang = 'vi' }) {
           });
           const elapsed = Math.round(performance.now() - t0);
 
+          if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+            URL.revokeObjectURL(upscaledBlobUrlRef.current);
+          }
+          upscaledBlobUrlRef.current = result.upscaledUrl;
           setPreviewUpscaled(result.upscaledUrl);
           setEngineUsed(`⚡ WebGPU: ${result.gpuHardware || 'Card GPU'} (${elapsed}ms)`);
           setIsProcessing(false);
@@ -193,6 +210,10 @@ export default function PictureUpscaler({ lang = 'vi' }) {
         throw new Error(resData.detail || resData.error || 'Dữ liệu trả về từ máy chủ không hợp lệ.');
       }
 
+      if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(upscaledBlobUrlRef.current);
+      }
+      upscaledBlobUrlRef.current = resData.download_url;
       setPreviewUpscaled(resData.download_url);
       setEngineUsed(`☁️ AI Server (${resData.processing_time_ms ? resData.processing_time_ms + 'ms' : 'Native Worker 8006'})`);
       setIsProcessing(false);
@@ -202,40 +223,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
       setErrorMsg(err.message || (lang === 'vi' ? 'Quá trình upscale ảnh gặp sự cố.' : 'Failed to upscale picture.'));
       setIsProcessing(false);
     }
-  };
-
-  const handleZoomChange = (newZoom) => {
-    setZoomLevel(newZoom);
-    if (newZoom === 1) {
-      setPan({ x: 0, y: 0 });
-    }
-  };
-
-  const handleStageMouseDown = (e) => {
-    if (zoomLevel > 1) {
-      setIsPanning(true);
-      panStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        initialPanX: pan.x,
-        initialPanY: pan.y,
-      };
-    }
-  };
-
-  const handleStageMouseMove = (e) => {
-    if (isPanning) {
-      const dx = e.clientX - panStartRef.current.x;
-      const dy = e.clientY - panStartRef.current.y;
-      setPan({
-        x: panStartRef.current.initialPanX + dx,
-        y: panStartRef.current.initialPanY + dy,
-      });
-    }
-  };
-
-  const handleStageMouseUp = () => {
-    setIsPanning(false);
   };
 
   const currentModelMeta = UPSCALE_MODELS.find(m => m.id === selectedModel) || UPSCALE_MODELS[0];
@@ -315,6 +302,14 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                 type="button"
                 className="btn-change-image"
                 onClick={() => {
+                  if (originalBlobUrlRef.current?.startsWith('blob:')) {
+                    URL.revokeObjectURL(originalBlobUrlRef.current);
+                  }
+                  if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+                    URL.revokeObjectURL(upscaledBlobUrlRef.current);
+                  }
+                  originalBlobUrlRef.current = '';
+                  upscaledBlobUrlRef.current = '';
                   setSelectedFile(null);
                   setPreviewOriginal('');
                   setPreviewUpscaled('');
@@ -427,7 +422,7 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                     )}
                   </div>
 
-                  {/* Comparison Controls: Hold to compare, View mode, Zoom */}
+                  {/* Comparison Controls: Hold to compare & View mode */}
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     {/* Hold to compare button */}
                     <button
@@ -482,50 +477,17 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                         {lang === 'vi' ? '◫ Song Song' : '◫ Side-by-Side'}
                       </button>
                     </div>
-
-                    {/* Zoom Levels */}
-                    <div className="zoom-btn-group" style={{ display: 'flex', background: '#1e293b', padding: '2px', borderRadius: '6px', border: '1px solid #334155' }}>
-                      {[1, 2, 4, 8].map(z => (
-                        <button
-                          key={z}
-                          type="button"
-                          onClick={() => handleZoomChange(z)}
-                          style={{
-                            padding: '3px 8px',
-                            background: zoomLevel === z ? '#0284c7' : 'transparent',
-                            color: zoomLevel === z ? '#fff' : '#94a3b8',
-                            border: 'none',
-                            borderRadius: '4px',
-                            fontSize: '0.72rem',
-                            cursor: 'pointer',
-                            fontWeight: 600
-                          }}
-                        >
-                          {z === 8 ? '8x (Pixel)' : `${z}x`}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
 
                 {/* VIEW MODE 1: SIDE-BY-SIDE */}
                 {viewMode === 'side-by-side' && (
-                  <div 
-                    className={`comparison-side-by-side ${zoomLevel > 1 ? (isPanning ? 'is-panning' : 'is-zoomed') : ''}`}
-                    onMouseDown={handleStageMouseDown}
-                    onMouseMove={handleStageMouseMove}
-                    onMouseUp={handleStageMouseUp}
-                    onMouseLeave={handleStageMouseUp}
-                  >
+                  <div className="comparison-side-by-side">
                     <div className="side-box">
                       <img 
                         src={previewOriginal} 
                         alt="Original" 
                         className="img-before" 
-                        style={{ 
-                          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
-                          transformOrigin: 'center' 
-                        }} 
                       />
                       <span className="slider-badge badge-before">
                         GỐC ({imageMeta?.width}×{imageMeta?.height})
@@ -536,10 +498,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                         src={previewUpscaled} 
                         alt="Upscaled" 
                         className="img-after" 
-                        style={{ 
-                          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
-                          transformOrigin: 'center' 
-                        }} 
                       />
                       <span className="slider-badge badge-after">
                         ✨ REALPLKSR {scaleFactor}x ({imageMeta ? imageMeta.width * scaleFactor : ''}×{imageMeta ? imageMeta.height * scaleFactor : ''})
@@ -551,22 +509,14 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                 {/* VIEW MODE 2: SPLIT SLIDER */}
                 {viewMode === 'slider' && (
                   <div
-                    className={`before-after-container ${zoomLevel > 1 ? (isPanning ? 'is-panning' : 'is-zoomed') : ''}`}
+                    className="before-after-container"
                     ref={sliderContainerRef}
-                    onMouseDown={handleStageMouseDown}
-                    onMouseMove={handleStageMouseMove}
-                    onMouseUp={handleStageMouseUp}
-                    onMouseLeave={handleStageMouseUp}
                   >
                     {/* Layer 1: Upscaled Image (hoặc toàn bộ gốc khi bấm Hold to compare) */}
                     <img 
                       src={isHoldingOriginal ? previewOriginal : previewUpscaled} 
                       alt="Upscaled" 
                       className={`img-compare ${isHoldingOriginal ? 'img-before' : 'img-after'}`} 
-                      style={{ 
-                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
-                        transformOrigin: 'center' 
-                      }} 
                     />
 
                     {/* Layer 2: Clipped Original Image */}
@@ -581,10 +531,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                           src={previewOriginal} 
                           alt="Original" 
                           className="img-compare img-before" 
-                          style={{ 
-                            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`, 
-                            transformOrigin: 'center' 
-                          }} 
                         />
                       </div>
                     )}
@@ -598,18 +544,15 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                           </div>
                         </div>
 
-                        {/* Overlay slider khi zoom 1x */}
-                        {zoomLevel === 1 && (
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            value={sliderPos}
-                            onChange={(e) => setSliderPos(Number(e.target.value))}
-                            className="slider-range-overlay"
-                            aria-label="Before after comparison slider"
-                          />
-                        )}
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={sliderPos}
+                          onChange={(e) => setSliderPos(Number(e.target.value))}
+                          className="slider-range-overlay"
+                          aria-label="Before after comparison slider"
+                        />
                       </>
                     )}
 
@@ -623,23 +566,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                         ✨ REALPLKSR {scaleFactor}x HD
                       </span>
                     )}
-                  </div>
-                )}
-
-                {/* Sub-slider khi đang zoom > 1x (để vừa rê chuột Pan vừa chỉnh được đường trượt) */}
-                {viewMode === 'slider' && zoomLevel > 1 && !isHoldingOriginal && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '10px', padding: '6px 14px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '6px' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Vị Trí Ranh Giới So Sánh:</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={sliderPos}
-                      onChange={(e) => setSliderPos(Number(e.target.value))}
-                      style={{ flex: 1, accentColor: '#38bdf8', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 700, minWidth: '35px' }}>{sliderPos}%</span>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>💡 Kéo chuột trên ảnh để di chuyển góc nhìn (Pan)</span>
                   </div>
                 )}
 
@@ -663,6 +589,10 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                     type="button"
                     className="btn-another"
                     onClick={() => {
+                      if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+                        URL.revokeObjectURL(upscaledBlobUrlRef.current);
+                      }
+                      upscaledBlobUrlRef.current = '';
                       setPreviewUpscaled('');
                     }}
                   >
