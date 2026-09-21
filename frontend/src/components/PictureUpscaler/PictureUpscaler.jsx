@@ -88,7 +88,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
   const [previewOriginal, setPreviewOriginal] = useState('');
   const [previewUpscaled, setPreviewUpscaled] = useState('');
   const [scaleFactor, setScaleFactor] = useState(4);
-  const [executionMode, setExecutionMode] = useState('auto'); // 'auto', 'server', 'webgpu'
   const [selectedModel, setSelectedModel] = useState('realplksr');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressText, setProgressText] = useState('');
@@ -178,19 +177,11 @@ export default function PictureUpscaler({ lang = 'vi' }) {
     setErrorMsg('');
 
     try {
-      // 1. Kiểm tra phần cứng: Ưu tiên Tầng 1 - WebGPU trên Client nếu có và không ép buộc Server
-      let shouldRunWebGPU = false;
-      if (executionMode !== 'server') {
-        try {
-          const hasAdapter = !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
-          shouldRunWebGPU = hasAdapter || executionMode === 'webgpu';
-        } catch (e) {
-          shouldRunWebGPU = executionMode === 'webgpu';
-        }
-      }
+      // 1. Luôn tự động ưu tiên kiểm tra WebGPU trên thiết bị của người dùng
+      const hasWebGPU = await isWebGPUSupported();
 
       // ── TẦNG 1: Client WebGPU Execution (Nếu máy có WebGPU) ──
-      if (shouldRunWebGPU) {
+      if (hasWebGPU) {
         setProgressText(lang === 'vi' ? `⚡ Đang khởi động RealPLKSR ONNX WebGPU x${scaleFactor}...` : `⚡ Initializing RealPLKSR ONNX WebGPU x${scaleFactor}...`);
         try {
           const img = new Image();
@@ -385,42 +376,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                     <span>⚡ RealPLKSR (Partial Large Kernel SOTA)</span>
                     <span style={{ fontSize: '0.7rem', color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>GPU & CPU Turbo</span>
                   </div>
-                </div>
-              </div>
-
-              <div className="control-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="control-label">
-                  <span className="label-icon">⚙️</span>
-                  {lang === 'vi' ? 'Chế Độ Xử Lý (Kiến Trúc Hybrid):' : 'Execution Pipeline (Hybrid):'}
-                </label>
-                <div className="scale-pill-buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-                  <button
-                    type="button"
-                    className={`scale-pill ${executionMode === 'auto' ? 'active' : ''}`}
-                    onClick={() => setExecutionMode('auto')}
-                    style={{ fontSize: '0.75rem', padding: '6px 4px', whiteSpace: 'nowrap' }}
-                    title={lang === 'vi' ? 'Tự động ưu tiên WebGPU trên máy, nếu không có WebGPU tự động gọi Máy Chủ AI' : 'Auto-detect WebGPU first, fall back to AI Server'}
-                  >
-                    🚀 {lang === 'vi' ? 'Tự Động (WebGPU/Server)' : 'Auto Hybrid'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`scale-pill ${executionMode === 'server' ? 'active' : ''}`}
-                    onClick={() => setExecutionMode('server')}
-                    style={{ fontSize: '0.75rem', padding: '6px 4px', whiteSpace: 'nowrap' }}
-                    title={lang === 'vi' ? 'Ép buộc chạy trực tiếp trên Máy Chủ AI RealPLKSR (Port 8006)' : 'Force processing on RealPLKSR AI Server'}
-                  >
-                    ☁️ {lang === 'vi' ? 'Máy Chủ AI Server' : 'AI Server'}
-                  </button>
-                  <button
-                    type="button"
-                    className={`scale-pill ${executionMode === 'webgpu' ? 'active' : ''}`}
-                    onClick={() => setExecutionMode('webgpu')}
-                    style={{ fontSize: '0.75rem', padding: '6px 4px', whiteSpace: 'nowrap' }}
-                    title={lang === 'vi' ? 'Chạy cục bộ trên thiết bị của bạn bằng WebGPU' : 'Run locally on device via WebGPU'}
-                  >
-                    ⚡ {lang === 'vi' ? 'WebGPU Client' : 'WebGPU Client'}
-                  </button>
                 </div>
               </div>
             </div>
