@@ -225,13 +225,26 @@ def _run_fallback_filter_upscale(image: Image.Image, scale: int = 4) -> Image.Im
     final_img = color_enhancer.enhance(1.05)
     return final_img
 
+import concurrent.futures
+
+def _process_single_tile(session, tile_input, sx, sy, sw, sh, scale):
+    tensor_in = np.transpose(tile_input, (2, 0, 1))[np.newaxis, :, :, :].astype(np.float32)
+    outputs = session.run(["output"], {"input": tensor_in})
+    out_tensor = outputs[0][0]
+    out_np = np.transpose(out_tensor, (1, 2, 0))
+    out_np = np.clip(out_np * 255.0, 0, 255).astype(np.uint8)
+    out_tile_img = Image.fromarray(out_np, mode="RGB")
+    valid_out_w = sw * scale
+    valid_out_h = sh * scale
+    cropped_tile = out_tile_img.crop((0, 0, valid_out_w, valid_out_h))
+    return cropped_tile, sx * scale, sy * scale
+
 def _run_onnx_tiled_upscale(session, image: Image.Image, scale: int = 4) -> Image.Image:
     if image.mode != "RGB":
         image = image.convert("RGB")
 
     orig_w, orig_h = image.size
     tile_size = 512 if scale == 2 else 256
-    out_tile_size = 1024
 
     target_w = orig_w * scale
     target_h = orig_h * scale
@@ -242,6 +255,7 @@ def _run_onnx_tiled_upscale(session, image: Image.Image, scale: int = 4) -> Imag
     num_tiles_x = (orig_w + tile_size - 1) // tile_size
     num_tiles_y = (orig_h + tile_size - 1) // tile_size
 
+    tiles_to_process = []
     for ty in range(num_tiles_y):
         for tx in range(num_tiles_x):
             sx = tx * tile_size
@@ -258,21 +272,15 @@ def _run_onnx_tiled_upscale(session, image: Image.Image, scale: int = 4) -> Imag
             else:
                 tile_input = tile
 
-            tensor_in = np.transpose(tile_input, (2, 0, 1))[np.newaxis, :, :, :].astype(np.float32)
+            tiles_to_process.append((tile_input, sx, sy, sw, sh, scale))
 
-            outputs = session.run(["output"], {"input": tensor_in})
-            out_tensor = outputs[0][0]
-
-            out_np = np.transpose(out_tensor, (1, 2, 0))
-            out_np = np.clip(out_np * 255.0, 0, 255).astype(np.uint8)
-
-            out_tile_img = Image.fromarray(out_np, mode="RGB")
-
-            valid_out_w = sw * scale
-            valid_out_h = sh * scale
-            cropped_tile = out_tile_img.crop((0, 0, valid_out_w, valid_out_h))
-
-            output_image.paste(cropped_tile, (sx * scale, sy * scale))
+    # Xử lý song song các tile bằng ThreadPoolExecutor
+    workers = min(4, os.cpu_count() or 2)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(_process_single_tile, session, *t) for t in tiles_to_process]
+        for f in concurrent.futures.as_completed(futures):
+            cropped_tile, paste_x, paste_y = f.result()
+            output_image.paste(cropped_tile, (paste_x, paste_y))
 
     return output_image
 

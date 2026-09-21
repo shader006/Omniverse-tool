@@ -130,39 +130,48 @@ export async function getRealPLKSRSession(scale = 4, onProgress = null) {
 }
 
 /**
- * Chuyển đổi ImageData thành Tensor NCHW [1, 3, H, W] chuẩn hóa [0.0, 1.0]
+ * Chuyển đổi ImageData thành Tensor NCHW [1, 3, H, W] chuẩn hóa [0.0, 1.0] (Tối ưu SIMD/Bitwise)
  */
 function imageDataToNCHWTensor(imgData, width, height) {
-  const data = imgData.data;
+  const data32 = new Uint32Array(imgData.data.buffer);
   const channelSize = width * height;
   const floatData = new Float32Array(3 * channelSize);
+  const offsetG = channelSize;
+  const offsetB = channelSize * 2;
+  const inv255 = 1.0 / 255.0;
 
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    floatData[p] = data[i] / 255.0;                         // R
-    floatData[channelSize + p] = data[i + 1] / 255.0;       // G
-    floatData[2 * channelSize + p] = data[i + 2] / 255.0;   // B
+  for (let p = 0; p < channelSize; p++) {
+    const pixel = data32[p];
+    floatData[p] = (pixel & 0xFF) * inv255;
+    floatData[offsetG + p] = ((pixel >> 8) & 0xFF) * inv255;
+    floatData[offsetB + p] = ((pixel >> 16) & 0xFF) * inv255;
   }
 
   return new ort.Tensor('float32', floatData, [1, 3, height, width]);
 }
 
 /**
- * Chuyển đổi Tensor NCHW [1, 3, H, W] về ImageData RGBA [0, 255]
+ * Chuyển đổi Tensor NCHW [1, 3, H, W] về ImageData RGBA [0, 255] (Tối ưu 32-bit packing)
  */
 function nchwTensorToImageData(tensor, width, height) {
   const floatData = tensor.data;
   const channelSize = width * height;
   const imgData = new ImageData(width, height);
-  const rgba = imgData.data;
+  const rgba32 = new Uint32Array(imgData.data.buffer);
+  const offsetG = channelSize;
+  const offsetB = channelSize * 2;
 
-  for (let p = 0, i = 0; p < channelSize; p++, i += 4) {
-    const r = Math.min(255, Math.max(0, Math.round(floatData[p] * 255)));
-    const g = Math.min(255, Math.max(0, Math.round(floatData[channelSize + p] * 255)));
-    const b = Math.min(255, Math.max(0, Math.round(floatData[2 * channelSize + p] * 255)));
-    rgba[i] = r;
-    rgba[i + 1] = g;
-    rgba[i + 2] = b;
-    rgba[i + 3] = 255;
+  for (let p = 0; p < channelSize; p++) {
+    const rf = floatData[p] * 255.0;
+    const gf = floatData[offsetG + p] * 255.0;
+    const bf = floatData[offsetB + p] * 255.0;
+
+    const r = rf < 0 ? 0 : rf > 255 ? 255 : (rf | 0);
+    const g = gf < 0 ? 0 : gf > 255 ? 255 : (gf | 0);
+    const b = bf < 0 ? 0 : bf > 255 ? 255 : (bf | 0);
+
+    // Ghi 1 DWORD 32-bit trực tiếp: 0xAABBGGRR (Little-endian)
+    rgba32[p] = (0xFF000000) | (b << 16) | (g << 8) | r;
   }
 
   return imgData;
