@@ -12,74 +12,10 @@ export const UPSCALE_MODELS = [
     badgeEn: 'Exclusive • Ultra Sharp & Natural',
     desc: 'Kiến trúc Partial Large Kernel 17x17 Conv hiện đại. Triệt tiêu hoàn toàn nhiễu mờ nén JPEG nặng, tái tạo đường viền sắc nét tự nhiên và bảo toàn màu sắc chân thực.',
     descEn: 'Modern Partial Large Kernel 17x17 Conv architecture. Eliminates severe JPEG compression blur, recovers ultra-sharp natural edges, and preserves authentic colors.',
-    speed: '~40ms',
+    speed: '⚡ 1-2s GPU',
     scale: [2, 4],
   },
 ];
-
-// ── CLIENT-SIDE REALPLKSR PARTIAL LARGE KERNEL SHARPENING ALGORITHM ──
-function applyClientRealPLKSR(ctx, width, height) {
-  const imgData = ctx.getImageData(0, 0, width, height);
-  const data = imgData.data;
-  const nPixels = width * height;
-
-  // 1. Calculate luminance Y
-  const Y = new Float32Array(nPixels);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    Y[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-  }
-
-  // 2. Separable Box Blur for background luminance (radius = 3) simulating large kernel
-  const r = 3;
-  const tempY = new Float32Array(nPixels);
-  const blurY = new Float32Array(nPixels);
-
-  // Horizontal pass
-  for (let y = 0; y < height; y++) {
-    const rowOffset = y * width;
-    for (let x = 0; x < width; x++) {
-      let sum = 0;
-      let count = 0;
-      for (let kx = -r; kx <= r; kx++) {
-        const nx = Math.min(width - 1, Math.max(0, x + kx));
-        sum += Y[rowOffset + nx];
-        count++;
-      }
-      tempY[rowOffset + x] = sum / count;
-    }
-  }
-
-  // Vertical pass
-  for (let x = 0; x < width; x++) {
-    for (let y = 0; y < height; y++) {
-      let sum = 0;
-      let count = 0;
-      for (let ky = -r; ky <= r; ky++) {
-        const ny = Math.min(height - 1, Math.max(0, y + ky));
-        sum += tempY[ny * width + x];
-        count++;
-      }
-      blurY[y * width + x] = sum / count;
-    }
-  }
-
-  // 3. Partial Large Kernel High-Pass Sharpening + Micro Edge Boost + Defog
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const origY = Y[p];
-    const bgY = blurY[p];
-    const highPass = origY - bgY;
-
-    let sharpY = origY + 1.85 * highPass;
-    sharpY = (sharpY - 128) * 1.08 + 128; // Defog & contrast enhancement
-
-    const deltaY = sharpY - origY;
-    data[i]     = Math.min(255, Math.max(0, data[i] + deltaY));
-    data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + deltaY));
-    data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + deltaY));
-  }
-
-  ctx.putImageData(imgData, 0, 0);
-}
 
 export default function PictureUpscaler({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
