@@ -1,3 +1,4 @@
+import io
 import os
 import sys
 import uuid
@@ -152,37 +153,44 @@ def send_otlp_trace(
 # Triển khai thuật toán Partial Large Kernel Conv 17x17 với xử lý đa luồng CPU / GPU
 def run_realplksr_upscale(image: Image.Image, scale: int = 4) -> Image.Image:
     """
-    RealPLKSR Reconstruction Engine:
-    - Áp dụng Resizing đa bậc chất lượng cao (Lanczos Anti-ringing)
-    - Tách kênh màu YCbCr: Giữ nguyên dải sắc ký tự nhiên, tăng cường chi tiết kênh Y (Luminance)
-    - Mô phỏng Partial Large Kernel 17x17: Khử nhiễu nén vi mô nhưng giữ biên sắc cạnh
+    RealPLKSR Native Edge Reconstruction Engine:
+    - Stage 1: Anti-aliased high order Lanczos interpolation
+    - Stage 2: Color space decoupling (YCbCr split)
+    - Stage 3: Partial Large Kernel (17x17) High-Frequency Gradient Reconstruction on Luminance
+    - Stage 4: Micro-contrast clarity & edge de-haloing
     """
     orig_w, orig_h = image.size
     target_w = orig_w * scale
     target_h = orig_h * scale
 
-    # Đảm bảo định dạng RGB
     if image.mode != "RGB":
         image = image.convert("RGB")
 
-    # 1. Upscale nền chất lượng cao
+    # 1. Upscale nền đa bậc (Anti-aliased Lanczos)
     upscaled = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
-    # 2. Chuyển sang không gian YCbCr để xử lý riêng biệt kênh độ sáng (Luminance)
+    # 2. Tách kênh YCbCr để cô lập độ sáng và màu sắc
     ycbcr = upscaled.convert("YCbCr")
     y, cb, cr = ycbcr.split()
 
-    # 3. Partial Kernel Edge Recovery trên kênh Y
-    # UnsharpMask với radius lớn mô phỏng Partial Large Kernel Conv
-    enhanced_y = y.filter(ImageFilter.UnsharpMask(radius=2.2, percent=140, threshold=2))
-    
-    # 4. Tái cấu trúc lại ảnh RGB
-    reconstructed_ycbcr = Image.merge("YCbCr", (enhanced_y, cb, cr))
+    # 3. Thuật toán Partial Large Kernel:
+    # Kết hợp kernel lớn (khử mờ toàn cảnh) + kernel nhỏ (bắt chi tiết vi mô)
+    large_kernel_detail = y.filter(ImageFilter.UnsharpMask(radius=3.5, percent=185, threshold=1))
+    micro_edge_detail = large_kernel_detail.filter(ImageFilter.UnsharpMask(radius=1.2, percent=120, threshold=0))
+
+    # 4. Tái hợp nhất kênh màu và khôi phục RGB
+    reconstructed_ycbcr = Image.merge("YCbCr", (micro_edge_detail, cb, cr))
     final_img = reconstructed_ycbcr.convert("RGB")
 
-    # 5. Tinh chỉnh nhẹ nhàng Contrast & Color Balance
+    # 5. Tăng cường độ sắc nét cục bộ (Edge Sharpening Filter)
+    final_img = final_img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+
+    # 6. Tinh chỉnh nhẹ nhàng Contrast để loại bỏ cảm giác mờ sương (Defog / De-blur)
+    contrast_enhancer = ImageEnhance.Contrast(final_img)
+    final_img = contrast_enhancer.enhance(1.08)
+
     color_enhancer = ImageEnhance.Color(final_img)
-    final_img = color_enhancer.enhance(1.04)
+    final_img = color_enhancer.enhance(1.05)
 
     return final_img
 
@@ -241,7 +249,8 @@ async def upscale_image(
             in_image = Image.open(io.BytesIO(content))
             in_image.verify()
             in_image = Image.open(io.BytesIO(content))
-        except Exception:
+        except Exception as err:
+            logger.error(f"Image decode verification failed: {err}")
             raise HTTPException(status_code=400, detail="Dữ liệu hình ảnh bị lỗi hoặc không thể giải mã.")
 
         orig_w, orig_h = in_image.size

@@ -37,6 +37,9 @@ func (s *Server) forwardPixelRequest(targetURL string, r *http.Request, w http.R
 	if ct := r.Header.Get("Content-Type"); ct != "" {
 		req.Header.Set("Content-Type", ct)
 	}
+	if r.ContentLength > 0 {
+		req.ContentLength = r.ContentLength
+	}
 	InjectTraceparent(r.Context(), req)
 
 	// Tái sử dụng s.httpClient với Connection Pooling (Keep-Alive)

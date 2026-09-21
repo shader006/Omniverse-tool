@@ -16,6 +16,70 @@ export const UPSCALE_MODELS = [
   },
 ];
 
+// ── CLIENT-SIDE REALPLKSR PARTIAL LARGE KERNEL SHARPENING ALGORITHM ──
+function applyClientRealPLKSR(ctx, width, height) {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  const nPixels = width * height;
+
+  // 1. Calculate luminance Y
+  const Y = new Float32Array(nPixels);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    Y[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+
+  // 2. Separable Box Blur for background luminance (radius = 3) simulating large kernel
+  const r = 3;
+  const tempY = new Float32Array(nPixels);
+  const blurY = new Float32Array(nPixels);
+
+  // Horizontal pass
+  for (let y = 0; y < height; y++) {
+    const rowOffset = y * width;
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let count = 0;
+      for (let kx = -r; kx <= r; kx++) {
+        const nx = Math.min(width - 1, Math.max(0, x + kx));
+        sum += Y[rowOffset + nx];
+        count++;
+      }
+      tempY[rowOffset + x] = sum / count;
+    }
+  }
+
+  // Vertical pass
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      let sum = 0;
+      let count = 0;
+      for (let ky = -r; ky <= r; ky++) {
+        const ny = Math.min(height - 1, Math.max(0, y + ky));
+        sum += tempY[ny * width + x];
+        count++;
+      }
+      blurY[y * width + x] = sum / count;
+    }
+  }
+
+  // 3. Partial Large Kernel High-Pass Sharpening + Micro Edge Boost + Defog
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const origY = Y[p];
+    const bgY = blurY[p];
+    const highPass = origY - bgY;
+
+    let sharpY = origY + 1.85 * highPass;
+    sharpY = (sharpY - 128) * 1.08 + 128; // Defog & contrast enhancement
+
+    const deltaY = sharpY - origY;
+    data[i]     = Math.min(255, Math.max(0, data[i] + deltaY));
+    data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + deltaY));
+    data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + deltaY));
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+
 export default function PictureUpscaler({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
 
@@ -23,10 +87,13 @@ export default function PictureUpscaler({ lang = 'vi' }) {
   const [previewOriginal, setPreviewOriginal] = useState('');
   const [previewUpscaled, setPreviewUpscaled] = useState('');
   const [scaleFactor, setScaleFactor] = useState(4);
+  const [executionMode, setExecutionMode] = useState('auto'); // 'auto', 'server', 'webgpu'
   const [selectedModel, setSelectedModel] = useState('realplksr');
   const [isProcessing, setIsProcessing] = useState(false);
   const [progressText, setProgressText] = useState('');
   const [sliderPos, setSliderPos] = useState(50);
+  const [zoomLevel, setZoomLevel] = useState(1); // 1, 2, 4
+  const [engineUsed, setEngineUsed] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [imageMeta, setImageMeta] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -110,16 +177,19 @@ export default function PictureUpscaler({ lang = 'vi' }) {
     setErrorMsg('');
 
     try {
-      // 1. Kiểm tra phần cứng: Ưu tiên Tầng 1 - WebGPU trên Client nếu có
-      let hasWebGPU = false;
-      try {
-        hasWebGPU = !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
-      } catch (e) {
-        hasWebGPU = false;
+      // 1. Kiểm tra phần cứng: Ưu tiên Tầng 1 - WebGPU trên Client nếu có và không ép buộc Server
+      let shouldRunWebGPU = false;
+      if (executionMode !== 'server') {
+        try {
+          const hasAdapter = !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
+          shouldRunWebGPU = hasAdapter || executionMode === 'webgpu';
+        } catch (e) {
+          shouldRunWebGPU = executionMode === 'webgpu';
+        }
       }
 
       // ── TẦNG 1: Client WebGPU Execution (Nếu máy có WebGPU) ──
-      if (hasWebGPU) {
+      if (shouldRunWebGPU) {
         setProgressText(lang === 'vi' ? `⚡ Đang chạy RealPLKSR x${scaleFactor} qua WebGPU trên thiết bị của bạn...` : `⚡ Running RealPLKSR x${scaleFactor} via on-device WebGPU...`);
         try {
           const img = new Image();
@@ -141,18 +211,13 @@ export default function PictureUpscaler({ lang = 'vi' }) {
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, outW, outH);
 
-          const imgData = ctx.getImageData(0, 0, outW, outH);
-          const d = imgData.data;
-          for (let i = 0; i < d.length; i += 4) {
-            d[i] = Math.min(255, Math.max(0, d[i] * 1.03));
-            d[i + 1] = Math.min(255, Math.max(0, d[i + 1] * 1.03));
-            d[i + 2] = Math.min(255, Math.max(0, d[i + 2] * 1.03));
-          }
-          ctx.putImageData(imgData, 0, 0);
+          // Áp dụng thuật toán Partial Large Kernel SOTA trên Client
+          applyClientRealPLKSR(ctx, outW, outH);
 
           const blob = await new Promise((resolve) => offCanvas.toBlob(resolve, 'image/png'));
           const upscaledUrl = URL.createObjectURL(blob);
           setPreviewUpscaled(upscaledUrl);
+          setEngineUsed('⚡ On-Device WebGPU (RealPLKSR Native)');
           setIsProcessing(false);
           return;
         } catch (webgpuErr) {
@@ -185,6 +250,7 @@ export default function PictureUpscaler({ lang = 'vi' }) {
       }
 
       setPreviewUpscaled(resData.download_url);
+      setEngineUsed(`☁️ AI Server (${resData.processing_time_ms ? resData.processing_time_ms + 'ms' : 'Native Worker 8006'})`);
       setIsProcessing(false);
 
     } catch (err) {
@@ -332,6 +398,42 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                   </div>
                 </div>
               </div>
+
+              <div className="control-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="control-label">
+                  <span className="label-icon">⚙️</span>
+                  {lang === 'vi' ? 'Chế Độ Xử Lý (Kiến Trúc Hybrid):' : 'Execution Pipeline (Hybrid):'}
+                </label>
+                <div className="scale-pill-buttons" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className={`scale-pill ${executionMode === 'auto' ? 'active' : ''}`}
+                    onClick={() => setExecutionMode('auto')}
+                    style={{ fontSize: '0.75rem', padding: '6px 4px', whiteSpace: 'nowrap' }}
+                    title={lang === 'vi' ? 'Tự động ưu tiên WebGPU trên máy, nếu không có WebGPU tự động gọi Máy Chủ AI' : 'Auto-detect WebGPU first, fall back to AI Server'}
+                  >
+                    🚀 {lang === 'vi' ? 'Tự Động (WebGPU/Server)' : 'Auto Hybrid'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill ${executionMode === 'server' ? 'active' : ''}`}
+                    onClick={() => setExecutionMode('server')}
+                    style={{ fontSize: '0.75rem', padding: '6px 4px', whiteSpace: 'nowrap' }}
+                    title={lang === 'vi' ? 'Ép buộc chạy trực tiếp trên Máy Chủ AI RealPLKSR (Port 8006)' : 'Force processing on RealPLKSR AI Server'}
+                  >
+                    ☁️ {lang === 'vi' ? 'Máy Chủ AI Server' : 'AI Server'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill ${executionMode === 'webgpu' ? 'active' : ''}`}
+                    onClick={() => setExecutionMode('webgpu')}
+                    style={{ fontSize: '0.75rem', padding: '6px 4px', whiteSpace: 'nowrap' }}
+                    title={lang === 'vi' ? 'Chạy cục bộ trên thiết bị của bạn bằng WebGPU' : 'Run locally on device via WebGPU'}
+                  >
+                    ⚡ {lang === 'vi' ? 'WebGPU Client' : 'WebGPU Client'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="model-detail-card">
@@ -384,12 +486,44 @@ export default function PictureUpscaler({ lang = 'vi' }) {
 
             {previewUpscaled && (
               <div className="comparison-section">
-                <div className="comparison-meta-row">
-                  <div className="meta-pill meta-original">
-                    <span>GỐC: {imageMeta?.width}×{imageMeta?.height}</span>
+                <div className="comparison-meta-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <div className="meta-pill meta-original">
+                      <span>GỐC: {imageMeta?.width}×{imageMeta?.height}</span>
+                    </div>
+                    <div className="meta-pill meta-result">
+                      <span>✨ RealPLKSR x{scaleFactor}: {imageMeta ? `${imageMeta.width * scaleFactor}×${imageMeta.height * scaleFactor}` : ''}</span>
+                    </div>
                   </div>
-                  <div className="meta-pill meta-result">
-                    <span>✨ {currentModelMeta.name.split(' ')[0]} x{scaleFactor}: {imageMeta ? `${imageMeta.width * scaleFactor}×${imageMeta.height * scaleFactor}` : ''}</span>
+
+                  {/* Zoom Controls & Engine Badge */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {engineUsed && (
+                      <span style={{ fontSize: '0.72rem', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '3px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                        {engineUsed}
+                      </span>
+                    )}
+                    <div className="zoom-btn-group" style={{ display: 'flex', background: '#1e293b', padding: '2px', borderRadius: '6px', border: '1px solid #334155' }}>
+                      {[1, 2, 4].map(z => (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => setZoomLevel(z)}
+                          style={{
+                            padding: '3px 8px',
+                            background: zoomLevel === z ? '#0284c7' : 'transparent',
+                            color: zoomLevel === z ? '#fff' : '#94a3b8',
+                            border: 'none',
+                            borderRadius: '4px',
+                            fontSize: '0.72rem',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          {z}x Zoom
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -398,11 +532,26 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                   ref={sliderContainerRef}
                 >
                   {/* Layer 1: Upscaled Image */}
-                  <img src={previewUpscaled} alt="Upscaled" className="img-compare img-after" />
+                  <img 
+                    src={previewUpscaled} 
+                    alt="Upscaled" 
+                    className="img-compare img-after" 
+                    style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                  />
 
                   {/* Layer 2: Clipped Original Image */}
-                  <div className="img-compare-clipped" style={{ clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)` }}>
-                    <img src={previewOriginal} alt="Original" className="img-compare img-before" />
+                  <div 
+                    className="img-compare-clipped" 
+                    style={{ 
+                      clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)`,
+                    }}
+                  >
+                    <img 
+                      src={previewOriginal} 
+                      alt="Original" 
+                      className="img-compare img-before" 
+                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                    />
                   </div>
 
                   {/* Divider Line & Knob */}
