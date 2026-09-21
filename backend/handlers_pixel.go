@@ -113,3 +113,45 @@ func (s *Server) handlePixelHealth(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
+func (s *Server) handleUpscale(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	target := s.workerUpscalerURL + "/api/upscale"
+	s.forwardPixelRequest(target, r, w)
+}
+
+func (s *Server) handleUpscaleHealth(w http.ResponseWriter, r *http.Request) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, s.workerUpscalerURL+"/health", nil)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "down",
+			"service": "worker-upscaler",
+			"error":   err.Error(),
+		})
+		return
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "down",
+			"service": "worker-upscaler",
+			"error":   err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+	for k, vs := range resp.Header {
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+

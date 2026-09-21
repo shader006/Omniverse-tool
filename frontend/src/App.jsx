@@ -7,6 +7,7 @@ import FileConverter from './components/FileConverter/FileConverter';
 import WhisperTranscribe from './components/WhisperTranscribe/WhisperTranscribe';
 import RemoveBackground from './components/RemoveBackground/RemoveBackground';
 import PixelFixer from './components/PixelFixer/PixelFixer';
+import PictureUpscaler from './components/PictureUpscaler/PictureUpscaler';
 import Footer from './components/Footer';
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
 import PixelMascot from './components/PixelMascot/PixelMascot';
@@ -15,7 +16,7 @@ import { AuthProvider } from './contexts/AuthContext';
 export default function App() {
   const getInitialRoute = () => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '').toLowerCase() : '';
-    if (['url', 'file', 'transcribe', 'bg', 'pixel'].includes(hash)) {
+    if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
       return { page: 'tools', mode: hash };
     }
     if (['tools', 'tools-workspace'].includes(hash)) {
@@ -37,9 +38,9 @@ export default function App() {
   useEffect(() => {
     const handleRoute = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (['url', 'file', 'transcribe', 'bg', 'pixel', 'tools', 'tools-workspace'].includes(hash)) {
+      if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale', 'tools', 'tools-workspace'].includes(hash)) {
         setCurrentPage('tools');
-        if (['url', 'file', 'transcribe', 'bg', 'pixel'].includes(hash)) {
+        if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
           setCurrentMode(hash);
         }
       } else {
@@ -54,7 +55,7 @@ export default function App() {
 
   const navigateToTools = (mode) => {
     setCurrentPage('tools');
-    if (mode && ['url', 'file', 'transcribe', 'bg', 'pixel'].includes(mode)) {
+    if (mode && ['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(mode)) {
       setCurrentMode(mode);
       window.location.hash = `#${mode}`;
     } else {
@@ -104,6 +105,7 @@ export default function App() {
               {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
               {currentMode === 'bg' && <RemoveBackground lang={lang} />}
               {currentMode === 'pixel' && <PixelFixer lang={lang} />}
+              {currentMode === 'upscale' && <PictureUpscaler lang={lang} />}
             </main>
 
             <Footer lang={lang} />

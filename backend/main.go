@@ -70,6 +70,11 @@ func main() {
 		workerPdf2docxURL = "http://worker-pdf2docx:8005"
 	}
 
+	workerUpscalerURL := os.Getenv("WORKER_UPSCALER_URL")
+	if workerUpscalerURL == "" {
+		workerUpscalerURL = "http://worker-upscaler:8006"
+	}
+
 	sharedTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -95,8 +100,9 @@ func main() {
 		workerWhisperFallbackURL: workerWhisperFallbackURL,
 		workerRmbgURL:            workerRmbgURL,
 		workerRmbgFallbackURL:    workerRmbgFallbackURL,
-		workerPixelfixerURL: workerPixelfixerURL,
-		workerPdf2docxURL:   workerPdf2docxURL,
+		workerPixelfixerURL:      workerPixelfixerURL,
+		workerPdf2docxURL:        workerPdf2docxURL,
+		workerUpscalerURL:        workerUpscalerURL,
 		httpClient: &http.Client{
 			Transport: sharedTransport,
 			Timeout:   180 * time.Second,
@@ -120,6 +126,8 @@ func main() {
 	mux.HandleFunc("/api/pixel/detect", server.handlePixelDetect)
 	mux.HandleFunc("/api/pixel/fix", server.handlePixelFix)
 	mux.HandleFunc("/api/pixel/health", server.handlePixelHealth)
+	mux.HandleFunc("/api/upscale", server.handleUpscale)
+	mux.HandleFunc("/api/upscale/health", server.handleUpscaleHealth)
 	mux.HandleFunc("/api/status/", server.handleStatus)
 	mux.HandleFunc("/api/stream/", server.handleStream)
 	mux.HandleFunc("/api/file/", server.handleFile)

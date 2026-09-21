@@ -23,6 +23,7 @@ services:
       - WORKER_RMBG_URL=${WORKER_RMBG_URL:-http://pail:8003}
       - WORKER_PIXELFIXER_URL=http://worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://worker-pdf2docx:8005
+      - WORKER_UPSCALER_URL=http://worker-upscaler:8006
       - MAX_MEDIA_CONCURRENT_JOBS=4
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
@@ -37,6 +38,7 @@ services:
       - worker-rmbg
       - worker-pixelfixer
       - worker-pdf2docx
+      - worker-upscaler
 
   worker-ytdlp:
     build:
@@ -129,6 +131,22 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8005
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+
+  worker-upscaler:
+    build:
+      context: ./backend
+      dockerfile: services/worker_upscaler/Dockerfile
+    container_name: mediaflow_worker_upscaler
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    volumes:
+      - ./downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8006
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
 

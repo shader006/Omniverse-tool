@@ -200,6 +200,9 @@ def fetch_info(req: InfoRequest, request: Request):
     start = time.perf_counter()
     try:
         data = get_media_info(req.url)
+        if not data:
+            raise ValueError(f"Không thể lấy thông tin video từ liên kết: {req.url}")
+
         proc_ms = (time.perf_counter() - start) * 1000.0
 
         # Lưu cache trong bộ nhớ theo cache_key chuẩn hoá

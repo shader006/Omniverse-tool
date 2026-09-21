@@ -48,7 +48,7 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := filepath.Base(filepath.Clean(unescapedFilename))
-	if filename == "." || filename == "/" || filename == "" {
+	if filename == "." || filename == "/" || filename == "" || strings.ContainsAny(filename, "\x00\r\n") {
 		http.Error(w, "Tên file không hợp lệ.", http.StatusBadRequest)
 		return
 	}
@@ -74,8 +74,14 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		displayName = parts[1]
 	}
 
+	cleanDisplayName := strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 || r == '"' || r == '\\' {
+			return '_'
+		}
+		return r
+	}, displayName)
 	encodedName := url.PathEscape(displayName)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", displayName, encodedName))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=UTF-8''%s", cleanDisplayName, encodedName))
 
 	mimeType := "application/octet-stream"
 	switch strings.ToLower(filepath.Ext(displayName)) {

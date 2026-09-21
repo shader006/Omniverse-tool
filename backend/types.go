@@ -45,6 +45,7 @@ type Server struct {
 	workerRmbgFallbackURL    string
 	workerPixelfixerURL      string
 	workerPdf2docxURL        string
+	workerUpscalerURL        string
 	httpClient               *http.Client
 	httpLongClient           *http.Client
 }

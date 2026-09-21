@@ -34,6 +34,7 @@ services:
       - WORKER_RMBG_FALLBACK_URL=${WORKER_RMBG_FALLBACK_URL:-http://tasks.worker-rmbg:8003}
       - WORKER_PIXELFIXER_URL=http://tasks.worker-pixelfixer:8004
       - WORKER_PDF2DOCX_URL=http://tasks.worker-pdf2docx:8005
+      - WORKER_UPSCALER_URL=http://tasks.worker-upscaler:8006
       - MAX_MEDIA_CONCURRENT_JOBS=4
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
@@ -155,6 +156,28 @@ services:
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8005
+      - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
+      - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
+    networks:
+      - omniverse_net
+
+  worker-upscaler:
+    image: omniversetool-worker-upscaler:latest
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      replicas: 1
+      endpoint_mode: dnsrr
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 2048M
+    volumes:
+      - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+    environment:
+      - DOWNLOAD_DIR=/app/downloads
+      - PORT=8006
       - HIAI_OBSERVE_URL=${HIAI_OBSERVE_URL:-http://172.17.0.1:8001}
       - HIAI_OBSERVE_API_KEY=${HIAI_OBSERVE_API_KEY:-}
     networks:

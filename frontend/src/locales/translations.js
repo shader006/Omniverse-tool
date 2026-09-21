@@ -6,6 +6,7 @@ export const translations = {
     mode_transcribe: 'Tách giọng nói (Whisper)',
     mode_bg: 'Xóa phông ảnh (AI)',
     mode_pixel: 'Khôi phục Pixel Art (AI)',
+    mode_upscale: 'Upscale Ảnh (AI)',
 
     // Common
     browse_files: 'Chọn file từ máy tính',
@@ -208,6 +209,7 @@ export const translations = {
     mode_transcribe: 'Extract Text (Whisper)',
     mode_bg: 'Remove BG (AI)',
     mode_pixel: 'Pixel Art Fixer (AI)',
+    mode_upscale: 'Upscale Picture (AI)',
 
     // Common
     browse_files: 'Browse from computer',
