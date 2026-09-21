@@ -234,9 +234,11 @@ def _process_single_tile(session, tile_input, sx, sy, sw, sh, scale):
     out_np = np.transpose(out_tensor, (1, 2, 0))
     out_np = np.clip(out_np * 255.0, 0, 255).astype(np.uint8)
     out_tile_img = Image.fromarray(out_np, mode="RGB")
+    del tensor_in, outputs, out_tensor, out_np
     valid_out_w = sw * scale
     valid_out_h = sh * scale
     cropped_tile = out_tile_img.crop((0, 0, valid_out_w, valid_out_h))
+    del out_tile_img
     return cropped_tile, sx * scale, sy * scale
 
 def _run_onnx_tiled_upscale(session, image: Image.Image, scale: int = 4) -> Image.Image:
@@ -281,6 +283,15 @@ def _run_onnx_tiled_upscale(session, image: Image.Image, scale: int = 4) -> Imag
         for f in concurrent.futures.as_completed(futures):
             cropped_tile, paste_x, paste_y = f.result()
             output_image.paste(cropped_tile, (paste_x, paste_y))
+            del cropped_tile
+
+    del tiles_to_process, img_np
+    gc.collect()
+    try:
+        import ctypes
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
     return output_image
 
@@ -413,6 +424,25 @@ async def upscale_image(
             is_error=True
         )
         raise HTTPException(status_code=500, detail=f"Không thể xử lý ảnh bằng RealPLKSR: {str(e)}")
+    finally:
+        try:
+            del in_image
+        except Exception:
+            pass
+        try:
+            del result_img
+        except Exception:
+            pass
+        try:
+            del content
+        except Exception:
+            pass
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
 
 @app.get("/api/file/{filename}")
 async def get_upscaled_file(filename: str):
