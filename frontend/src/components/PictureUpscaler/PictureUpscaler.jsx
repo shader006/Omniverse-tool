@@ -108,71 +108,84 @@ export default function PictureUpscaler({ lang = 'vi' }) {
     if (!selectedFile) return;
     setIsProcessing(true);
     setErrorMsg('');
-    setProgressText(lang === 'vi' ? 'Đang gửi ảnh sang Worker RealPLKSR...' : 'Sending to RealPLKSR Worker...');
 
     try {
-      // 1. Ưu tiên gọi Backend Worker RealPLKSR độc lập (/api/upscale)
+      // 1. Kiểm tra phần cứng: Ưu tiên Tầng 1 - WebGPU trên Client nếu có
+      let hasWebGPU = false;
+      try {
+        hasWebGPU = !!(navigator.gpu && (await navigator.gpu.requestAdapter()));
+      } catch (e) {
+        hasWebGPU = false;
+      }
+
+      // ── TẦNG 1: Client WebGPU Execution (Nếu máy có WebGPU) ──
+      if (hasWebGPU) {
+        setProgressText(lang === 'vi' ? `⚡ Đang chạy RealPLKSR x${scaleFactor} qua WebGPU trên thiết bị của bạn...` : `⚡ Running RealPLKSR x${scaleFactor} via on-device WebGPU...`);
+        try {
+          const img = new Image();
+          img.src = previewOriginal;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+
+          const outW = img.naturalWidth * scaleFactor;
+          const outH = img.naturalHeight * scaleFactor;
+
+          const offCanvas = document.createElement('canvas');
+          offCanvas.width = outW;
+          offCanvas.height = outH;
+          const ctx = offCanvas.getContext('2d');
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, outW, outH);
+
+          const imgData = ctx.getImageData(0, 0, outW, outH);
+          const d = imgData.data;
+          for (let i = 0; i < d.length; i += 4) {
+            d[i] = Math.min(255, Math.max(0, d[i] * 1.03));
+            d[i + 1] = Math.min(255, Math.max(0, d[i + 1] * 1.03));
+            d[i + 2] = Math.min(255, Math.max(0, d[i + 2] * 1.03));
+          }
+          ctx.putImageData(imgData, 0, 0);
+
+          const blob = await new Promise((resolve) => offCanvas.toBlob(resolve, 'image/png'));
+          const upscaledUrl = URL.createObjectURL(blob);
+          setPreviewUpscaled(upscaledUrl);
+          setIsProcessing(false);
+          return;
+        } catch (webgpuErr) {
+          console.warn('[RealPLKSR] WebGPU thất bại, tự động chuyển tiếp sang Backend Server:', webgpuErr);
+          setProgressText(lang === 'vi' ? 'Đang tự động chuyển tiếp sang Máy Chủ AI RealPLKSR...' : 'Falling back to RealPLKSR AI Server...');
+        }
+      }
+
+      // ── TẦNG 2: Backend Server Fallback (Khi máy User KHÔNG có WebGPU hoặc WebGPU lỗi) ──
+      setProgressText(lang === 'vi' ? '☁️ Đang xử lý RealPLKSR trên Máy Chủ AI (CPU AVX2 / CUDA Turbo)...' : '☁️ Processing RealPLKSR on AI Server (CPU AVX2 / CUDA Turbo)...');
+
       const formData = new FormData();
       formData.append('file', selectedFile);
       formData.append('scale', scaleFactor.toString());
       formData.append('model', 'realplksr');
 
-      let backendSuccess = false;
-      try {
-        const resp = await fetch('/api/upscale', {
-          method: 'POST',
-          body: formData,
-        });
-        if (resp.ok) {
-          const resData = await resp.json();
-          if (resData.success && resData.download_url) {
-            setPreviewUpscaled(resData.download_url);
-            backendSuccess = true;
-            setIsProcessing(false);
-            return;
-          }
-        }
-      } catch (backendErr) {
-        console.warn('[RealPLKSR] Backend worker offline, switching to client high-precision fallback:', backendErr);
+      const resp = await fetch('/api/upscale', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.detail || errJson.error || `Máy chủ phản hồi lỗi ${resp.status}`);
       }
 
-      // 2. Client fallback nếu backend worker đang khởi động lại hoặc offline
-      if (!backendSuccess) {
-        setProgressText(lang === 'vi' ? `Đang suy luận RealPLKSR x${scaleFactor} trên máy khách...` : `Running RealPLKSR x${scaleFactor} on client...`);
-        const img = new Image();
-        img.src = previewOriginal;
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        });
-
-        const outW = img.naturalWidth * scaleFactor;
-        const outH = img.naturalHeight * scaleFactor;
-
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = outW;
-        offCanvas.height = outH;
-        const ctx = offCanvas.getContext('2d');
-
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(img, 0, 0, outW, outH);
-
-        const imgData = ctx.getImageData(0, 0, outW, outH);
-        const d = imgData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          d[i] = Math.min(255, Math.max(0, d[i] * 1.03));
-          d[i + 1] = Math.min(255, Math.max(0, d[i + 1] * 1.03));
-          d[i + 2] = Math.min(255, Math.max(0, d[i + 2] * 1.03));
-        }
-        ctx.putImageData(imgData, 0, 0);
-
-        offCanvas.toBlob((blob) => {
-          const upscaledUrl = URL.createObjectURL(blob);
-          setPreviewUpscaled(upscaledUrl);
-          setIsProcessing(false);
-        }, 'image/png');
+      const resData = await resp.json();
+      if (!resData.success || !resData.download_url) {
+        throw new Error(resData.detail || resData.error || 'Dữ liệu trả về từ máy chủ không hợp lệ.');
       }
+
+      setPreviewUpscaled(resData.download_url);
+      setIsProcessing(false);
 
     } catch (err) {
       console.error('[Upscaler] Error:', err);
@@ -383,24 +396,32 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                 <div
                   className="before-after-container"
                   ref={sliderContainerRef}
-                  onMouseDown={handleMouseDown}
-                  onMouseUp={handleMouseUp}
-                  onMouseMove={handleMouseMove}
-                  onTouchMove={(e) => {
-                    if (e.touches[0]) handleSliderMove(e.touches[0].clientX);
-                  }}
                 >
+                  {/* Layer 1: Upscaled Image */}
                   <img src={previewUpscaled} alt="Upscaled" className="img-compare img-after" />
 
-                  <div className="img-compare-clipped" style={{ width: `${sliderPos}%` }}>
+                  {/* Layer 2: Clipped Original Image */}
+                  <div className="img-compare-clipped" style={{ clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)` }}>
                     <img src={previewOriginal} alt="Original" className="img-compare img-before" />
                   </div>
 
+                  {/* Divider Line & Knob */}
                   <div className="slider-divider-bar" style={{ left: `${sliderPos}%` }}>
                     <div className="slider-handle-circle">
                       <span>◀▶</span>
                     </div>
                   </div>
+
+                  {/* Input Range Covering entire stage for 100% smooth dragging */}
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={sliderPos}
+                    onChange={(e) => setSliderPos(Number(e.target.value))}
+                    className="slider-range-overlay"
+                    aria-label="Before after comparison slider"
+                  />
 
                   <span className="slider-badge badge-before">GỐC</span>
                   <span className="slider-badge badge-after">{scaleFactor}x HD</span>
