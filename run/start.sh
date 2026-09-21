@@ -4,7 +4,8 @@
 # ==============================================================================
 set -e
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+DIR="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 cd "$DIR"
 
 GREEN='\033[0;32m'
@@ -87,5 +88,5 @@ echo -e "\n${GREEN}✨ Hướng dẫn truy cập:${NC}"
 echo -e "   - Cổng Gateway trực tiếp:  ${BLUE}http://localhost:8000${NC}"
 echo -e "   - Cổng Pingora Proxy:      ${BLUE}http://localhost:80${NC}"
 echo -e "   - Cổng HiAI Observe APM:   ${BLUE}http://localhost:8001${NC}"
-echo -e "   - Dừng toàn bộ hệ thống:   ${YELLOW}./stop.sh${NC} (hoặc ./stop)"
+echo -e "   - Dừng toàn bộ hệ thống:   ${YELLOW}./run/stop.sh${NC} (hoặc ./stop)"
 echo -e "${BLUE}======================================================================${NC}\n"

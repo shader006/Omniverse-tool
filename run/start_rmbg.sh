@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Khởi động Worker Whisper trên GPU NVIDIA CUDA (RTX 3090)
+# Khởi động Worker RMBG trên GPU NVIDIA CUDA (RTX 3090)
 set -e
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Tự động nạp file .env từ thư mục gốc một cách an toàn (hỗ trợ đường dẫn có khoảng trắng)
 if [ -f "$PROJECT_DIR/.env" ]; then
@@ -34,19 +35,22 @@ fi
 # Thiết lập các biến môi trường
 export PYTHONPATH="$PROJECT_DIR/backend"
 export DOWNLOAD_DIR="${DOWNLOAD_DIR:-$PROJECT_DIR/downloads}"
-export WHISPER_BIN="${WHISPER_BIN:-$HOME/whisper.cpp/build/bin/whisper-cli}"
-export WHISPER_MODEL_PATH="${WHISPER_MODEL_PATH:-$HOME/whisper.cpp/models/ggml-small.bin}"
-export PORT="${WORKER_WHISPER_PORT:-${PORT:-8002}}"
+export BIREFNET_CACHE_DIR="${BIREFNET_CACHE_DIR:-$HOME/.cache/birefnet}"
+export PORT="${WORKER_RMBG_PORT:-${PORT:-8003}}"
+export IDLE_RECYCLE_SECONDS="${IDLE_RECYCLE_SECONDS:-180}"
+export TMPDIR="/mnt/data/ssd980/home/duongtbn/tmp"
+export RMBG_GPU_MEM_LIMIT_GB="${RMBG_GPU_MEM_LIMIT_GB:-2.0}"
+export CUDA_DEVICE_ID="${CUDA_DEVICE_ID:-0}"
 
 cd "$PROJECT_DIR/backend"
 while true; do
     echo "=========================================================="
-    echo "🚀 Khởi động Worker Whisper (GPU CUDA)"
-    echo "   Binary: $WHISPER_BIN"
-    echo "   Model:  $WHISPER_MODEL_PATH"
-    echo "   Port:   $PORT"
+    echo "🚀 Khởi động Worker RMBG (GPU CUDA)"
+    echo "   Cache Dir: $BIREFNET_CACHE_DIR"
+    echo "   Port:      $PORT"
+    echo "   Idle Secs: $IDLE_RECYCLE_SECONDS (0 = thường trực trong VRAM)"
     echo "=========================================================="
-    python -m services.worker_whisper.main || true
-    echo "⚠️ Tiến trình Worker Whisper đã dừng. Tự động khởi động lại sau 2 giây..."
+    python -m services.worker_rmbg.main || true
+    echo "⚠️ Tiến trình Worker RMBG đã dừng. Tự động khởi động lại sau 2 giây..."
     sleep 2
 done
