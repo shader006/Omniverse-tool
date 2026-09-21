@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { formatFileBytes } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
+import { runWebGPURealPLKSR, isWebGPUSupported } from '../../utils/realplksrClient';
 import './picture-upscaler.css';
 
 export const UPSCALE_MODELS = [
@@ -190,7 +191,7 @@ export default function PictureUpscaler({ lang = 'vi' }) {
 
       // ── TẦNG 1: Client WebGPU Execution (Nếu máy có WebGPU) ──
       if (shouldRunWebGPU) {
-        setProgressText(lang === 'vi' ? `⚡ Đang chạy RealPLKSR x${scaleFactor} qua WebGPU trên thiết bị của bạn...` : `⚡ Running RealPLKSR x${scaleFactor} via on-device WebGPU...`);
+        setProgressText(lang === 'vi' ? `⚡ Đang khởi động RealPLKSR ONNX WebGPU x${scaleFactor}...` : `⚡ Initializing RealPLKSR ONNX WebGPU x${scaleFactor}...`);
         try {
           const img = new Image();
           img.src = previewOriginal;
@@ -199,30 +200,18 @@ export default function PictureUpscaler({ lang = 'vi' }) {
             img.onerror = reject;
           });
 
-          const outW = img.naturalWidth * scaleFactor;
-          const outH = img.naturalHeight * scaleFactor;
+          // Thực thi mô hình neural RealPLKSR ONNX trực tiếp trên WebGPU
+          const result = await runWebGPURealPLKSR(img, scaleFactor, (msg) => {
+            setProgressText(msg);
+          });
 
-          const offCanvas = document.createElement('canvas');
-          offCanvas.width = outW;
-          offCanvas.height = outH;
-          const ctx = offCanvas.getContext('2d');
-
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, 0, 0, outW, outH);
-
-          // Áp dụng thuật toán Partial Large Kernel SOTA trên Client
-          applyClientRealPLKSR(ctx, outW, outH);
-
-          const blob = await new Promise((resolve) => offCanvas.toBlob(resolve, 'image/png'));
-          const upscaledUrl = URL.createObjectURL(blob);
-          setPreviewUpscaled(upscaledUrl);
-          setEngineUsed('⚡ On-Device WebGPU (RealPLKSR Native)');
+          setPreviewUpscaled(result.upscaledUrl);
+          setEngineUsed('⚡ On-Device WebGPU (RealPLKSR ONNX Neural)');
           setIsProcessing(false);
           return;
         } catch (webgpuErr) {
           console.warn('[RealPLKSR] WebGPU thất bại, tự động chuyển tiếp sang Backend Server:', webgpuErr);
-          setProgressText(lang === 'vi' ? 'Đang tự động chuyển tiếp sang Máy Chủ AI RealPLKSR...' : 'Falling back to RealPLKSR AI Server...');
+          setProgressText(lang === 'vi' ? 'WebGPU không phản hồi, đang tự động chuyển tiếp sang Máy Chủ AI RealPLKSR...' : 'Falling back to RealPLKSR AI Server...');
         }
       }
 

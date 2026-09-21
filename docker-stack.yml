@@ -175,6 +175,7 @@ services:
           memory: 2048M
     volumes:
       - ${WORKSPACE_DIR:-.}/downloads:/app/downloads
+      - ${WORKSPACE_DIR:-.}/models:/models:ro
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8006

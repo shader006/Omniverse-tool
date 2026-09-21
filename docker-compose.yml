@@ -144,6 +144,7 @@ services:
       - "8006:8006"
     volumes:
       - ./downloads:/app/downloads
+      - ./models:/models:ro
     environment:
       - DOWNLOAD_DIR=/app/downloads
       - PORT=8006

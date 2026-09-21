@@ -30,6 +30,7 @@ downloads/
 /downloads/
 models/
 *.onnx
+frontend/public/ort-wasm/
 *.bin
 *.mp3
 *.mp4
