@@ -17,7 +17,7 @@ from typing import Dict, List, Any
 import requests
 
 DEFAULT_DIRECT_URL = "http://localhost:8004"
-DEFAULT_GATEWAY_URL = "http://localhost:8000/api/pixel"
+DEFAULT_GATEWAY_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80") + "/api/pixel"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_DIR = os.path.join(SCRIPT_DIR, "dataset")
 MANIFEST_FILE = os.path.join(DATASET_DIR, "manifest.json")
@@ -51,7 +51,8 @@ def run_benchmark(limit: int = None, mode: str = "fast", url: str = None):
         if "8004" in base_url:
             is_live = (requests.get(f"{base_url}/health", timeout=3).status_code == 200)
         else:
-            is_live = (requests.get("http://localhost:8000/health", timeout=3).status_code == 200)
+            gw_health = base_url.replace("/api/pixel", "/health")
+            is_live = (requests.get(gw_health, timeout=3).status_code == 200)
     except Exception:
         is_live = False
 

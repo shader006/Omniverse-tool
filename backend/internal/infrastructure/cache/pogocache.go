@@ -1,4 +1,4 @@
-package main
+package cache
 
 import (
 	"bufio"
@@ -18,13 +18,27 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"omniverse_backend/internal/domain"
 )
 
 const (
-	DefaultCacheTTL = 3600 * time.Second // 1 giờ TTL cho File kết quả hoàn tất (tránh mất file khi Job State còn lưu 2 giờ)
+	DefaultCacheTTL = 3600 * time.Second // 1 giờ TTL cho File kết quả hoàn tất
 	TempFileTTL     = 1800 * time.Second // 30 phút TTL cho file tạm dở dang
 	JobTTLSeconds   = 7200               // 2 giờ TTL cho Job State
 )
+
+// JobCache Interface định nghĩa các phương thức thao tác cache phục vụ Service Layer
+type JobCache interface {
+	SaveJob(job domain.Job)
+	GetJob(jobID string) (domain.Job, bool)
+	PublishJobUpdate(job domain.Job)
+	SubscribeJob(ctx context.Context, jobID string) (<-chan domain.Job, func())
+	GetMetadata(key string) (map[string]interface{}, bool)
+	SetMetadata(key string, data map[string]interface{}, ttl time.Duration)
+	FindCachedFile(rawURL, mediaFormat, quality string) (string, bool)
+	CleanupExpiredFiles() (int, int64)
+}
 
 // RESP Protocol Helper: Gửi command RESP sang Pogocache (https://pogocache.com)
 func encodeRESPCommand(args ...string) []byte {
@@ -51,7 +65,7 @@ func readRESPResponse(reader *bufio.Reader) (interface{}, error) {
 	content := line[1:]
 
 	switch prefix {
-	case '+': // Simple String (e.g. +OK)
+	case '+': // Simple String
 		return content, nil
 	case '-': // Error
 		return nil, fmt.Errorf("pogocache error: %s", content)
@@ -92,9 +106,7 @@ func readRESPResponse(reader *bufio.Reader) (interface{}, error) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────
-// POGOCACHE UNIFIED ENGINE (Job State + Metadata + File Cache)
-// ─────────────────────────────────────────────────────────────
+// PogocacheEngine quản lý Job State, Metadata và File Cache (với fallback Local Memory)
 type PogocacheEngine struct {
 	pogoAddr    string
 	downloadDir string
@@ -162,7 +174,7 @@ func (pe *PogocacheEngine) execPogoCommand(args ...string) (interface{}, error) 
 
 // ── 1. QUẢN LÝ JOB STATE & SSE PROGRESS ──
 
-func (pe *PogocacheEngine) SaveJob(job Job) {
+func (pe *PogocacheEngine) SaveJob(job domain.Job) {
 	pe.localJobs.Store(job.JobID, job)
 
 	if pe.usePogo {
@@ -173,12 +185,12 @@ func (pe *PogocacheEngine) SaveJob(job Job) {
 	}
 }
 
-func (pe *PogocacheEngine) GetJob(jobID string) (Job, bool) {
+func (pe *PogocacheEngine) GetJob(jobID string) (domain.Job, bool) {
 	if pe.usePogo {
 		res, err := pe.execPogoCommand("GET", fmt.Sprintf("job:%s", jobID))
 		if err == nil && res != nil {
 			if strVal, ok := res.(string); ok && strVal != "" {
-				var job Job
+				var job domain.Job
 				if json.Unmarshal([]byte(strVal), &job) == nil {
 					pe.localJobs.Store(jobID, job)
 					return job, true
@@ -188,18 +200,18 @@ func (pe *PogocacheEngine) GetJob(jobID string) (Job, bool) {
 	}
 
 	if val, ok := pe.localJobs.Load(jobID); ok {
-		return val.(Job), true
+		return val.(domain.Job), true
 	}
 
-	return Job{}, false
+	return domain.Job{}, false
 }
 
-func (pe *PogocacheEngine) PublishJobUpdate(job Job) {
+func (pe *PogocacheEngine) PublishJobUpdate(job domain.Job) {
 	pe.SaveJob(job)
 
 	pe.subsMu.Lock()
 	if subs, ok := pe.localSubs.Load(job.JobID); ok {
-		channels := subs.([]chan Job)
+		channels := subs.([]chan domain.Job)
 		for _, ch := range channels {
 			select {
 			case ch <- job:
@@ -210,13 +222,13 @@ func (pe *PogocacheEngine) PublishJobUpdate(job Job) {
 	pe.subsMu.Unlock()
 }
 
-func (pe *PogocacheEngine) SubscribeJob(ctx context.Context, jobID string) (<-chan Job, func()) {
-	outCh := make(chan Job, 20)
+func (pe *PogocacheEngine) SubscribeJob(ctx context.Context, jobID string) (<-chan domain.Job, func()) {
+	outCh := make(chan domain.Job, 20)
 
 	pe.subsMu.Lock()
-	var current []chan Job
+	var current []chan domain.Job
 	if val, ok := pe.localSubs.Load(jobID); ok {
-		current = val.([]chan Job)
+		current = val.([]chan domain.Job)
 	}
 	pe.localSubs.Store(jobID, append(current, outCh))
 	pe.subsMu.Unlock()
@@ -225,8 +237,8 @@ func (pe *PogocacheEngine) SubscribeJob(ctx context.Context, jobID string) (<-ch
 		pe.subsMu.Lock()
 		defer pe.subsMu.Unlock()
 		if val, ok := pe.localSubs.Load(jobID); ok {
-			channels := val.([]chan Job)
-			var updated []chan Job
+			channels := val.([]chan domain.Job)
+			var updated []chan domain.Job
 			for _, ch := range channels {
 				if ch != outCh {
 					updated = append(updated, ch)
@@ -246,7 +258,6 @@ func (pe *PogocacheEngine) SubscribeJob(ctx context.Context, jobID string) (<-ch
 // ── 2. QUẢN LÝ METADATA CACHE (/api/info) ──
 
 func (pe *PogocacheEngine) GetMetadata(key string) (map[string]interface{}, bool) {
-	// Kiểm tra Pogocache
 	if pe.usePogo {
 		res, err := pe.execPogoCommand("GET", fmt.Sprintf("meta:%s", key))
 		if err == nil && res != nil {
@@ -260,7 +271,6 @@ func (pe *PogocacheEngine) GetMetadata(key string) (map[string]interface{}, bool
 		}
 	}
 
-	// Kiểm tra Local Memory Fallback
 	if val, ok := pe.localMeta.Load(key); ok {
 		item := val.(localMetaItem)
 		if time.Now().Before(item.expiresAt) {
@@ -282,39 +292,8 @@ func (pe *PogocacheEngine) SetMetadata(key string, data map[string]interface{}, 
 	}
 }
 
-func (pe *PogocacheEngine) GetMetadataWithContext(ctx context.Context, key string) (map[string]interface{}, bool) {
-	start := time.Now()
-	data, found := pe.GetMetadata(key)
-	durMs := float64(time.Since(start).Microseconds()) / 1000.0
-	TrackPogoCacheSpan(ctx, "GET_METADATA", key, durMs, found, nil)
-	return data, found
-}
-
-func (pe *PogocacheEngine) SetMetadataWithContext(ctx context.Context, key string, data map[string]interface{}, ttl time.Duration) {
-	start := time.Now()
-	pe.SetMetadata(key, data, ttl)
-	durMs := float64(time.Since(start).Microseconds()) / 1000.0
-	TrackPogoCacheSpan(ctx, "SET_METADATA", key, durMs, true, nil)
-}
-
-func (pe *PogocacheEngine) GetJobWithContext(ctx context.Context, jobID string) (Job, bool) {
-	start := time.Now()
-	job, found := pe.GetJob(jobID)
-	durMs := float64(time.Since(start).Microseconds()) / 1000.0
-	TrackPogoCacheSpan(ctx, "GET_JOB", jobID, durMs, found, nil)
-	return job, found
-}
-
-func (pe *PogocacheEngine) SaveJobWithContext(ctx context.Context, job Job) {
-	start := time.Now()
-	pe.SaveJob(job)
-	durMs := float64(time.Since(start).Microseconds()) / 1000.0
-	TrackPogoCacheSpan(ctx, "SAVE_JOB", job.JobID, durMs, true, nil)
-}
-
 // ── 3. QUẢN LÝ FILE CACHE & DỌN DẸP Ổ ĐĨA ──
 
-// CleanURLKey chuẩn hóa URL YouTube (loại bỏ playlist, tracking params) để khớp chính xác với Python
 func CleanURLKey(rawURL string) string {
 	rawURL = strings.TrimSpace(rawURL)
 	u, err := url.Parse(rawURL)
@@ -339,12 +318,12 @@ func CleanURLKey(rawURL string) string {
 func GenerateCacheKey(rawURL, mediaFormat, quality string) string {
 	cleaned := CleanURLKey(rawURL)
 	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
+	// nosemgrep: go.lang.security.audit.crypto.use_of_weak_crypto.use-of-md5
 	hasher := md5.New()
 	hasher.Write([]byte(raw))
 	return hex.EncodeToString(hasher.Sum(nil))[:10]
 }
 
-// GenerateCacheKeySHA256 giữ lại để tương thích ngược với các file cũ
 func GenerateCacheKeySHA256(rawURL, mediaFormat, quality string) string {
 	cleaned := CleanURLKey(rawURL)
 	raw := fmt.Sprintf("%s_%s_%s", cleaned, strings.ToLower(mediaFormat), quality)
@@ -356,8 +335,7 @@ func GenerateCacheKeySHA256(rawURL, mediaFormat, quality string) string {
 func (pe *PogocacheEngine) FindCachedFile(rawURL, mediaFormat, quality string) (string, bool) {
 	prefixMD5 := GenerateCacheKey(rawURL, mediaFormat, quality)
 	prefixSha := GenerateCacheKeySHA256(rawURL, mediaFormat, quality)
-	
-	// Khóa SHA256 độ dài 12 dự phòng cũ
+
 	rawSha12 := fmt.Sprintf("%s_%s_%s", strings.TrimSpace(rawURL), strings.ToLower(mediaFormat), quality)
 	hSha12 := sha256.New()
 	hSha12.Write([]byte(rawSha12))
@@ -375,7 +353,6 @@ func (pe *PogocacheEngine) FindCachedFile(rawURL, mediaFormat, quality string) (
 		}
 		name := entry.Name()
 		if strings.HasPrefix(name, prefixMD5) || strings.HasPrefix(name, prefixSha) || strings.HasPrefix(name, prefixSha12) {
-			// Bỏ qua file tạm hoặc không đúng định dạng
 			lowerName := strings.ToLower(name)
 			if strings.HasSuffix(lowerName, ".part") || strings.HasSuffix(lowerName, ".ytdl") {
 				continue
@@ -405,10 +382,9 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 	var freedBytes int64 = 0
 	now := time.Now()
 
-	// Thu thập danh sách file đang được xử lý bởi các active Job
 	activeFiles := make(map[string]bool)
 	pe.localJobs.Range(func(key, value interface{}) bool {
-		if j, ok := value.(Job); ok {
+		if j, ok := value.(domain.Job); ok {
 			if j.Status == "downloading" || j.Status == "queued" {
 				if j.Filename != "" {
 					activeFiles[j.Filename] = true
@@ -419,7 +395,6 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 	})
 
 	for _, entry := range entries {
-		// Xử lý dọn dẹp thư mục tmp/ riêng biệt
 		if entry.IsDir() {
 			if entry.Name() == "tmp" {
 				tmpDir := filepath.Join(pe.downloadDir, "tmp")
@@ -447,7 +422,6 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 			continue
 		}
 
-		// Không xóa file của các tác vụ đang tải dở hoặc đang được xử lý
 		if activeFiles[entry.Name()] {
 			continue
 		}
@@ -455,7 +429,6 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 		name := entry.Name()
 		isPartial := strings.HasSuffix(name, ".part") || strings.HasSuffix(name, ".ytdl") || strings.HasSuffix(name, ".tmp")
 
-		// File tải dở chỉ dọn sau TempFileTTL (30 phút) nếu bị bỏ rơi
 		if isPartial {
 			if now.Sub(info.ModTime()) > TempFileTTL {
 				fullPath := filepath.Join(pe.downloadDir, name)
@@ -466,7 +439,6 @@ func (pe *PogocacheEngine) CleanupExpiredFiles() (int, int64) {
 			continue
 		}
 
-		// File kết quả hoàn tất lưu trữ đủ DefaultCacheTTL (1 giờ)
 		if now.Sub(info.ModTime()) > DefaultCacheTTL {
 			fullPath := filepath.Join(pe.downloadDir, name)
 			freedBytes += info.Size()

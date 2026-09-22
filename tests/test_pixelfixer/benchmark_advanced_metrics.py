@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 from scipy.signal import convolve2d
 
-GATEWAY_URL = "http://localhost:8000/api/pixel/fix"
+GATEWAY_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80") + "/api/pixel/fix"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MANIFEST_FILE = os.path.join(SCRIPT_DIR, "dataset", "manifest.json")
 ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))

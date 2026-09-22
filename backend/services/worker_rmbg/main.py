@@ -35,6 +35,11 @@ except ImportError:
 
 # Thêm app vào sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 from app.rmbg.remover import remove_background, get_birefnet_engine, free_system_memory
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

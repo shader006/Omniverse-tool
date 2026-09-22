@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: mediaflow_gateway
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - ./downloads:/app/downloads
       - ./frontend:/frontend:ro

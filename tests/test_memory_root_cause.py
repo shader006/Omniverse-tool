@@ -8,6 +8,15 @@ import multiprocessing
 import numpy as np
 from PIL import Image
 
+backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
+
 def get_process_rss_mb(pid=None):
     """Đọc dung lượng RAM thực tế (RSS) của tiến trình từ /proc."""
     if pid is None:

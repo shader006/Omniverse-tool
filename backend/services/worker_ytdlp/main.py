@@ -30,6 +30,11 @@ except ImportError:
 
 # Thêm app vào sys.path để tái sử dụng module url_conver
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 from app.url_conver.metadata import get_media_info
 from app.url_conver.downloader import run_download_task, DEFAULT_DOWNLOAD_DIR
 from app.url_conver.utils import clean_url_key

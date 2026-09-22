@@ -1,8 +1,10 @@
-package main
+package telemetry
 
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -20,6 +22,12 @@ const traceCtxKey contextKey = "traceInfo"
 type TraceInfo struct {
 	TraceID string
 	SpanID  string
+}
+
+func randomID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // GetTraceInfo lấy thông tin trace (TraceID, SpanID) từ Context
@@ -87,7 +95,7 @@ var (
 	traceHTTPClient = &http.Client{Timeout: 3 * time.Second}
 )
 
-func initTracer() {
+func InitTracer() {
 	for i := 0; i < numTraceWorkers; i++ {
 		go func(workerID int) {
 			for item := range traceChan {
@@ -95,10 +103,6 @@ func initTracer() {
 			}
 		}(i)
 	}
-}
-
-func generateHexID(n int) string {
-	return randomID() + randomID()
 }
 
 func getFriendlySpanName(method, path string, statusCode int, isSecurityProbe bool) string {
@@ -219,81 +223,6 @@ func sendGatewayOTLPTrace(item *otlpSpanItem) {
 	if err == nil {
 		_ = resp.Body.Close()
 	}
-}
-
-func sendCustomOTLPTrace(serviceName, name string, durationMs float64, attributes map[string]string, isError bool) {
-	if hiaiObserveKey == "" {
-		return
-	}
-	go func() {
-		traceID := randomID() + randomID() + randomID() + randomID()
-		spanID := randomID() + randomID()
-		now := time.Now()
-		endNano := now.UnixNano()
-		startNano := now.Add(-time.Duration(durationMs * float64(time.Millisecond))).UnixNano()
-
-		attrsList := []map[string]interface{}{
-			{"key": "service.name", "value": map[string]interface{}{"stringValue": serviceName}},
-			{"key": "deployment.environment", "value": map[string]interface{}{"stringValue": "production"}},
-		}
-		for k, v := range attributes {
-			attrsList = append(attrsList, map[string]interface{}{
-				"key":   k,
-				"value": map[string]interface{}{"stringValue": v},
-			})
-		}
-
-		payload := map[string]interface{}{
-			"resourceSpans": []map[string]interface{}{
-				{
-					"resource": map[string]interface{}{
-						"attributes": attrsList[:2],
-					},
-					"scopeSpans": []map[string]interface{}{
-						{
-							"scope": map[string]interface{}{"name": serviceName + "-tracer", "version": "1.0.0"},
-							"spans": []map[string]interface{}{
-								{
-									"traceId":           traceID,
-									"spanId":            spanID,
-									"name":              name,
-									"kind":              1,
-									"startTimeUnixNano": strconv.FormatInt(startNano, 10),
-									"endTimeUnixNano":   strconv.FormatInt(endNano, 10),
-									"attributes":        attrsList,
-									"status": map[string]interface{}{
-										"code": func() int {
-											if isError {
-												return 2
-											}
-											return 1
-										}(),
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return
-		}
-
-		req, err := http.NewRequest("POST", hiaiObserveURL+"/v1/traces", bytes.NewReader(body))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Authorization", "Bearer "+hiaiObserveKey)
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := traceHTTPClient.Do(req)
-		if err == nil {
-			_ = resp.Body.Close()
-		}
-	}()
 }
 
 func sendCustomChildOTLPTrace(ctx context.Context, serviceName, name string, durationMs float64, attributes map[string]string, isError bool) {
@@ -424,12 +353,11 @@ func (w *statusResponseWriter) Flush() {
 	}
 }
 
-func tracingMiddleware(next http.Handler) http.Handler {
+func TracingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		srw := &statusResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-		// Tạo hoặc kế thừa trace_id và span_id theo chuẩn W3C TraceContext
 		var traceID string
 		rawTP := r.Header.Get("traceparent")
 		if strings.HasPrefix(rawTP, "00-") {
@@ -443,18 +371,15 @@ func tracingMiddleware(next http.Handler) http.Handler {
 		}
 		spanID := randomID() + randomID()
 
-		// Lưu vào Context để các outbound HTTP call tới worker tự động kế thừa
 		ctx := context.WithValue(r.Context(), traceCtxKey, &TraceInfo{
 			TraceID: traceID,
 			SpanID:  spanID,
 		})
 
-		// Gắn traceparent vào response header để client/browser có thể đọc nếu cần
 		w.Header().Set("traceparent", fmt.Sprintf("00-%s-%s-01", traceID, spanID))
 
 		next.ServeHTTP(srw, r.WithContext(ctx))
 
-		// Phân loại request để xác định có cần trace hay không
 		isRoutineHealth := (r.URL.Path == "/health" || r.URL.Path == "/api/health" || r.URL.Path == "/api/pixel/health") && srw.statusCode < 500
 		isApi := strings.HasPrefix(r.URL.Path, "/api/")
 		isErrorOrProbe := srw.statusCode >= 400
@@ -472,7 +397,6 @@ func tracingMiddleware(next http.Handler) http.Handler {
 		isSecurityProbe := false
 
 		if isRoutineHealth {
-			// Bỏ qua healthcheck thành công thường kỳ (200 OK) để tránh nhiễu log
 			shouldTrace = false
 		} else if isApi {
 			shouldTrace = true
@@ -480,7 +404,6 @@ func tracingMiddleware(next http.Handler) http.Handler {
 				isSecurityProbe = true
 			}
 		} else if isErrorOrProbe || isSensitiveProbe {
-			// Bắt toàn bộ các request probe/attack ngoài prefix /api/ (ví dụ /.env, /.git/config, /admin)
 			shouldTrace = true
 			isSecurityProbe = true
 		}

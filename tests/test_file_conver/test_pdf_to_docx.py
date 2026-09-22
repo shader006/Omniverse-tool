@@ -12,7 +12,7 @@ import unittest
 import zipfile
 import io
 
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80")
 
 
 def send_multipart_file(url, field_name, file_name, file_bytes, extra_fields=None):

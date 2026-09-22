@@ -13,7 +13,7 @@ import subprocess
 import json
 from PIL import Image
 
-GATEWAY_URL = "http://localhost:8000/api/pixel/fix"
+GATEWAY_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80") + "/api/pixel/fix"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REAL_SAMPLES_DIR = os.path.join(SCRIPT_DIR, "dataset", "real_samples")
 DISTORTED_DIR = os.path.join(SCRIPT_DIR, "dataset", "distorted")

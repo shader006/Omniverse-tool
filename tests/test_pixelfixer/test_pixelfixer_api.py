@@ -14,7 +14,7 @@ from PIL import Image
 import io
 
 DEFAULT_DIRECT_URL = "http://localhost:8004"
-DEFAULT_GATEWAY_URL = "http://localhost:8000/api/pixel"
+DEFAULT_GATEWAY_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80") + "/api/pixel"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_DIR = os.path.join(SCRIPT_DIR, "dataset")
 
@@ -47,7 +47,8 @@ class TestPixelFixerAPI(unittest.TestCase):
                     raise Exception(f"Server returned status {res.status_code}")
             else:
                 # Gateway test
-                res = requests.get(f"http://localhost:8000/health", timeout=3)
+                gw_health = cls.base_url.replace("/api/pixel", "/health")
+                res = requests.get(gw_health, timeout=3)
                 if res.status_code != 200:
                     raise Exception(f"Gateway returned status {res.status_code}")
         except Exception as e:

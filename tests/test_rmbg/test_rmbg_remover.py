@@ -14,6 +14,11 @@ import threading
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend"))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 
 from app.rmbg.remover import (
     remove_background,
@@ -138,8 +143,9 @@ class TestRMBGRemover(unittest.TestCase):
         with open(temp_input, "wb") as f:
             f.write(img_bytes)
 
+        cli_module = "app_python.rmbg.cli" if os.path.exists(os.path.join(backend_dir, "app_python")) else "app.rmbg.cli"
         cmd = [
-            sys.executable, "-m", "app.rmbg.cli", "process",
+            sys.executable, "-m", cli_module, "process",
             "--input", temp_input,
             "--output", temp_output,
             "--model", "bria-rmbg",

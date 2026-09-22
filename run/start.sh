@@ -4,7 +4,7 @@
 # ==============================================================================
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" >/dev/null 2>&1 && pwd)"
 DIR="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 cd "$DIR"
 
@@ -85,8 +85,7 @@ if [ -d "$DIR/hiai-observe" ] && [ -f "$DIR/hiai-observe/docker-compose.yml" ]; 
 fi
 
 echo -e "\n${GREEN}✨ Hướng dẫn truy cập:${NC}"
-echo -e "   - Cổng Gateway trực tiếp:  ${BLUE}http://localhost:8000${NC}"
-echo -e "   - Cổng Pingora Proxy:      ${BLUE}http://localhost:80${NC}"
-echo -e "   - Cổng HiAI Observe APM:   ${BLUE}http://localhost:8001${NC}"
-echo -e "   - Dừng toàn bộ hệ thống:   ${YELLOW}./run/stop.sh${NC} (hoặc ./stop)"
+echo -e "   - Cổng Web / API (Pingora Proxy): ${BLUE}http://localhost:80${NC} (hoặc http://<IP-LAN>)"
+echo -e "   - Cổng HiAI Observe APM:          ${BLUE}http://localhost:8001${NC}"
+echo -e "   - Dừng toàn bộ hệ thống:          ${YELLOW}./run/stop.sh${NC} (hoặc ./stop)"
 echo -e "${BLUE}======================================================================${NC}\n"

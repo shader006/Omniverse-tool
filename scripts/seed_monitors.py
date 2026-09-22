@@ -11,13 +11,13 @@ API_KEY = os.getenv("HIAI_OBSERVE_API_KEY", "")
 MONITORS = [
     {
         "name": "🚪 Omniverse Gateway API",
-        "url": "http://172.17.0.1:8000/api/health",
+        "url": "http://172.17.0.1:80/api/health",
         "interval_seconds": 30,
         "monitor_group": "Gateways"
     },
     {
         "name": "🌐 Omniverse Frontend Web UI",
-        "url": "http://172.17.0.1:8000/",
+        "url": "http://172.17.0.1:80/",
         "interval_seconds": 30,
         "monitor_group": "Frontend"
     },
@@ -29,7 +29,7 @@ MONITORS = [
     },
     {
         "name": "🦀 PixelFixer Worker",
-        "url": "http://172.17.0.1:8000/api/pixel/health",
+        "url": "http://172.17.0.1:80/api/pixel/health",
         "interval_seconds": 30,
         "monitor_group": "Workers"
     },

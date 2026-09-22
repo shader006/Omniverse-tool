@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import gc
 import uuid
 import time
 import queue
@@ -66,6 +67,7 @@ def _send_otlp_http(payload: dict):
             },
             method="POST"
         )
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urllib.request.urlopen(req, timeout=2) as resp:
             pass
     except Exception:

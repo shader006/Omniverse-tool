@@ -1,4 +1,4 @@
-package main
+package worker
 
 import (
 	cryptoRand "crypto/rand"
@@ -92,7 +92,6 @@ func (lb *GotenbergLoadBalancer) getOrCreateStats(addr string) *NodeStats {
 }
 
 func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(err error)) {
-	// 1. Dynamic DNS Discovery: Phân giải danh sách IP thực tế của các replicas trong Swarm
 	var allAddrs []string
 	ips, err := net.LookupIP(lb.host)
 	if err == nil && len(ips) > 0 {
@@ -104,7 +103,6 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 	now := time.Now()
 	var eligibleAddrs []string
 
-	// 2. Lọc qua Circuit Breaker & Concurrency Threshold (Max 4 active jobs)
 	for _, addr := range allAddrs {
 		s := lb.getOrCreateStats(addr)
 		s.mu.Lock()
@@ -117,7 +115,6 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 		}
 	}
 
-	// Nếu tất cả node đều bận/khóa, fallback chọn các node không bị circuit breaker
 	if len(eligibleAddrs) == 0 {
 		for _, addr := range allAddrs {
 			s := lb.getOrCreateStats(addr)
@@ -130,14 +127,12 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 		}
 	}
 
-	// Fallback cuối cùng nếu mọi node đều bị circuit breaker
 	if len(eligibleAddrs) == 0 {
 		eligibleAddrs = allAddrs
 	}
 
 	var selectedAddr string
 	if len(eligibleAddrs) >= 2 {
-		// 3. Thuật toán P2C: Bốc ngẫu nhiên 2 node ứng viên từ tập eligible
 		idx1 := cryptoRandInt(len(eligibleAddrs))
 		idx2 := cryptoRandInt(len(eligibleAddrs))
 		for idx2 == idx1 {
@@ -161,7 +156,6 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 		conns1 := float64(atomic.LoadInt64(&s1.activeConns))
 		conns2 := float64(atomic.LoadInt64(&s2.activeConns))
 
-		// Peak-EWMA Load Score = (ActiveConns + 1) * EWMA_Latency
 		score1 := (conns1 + 1.0) * ewma1
 		score2 := (conns2 + 1.0) * ewma2
 
@@ -187,10 +181,8 @@ func (lb *GotenbergLoadBalancer) SelectEndpoint(subPath string) (string, func(er
 		stats.mu.Lock()
 		defer stats.mu.Unlock()
 		if reqErr != nil {
-			// Penalty cho node phản hồi lỗi/timeout
 			stats.ewmaLatencyMs = lb.alpha*(elapsedMs+500.0) + (1.0-lb.alpha)*stats.ewmaLatencyMs
 			stats.consecutiveFailures++
-			// Nếu lỗi liên tiếp >= 3 lần ➔ Khóa node 15s (Circuit Breaker Tripped)
 			if stats.consecutiveFailures >= 3 {
 				stats.circuitOpenUntil = time.Now().Add(15 * time.Second)
 				log.Printf("⚠️ [CIRCUIT BREAKER] Node Gotenberg '%s' lỗi %d lần ➔ Tạm ngắt trong 15s!", selectedAddr, stats.consecutiveFailures)

@@ -2,9 +2,9 @@
 FROM golang:1.22-alpine AS go-builder
 WORKDIR /build
 COPY go.mod go.sum ./
-COPY app_go/ ./app_go/
-COPY *.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server .
+COPY internal/ ./internal/
+COPY cmd/ ./cmd/
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o server ./cmd/server
 
 # ── Stage 2: Minimal Gateway Runtime ──
 FROM alpine:3.19

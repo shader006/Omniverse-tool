@@ -9,6 +9,11 @@ from unittest.mock import patch, MagicMock
 from PIL import Image
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend")))
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 from app.rmbg import remover
 
 class TestRmbgGpuFallback(unittest.TestCase):
