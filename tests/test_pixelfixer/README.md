@@ -13,8 +13,12 @@ tests/test_pixelfixer/
 │   ├── native_1x/               # 25 ảnh pixel art nguyên bản (Ground Truth 1x)
 │   ├── real_samples/            # 6 ảnh thực tế chất lượng cao (dragon, frog, koi-pond, ...)
 │   └── distorted/               # 125 ảnh biến dạng nhân tạo phục vụ benchmark
-├── benchmark_pixelfixer.py      # Script chạy benchmark chi tiết theo từng danh mục biến dạng
-├── test_pixelfixer_api.py       # Integration tests kiểm tra các API endpoint
+├── run_pixelfixer_tests.py      # Runner tổng hợp thực thi 5 nhóm kiểm thử
+├── test_01_core_functional.py   # Nhóm 1: Chức năng cốt lõi & Tái tạo lưới
+├── test_02_error_and_edge_cases.py # Nhóm 2: Xử lý ngoại lệ & Lỗi biên
+├── test_03_protocols_and_streaming.py # Nhóm 3: Giao thức truyền tải & Headers
+├── test_04_optimizations_and_concurrency.py # Nhóm 4: Tối ưu hóa & Đa luồng Rayon
+├── test_05_security_and_validation.py # Nhóm 5: An toàn bảo mật & Validation
 └── README.md
 ```
 
@@ -38,11 +42,25 @@ Bộ dataset bao gồm **125 mẫu kiểm thử** trải rộng trên 5 danh m�
 
 ## 3. Hướng dẫn chạy kiểm thử và Benchmark
 
-### 3.1. Chạy Integration Tests (Unit Test API)
+### 3.1. Chạy Bộ Kiểm Thử 5 Nhóm (Chuẩn hóa tương tự URL và Transcribe)
+
+Mô-đun PixelFixer được tổ chức thành 5 nhóm kiểm thử độc lập:
+1. **`test_01_core_functional.py`**: Chức năng cốt lõi (Health, Detect Grid Fast/Full, Auto Reconstruct, Manual Cols/Rows, SOTA vs Original, Auto Palette).
+2. **`test_02_error_and_edge_cases.py`**: Xử lý ngoại lệ, dữ liệu lỗi biên (Missing file, Corrupt data, Method 405, Boundary sizes).
+3. **`test_03_protocols_and_streaming.py`**: Giao thức truyền tải, MIME Type `image/png`, Headers Rust Engine (`X-Grid-Cols`, `X-Download-Url`), OpenTelemetry Traceparent.
+4. **`test_04_optimizations_and_concurrency.py`**: Đa luồng Rayon đồng thời (`/detect` & `/fix`), tính nhất quán FNV-1a Hash, Benchmark Fast vs Full mode, Burst load.
+5. **`test_05_security_and_validation.py`**: An toàn bảo mật (Chặn file thực thi `.exe`, `.sh`, Chống Path Traversal, Chặn MIME Spoofing, Ngăn rò rỉ Stacktrace).
 
 ```bash
-# Đảm bảo worker_pixelfixer đang chạy (mặc định cổng 8004)
-python3 tests/test_pixelfixer/test_pixelfixer_api.py
+# Chạy toàn bộ 5 nhóm kiểm thử PixelFixer
+python3 tests/test_pixelfixer/run_pixelfixer_tests.py
+
+# Hoặc chạy riêng 1 nhóm cụ thể (ví dụ nhóm 1 hoặc nhóm 5)
+python3 tests/test_pixelfixer/run_pixelfixer_tests.py --group 1
+python3 tests/test_pixelfixer/run_pixelfixer_tests.py --group 5
+
+# Chạy thông qua Test Runner tổng thể của dự án
+python3 tests/run_tests.py --pixelfixer
 ```
 
 ### 3.2. Chạy Benchmark hiệu năng & độ chính xác
