@@ -1491,6 +1491,7 @@ body {
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+  position: relative;
 }
 
 .spotify-lyrics-header {
@@ -1550,8 +1551,7 @@ body {
 .spotify-lyrics-body {
   max-height: 420px;
   overflow-y: auto;
-  padding: 28px 24px;
-  scroll-behavior: smooth;
+  padding: 24px;
 }
 
 .spotify-lyrics-body::-webkit-scrollbar {
@@ -1574,21 +1574,24 @@ body {
 .spotify-lyric-item,
 .spotify-lyrics-line {
   padding: 12px 16px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   user-select: none;
   border: 1px solid transparent;
+  border-left: 4px solid transparent;
+  box-sizing: border-box;
 }
 
 .spotify-lyric-item:hover,
 .spotify-lyrics-line:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);
+  border-left-color: rgba(168, 85, 247, 0.4);
 }
 
 .spotify-lyric-time,
@@ -1624,12 +1627,12 @@ body {
 .spotify-lyric-text,
 .lyrics-text {
   flex: 1;
-  font-size: 0.84rem !important;
+  font-size: 0.88rem !important;
   font-weight: 500;
   color: #94a3b8;
-  line-height: 1.8;
+  line-height: 1.7;
   letter-spacing: 0.01em;
-  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
 .spotify-lyric-item:hover .spotify-lyric-text,
@@ -1637,15 +1640,13 @@ body {
   color: #f1f5f9;
 }
 
-/* ACTIVE LYRIC (Highlighted during audio playback) */
+/* ACTIVE LYRIC (Highlighted during audio playback - zero layout shifts) */
 .spotify-lyric-item.active-lyric,
 .spotify-lyrics-line.active {
   background: rgba(147, 51, 234, 0.22) !important;
   border: 1px solid rgba(168, 85, 247, 0.5) !important;
-  border-left: 5px solid #a855f7 !important;
-  padding-left: 18px;
+  border-left: 4px solid #a855f7 !important;
   box-shadow: 0 4px 20px rgba(147, 51, 234, 0.25), inset 0 0 15px rgba(168, 85, 247, 0.12);
-  transform: translateX(4px);
 }
 
 .spotify-lyric-item.active-lyric .spotify-lyric-time,
@@ -1665,7 +1666,7 @@ body {
 .spotify-lyrics-line.active .lyrics-text {
   color: #ffffff !important;
   font-weight: 700;
-  font-size: 0.90rem !important;
+  font-size: 0.88rem !important;
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.6), 0 0 20px rgba(168, 85, 247, 0.6) !important;
 }
 
@@ -1685,6 +1686,47 @@ body {
   padding: 40px 20px;
   color: var(--text-muted);
   font-size: 1rem;
+}
+
+/* Floating Return to Current Lyric button */
+.lyrics-sync-back-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 24px;
+  z-index: 20;
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.95), rgba(126, 34, 206, 0.95));
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(192, 132, 252, 0.5);
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(147, 51, 234, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: lyricsBtnFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lyrics-sync-back-btn:hover {
+  background: linear-gradient(135deg, #a855f7, #9333ea);
+  border-color: #e9d5ff;
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 24px rgba(147, 51, 234, 0.55), 0 0 20px rgba(168, 85, 247, 0.6);
+}
+
+@keyframes lyricsBtnFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Responsive */

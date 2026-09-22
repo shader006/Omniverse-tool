@@ -116,6 +116,7 @@ export const translations = {
     whisper_lyrics_realtime: 'Đồng bộ theo thời gian thực',
     whisper_lyrics_click_seek: 'Bấm để phát từ đoạn này',
     whisper_lyrics_empty: 'Không tìm thấy dữ liệu mốc thời gian chi tiết cho đoạn văn này.',
+    whisper_lyrics_back_to_current: 'Cuộn về câu đang phát',
     whisper_raw_label: 'Toàn bộ văn bản nhận diện:',
     whisper_raw_placeholder: 'Văn bản nhận diện sẽ hiển thị ở đây...',
 
@@ -319,6 +320,7 @@ export const translations = {
     whisper_lyrics_realtime: 'Synced in real-time',
     whisper_lyrics_click_seek: 'Click to play from here',
     whisper_lyrics_empty: 'No timestamp data found for this speech segment.',
+    whisper_lyrics_back_to_current: 'Sync to current lyric',
     whisper_raw_label: 'All detected text transcript:',
     whisper_raw_placeholder: 'Transcribed text will appear here...',
 

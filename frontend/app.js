@@ -783,13 +783,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tabLyricsRaw) tabLyricsRaw.addEventListener('click', () => switchLyricsView('raw'));
 
   // Detect user scroll on lyrics container to pause auto-scrolling temporarily
+  let isProgrammaticScrollLyrics = false;
+  let programmaticTimerLyrics = null;
+
+  function registerUserScrollLyrics() {
+    isUserScrollingLyrics = true;
+    clearTimeout(userScrollTimeout);
+    userScrollTimeout = setTimeout(() => {
+      isUserScrollingLyrics = false;
+    }, 4000);
+  }
+
   if (transcribeLyricsContainer) {
-    transcribeLyricsContainer.addEventListener('wheel', () => {
-      isUserScrollingLyrics = true;
-      clearTimeout(userScrollTimeout);
-      userScrollTimeout = setTimeout(() => {
-        isUserScrollingLyrics = false;
-      }, 2500);
+    transcribeLyricsContainer.addEventListener('wheel', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('touchstart', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('touchmove', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('mousedown', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('scroll', () => {
+      if (!isProgrammaticScrollLyrics) {
+        registerUserScrollLyrics();
+      }
     }, { passive: true });
   }
 
@@ -865,7 +878,17 @@ document.addEventListener('DOMContentLoaded', () => {
           line.classList.add('active-lyric');
           line.classList.remove('past-lyric');
           if (!isUserScrollingLyrics || forceScroll) {
-            line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const container = transcribeLyricsContainer;
+            const containerRect = container.getBoundingClientRect();
+            const lineRect = line.getBoundingClientRect();
+            const relativeTop = lineRect.top - containerRect.top;
+            const targetScrollTop = container.scrollTop + relativeTop - (container.clientHeight / 2) + (lineRect.height / 2);
+            isProgrammaticScrollLyrics = true;
+            container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+            if (programmaticTimerLyrics) clearTimeout(programmaticTimerLyrics);
+            programmaticTimerLyrics = setTimeout(() => {
+              isProgrammaticScrollLyrics = false;
+            }, 600);
           }
         }
       } else if (idx < activeIndex) {
