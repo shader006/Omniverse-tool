@@ -10,6 +10,7 @@ import (
 type JobRepository interface {
 	SaveJob(job Job)
 	GetJob(jobID string) (Job, bool)
+	CancelJob(jobID string) (Job, error)
 	PublishJobUpdate(job Job)
 	SubscribeJob(ctx context.Context, jobID string) (<-chan Job, func())
 	GetMetadata(key string) (map[string]interface{}, bool)
@@ -33,6 +34,7 @@ type EndpointSelector interface {
 // JobUsecase định nghĩa các nghiệp vụ truy vấn trạng thái và giải quyết file của tác vụ
 type JobUsecase interface {
 	GetJob(jobID string) (Job, error)
+	CancelJob(jobID string) (Job, error)
 	SubscribeJob(ctx context.Context, jobID string) (<-chan Job, func())
 	ResolveFilePath(filename string) (string, string, error)
 	CleanupExpiredFiles() (int, int64)

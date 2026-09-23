@@ -32,6 +32,7 @@ const (
 type JobCache interface {
 	SaveJob(job domain.Job)
 	GetJob(jobID string) (domain.Job, bool)
+	CancelJob(jobID string) (domain.Job, error)
 	PublishJobUpdate(job domain.Job)
 	SubscribeJob(ctx context.Context, jobID string) (<-chan domain.Job, func())
 	GetMetadata(key string) (map[string]interface{}, bool)
@@ -204,6 +205,19 @@ func (pe *PogocacheEngine) GetJob(jobID string) (domain.Job, bool) {
 	}
 
 	return domain.Job{}, false
+}
+
+func (pe *PogocacheEngine) CancelJob(jobID string) (domain.Job, error) {
+	job, found := pe.GetJob(jobID)
+	if !found {
+		return domain.Job{}, domain.ErrJobNotFound
+	}
+	if !job.CanCancel() {
+		return job, fmt.Errorf("không thể huỷ tác vụ đang ở trạng thái: %s", job.Status)
+	}
+	job.MarkCancelled()
+	pe.PublishJobUpdate(job)
+	return job, nil
 }
 
 func (pe *PogocacheEngine) PublishJobUpdate(job domain.Job) {

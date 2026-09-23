@@ -44,9 +44,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	mux.HandleFunc("/api/upscale", cfg.AIHandler.HandleUpscale)
 	mux.HandleFunc("/api/upscale/health", cfg.AIHandler.HandleUpscaleHealth)
 
-	// 6. Job Status, Stream & File Serving
+	// 6. Job Status, Stream, Cancel & File Serving
 	mux.HandleFunc("/api/status/", cfg.JobHandler.HandleStatus)
 	mux.HandleFunc("/api/stream/", cfg.JobHandler.HandleStream)
+	mux.HandleFunc("/api/cancel/", cfg.JobHandler.HandleCancel)
 	mux.HandleFunc("/api/file/", cfg.JobHandler.HandleFile)
 
 	// Helper headers cho static files

@@ -56,6 +56,37 @@ func (h *JobHandler) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(job)
 }
 
+func (h *JobHandler) HandleCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	jobID := strings.TrimPrefix(r.URL.Path, "/api/cancel/")
+	if jobID == "" {
+		http.Error(w, `{"error":"Job ID không hợp lệ"}`, http.StatusBadRequest)
+		return
+	}
+
+	job, err := h.jobService.CancelJob(jobID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Đã huỷ tác vụ thành công",
+		"job":     job,
+	})
+}
+
 func (h *JobHandler) HandleStream(w http.ResponseWriter, r *http.Request) {
 	jobID := strings.TrimPrefix(r.URL.Path, "/api/stream/")
 	flusher, ok := w.(http.Flusher)

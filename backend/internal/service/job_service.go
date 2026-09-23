@@ -29,6 +29,10 @@ func (s *JobService) GetJob(jobID string) (domain.Job, error) {
 	return job, nil
 }
 
+func (s *JobService) CancelJob(jobID string) (domain.Job, error) {
+	return s.cache.CancelJob(jobID)
+}
+
 func (s *JobService) SubscribeJob(ctx context.Context, jobID string) (<-chan domain.Job, func()) {
 	return s.cache.SubscribeJob(ctx, jobID)
 }
