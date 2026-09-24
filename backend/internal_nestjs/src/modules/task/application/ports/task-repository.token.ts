@@ -1,0 +1,1 @@
+export const TASK_REPOSITORY_PORT = Symbol('TASK_REPOSITORY_PORT');

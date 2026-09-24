@@ -14,9 +14,42 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${BLUE}======================================================================${NC}"
-echo -e "${GREEN}🚀 ĐANG KHỞI ĐỘNG OMNIVERSE TOOL STACK...${NC}"
-echo -e "${BLUE}======================================================================${NC}"
+# 0. Phân tích tham số dòng lệnh CLI (Engine Selection)
+BACKEND_TARGET="${BACKEND_ENGINE:-go}"
+
+show_help() {
+    echo "Usage: ./start [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  --go             Khởi động với Backend Go (mặc định)"
+    echo "  --nestjs         Khởi động với Backend NestJS (Hexagonal DDD)"
+    echo "  -h, --help       Hiển thị hướng dẫn sử dụng"
+    echo ""
+}
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --nestjs) BACKEND_TARGET="nestjs"; shift ;;
+        --go)     BACKEND_TARGET="go"; shift ;;
+        -h|--help) show_help; exit 0 ;;
+        *) echo "⚠️ Tham số không xác định: $1"; show_help; exit 1 ;;
+    esac
+done
+
+if [ "$BACKEND_TARGET" = "nestjs" ]; then
+    echo -e "${YELLOW}⚙️ Backend Engine được chọn: NestJS (Hexagonal DDD Architecture)${NC}"
+    export GATEWAY_IMAGE="omniversetool-gateway-nestjs:latest"
+
+    # Tự động build nếu image chưa tồn tại
+    if ! docker image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+        echo -e "${YELLOW}🔨 Chưa tìm thấy image '$GATEWAY_IMAGE', đang tiến hành build...${NC}"
+        docker build -t "$GATEWAY_IMAGE" -f "$DIR/backend/internal_nestjs/Dockerfile" "$DIR/backend/internal_nestjs"
+        echo -e "${GREEN}✅ Build image NestJS thành công!${NC}"
+    fi
+else
+    echo -e "${GREEN}⚙️ Backend Engine được chọn: Golang (High Performance Gateway)${NC}"
+    export GATEWAY_IMAGE="omniversetool-gateway:latest"
+fi
 
 # 1. Kiểm tra trạng thái Docker Swarm
 SWARM_STATE=$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null || echo "inactive")
@@ -86,6 +119,7 @@ fi
 
 echo -e "\n${GREEN}✨ Hướng dẫn truy cập:${NC}"
 echo -e "   - Cổng Web / API (Pingora Proxy): ${BLUE}http://localhost:80${NC} (hoặc http://<IP-LAN>)"
+echo -e "   - Backend Engine Kích Hoạt:       ${GREEN}${BACKEND_TARGET^^}${NC} (${GATEWAY_IMAGE})"
 echo -e "   - Cổng HiAI Observe APM:          ${BLUE}http://localhost:8001${NC}"
 echo -e "   - Dừng toàn bộ hệ thống:          ${YELLOW}./run/stop.sh${NC} (hoặc ./stop)"
 echo -e "${BLUE}======================================================================${NC}\n"

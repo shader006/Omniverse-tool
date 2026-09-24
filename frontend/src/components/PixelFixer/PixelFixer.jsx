@@ -4,6 +4,100 @@ import { translations } from '../../locales/translations';
 import './pixel-fixer.css';
 
 // ==========================================
+// Retro Color Palettes & Color Snapping
+// ==========================================
+const PICO8_PALETTE = [
+  [0,0,0], [29,43,83], [126,37,83], [0,135,81], [171,82,54], [95,87,79],
+  [194,195,199], [255,241,232], [255,0,77], [255,163,0], [255,236,39],
+  [0,228,54], [41,173,255], [131,118,156], [255,119,168], [255,204,170]
+];
+
+const GAMEBOY_PALETTE = [
+  [15, 56, 15], [48, 98, 48], [139, 172, 15], [155, 188, 15]
+];
+
+const NES_PALETTE = [
+  [124,124,124], [0,0,252], [0,0,188], [68,40,188], [148,0,132], [168,0,32],
+  [168,16,0], [136,20,0], [80,48,0], [0,120,0], [0,104,0], [0,88,0],
+  [0,64,88], [0,0,0], [188,188,188], [0,120,248], [0,88,248], [104,68,252],
+  [216,0,204], [228,0,88], [248,56,0], [228,92,16], [172,124,0], [0,184,0],
+  [0,168,0], [0,168,68], [0,136,136], [248,248,248], [60,188,252], [104,136,252],
+  [152,120,248], [248,120,248], [248,88,152], [248,120,88], [252,160,68], [248,184,0],
+  [184,248,24], [88,216,84], [88,248,152], [0,232,216], [120,120,120], [252,252,252],
+  [164,228,252], [184,184,248], [216,184,248], [248,184,248], [248,164,192], [240,208,176],
+  [252,224,168], [248,216,120], [216,248,120], [184,248,184], [184,248,216], [0,252,252]
+];
+
+const findClosestColor = (r, g, b, pal) => {
+  let minD = Infinity;
+  let best = pal[0];
+  for (let i = 0; i < pal.length; i++) {
+    const p = pal[i];
+    const dr = r - p[0];
+    const dg = g - p[1];
+    const db = b - p[2];
+    const d = dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114;
+    if (d < minD) {
+      minD = d;
+      best = p;
+    }
+  }
+  return best;
+};
+
+const applyPaletteToBlob = (blob, targetPalette) => {
+  return new Promise((resolve) => {
+    if (!blob || !targetPalette || targetPalette === 'auto') {
+      resolve(blob);
+      return;
+    }
+    let pal = null;
+    if (targetPalette === 'gameboy') pal = GAMEBOY_PALETTE;
+    else if (targetPalette === 'pico8') pal = PICO8_PALETTE;
+    else if (targetPalette === 'nes') pal = NES_PALETTE;
+
+    if (!pal) {
+      resolve(blob);
+      return;
+    }
+
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 32) {
+          data[i + 3] = 0;
+          continue;
+        }
+        const [cr, cg, cb] = findClosestColor(data[i], data[i + 1], data[i + 2], pal);
+        data[i] = cr;
+        data[i + 1] = cg;
+        data[i + 2] = cb;
+        data[i + 3] = 255;
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      canvas.toBlob((newBlob) => resolve(newBlob || blob), 'image/png');
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(blob);
+    };
+    img.src = url;
+  });
+};
+
+// ==========================================
 // Client-side Pixel Art Processing Engine (Canvas)
 // ==========================================
 const processCanvasPixelArt = (imgSource, config = {}) => {
@@ -209,13 +303,11 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [resultUrl, setResultUrl] = useState('');
   const [resultBlob, setResultBlob] = useState(null);
   const [sliderPos, setSliderPos] = useState(50);
-  const [activePreset, setActivePreset] = useState('auto');
   const [viewMode, setViewMode] = useState('slider'); // 'slider' | 'side' | 'result'
-  const [zoomLevel, setZoomLevel] = useState(1); // 1, 2, 4
   const [isCopied, setIsCopied] = useState(false);
+  const rawBaseBlobRef = useRef(null);
 
   // Studio Controls
-  const [engineMode, setEngineMode] = useState('fast'); // 'fast' | 'advanced'
   const [topology, setTopology] = useState('uniform'); // 'uniform' | 'elastic'
   const [scaleFactor, setScaleFactor] = useState('1'); // '1' | '2' | '3' | '4' | '0'
   const [palette, setPalette] = useState('auto'); // 'auto' | 'pico8' | 'gameboy' | 'nes' | 'custom'
@@ -481,72 +573,6 @@ export default function PixelFixer({ lang = 'vi' }) {
     processFix(file, { gridMode: 'auto', resetDimensions: true, ...(overrides || {}) });
   };
 
-  const handlePresetSelect = (presetKey) => {
-    setActivePreset(presetKey);
-    let newEngine = 'fast';
-    let newTopology = 'uniform';
-    let newPalette = 'auto';
-    let newScale = '1';
-    let newGridMode = 'auto';
-
-    if (presetKey === 'crisp-sprite') {
-      newEngine = 'advanced';
-      newTopology = 'uniform';
-      newScale = '1';
-      newPalette = 'auto';
-    } else if (presetKey === 'transparent-icon') {
-      newEngine = 'advanced';
-      newTopology = 'elastic';
-      newScale = '1';
-      newPalette = 'auto';
-    } else if (presetKey === 'retro-console') {
-      newEngine = 'fast';
-      newTopology = 'uniform';
-      newPalette = 'pico8';
-      newScale = '1';
-    } else if (presetKey === 'gameboy') {
-      newEngine = 'fast';
-      newTopology = 'uniform';
-      newPalette = 'gameboy';
-      newScale = '1';
-    } else if (presetKey === 'nes') {
-      newEngine = 'fast';
-      newTopology = 'uniform';
-      newPalette = 'nes';
-      newScale = '1';
-    } else if (presetKey === 'photo-pixel') {
-      newEngine = 'advanced';
-      newTopology = 'uniform';
-      newPalette = 'pico8';
-      newScale = '2';
-    } else if (presetKey === 'fine-details') {
-      newEngine = 'advanced';
-      newTopology = 'elastic';
-      newScale = '1';
-      newPalette = 'auto';
-    }
-
-    setEngineMode(newEngine);
-    setTopology(newTopology);
-    setPalette(newPalette);
-    setScaleFactor(newScale);
-    setGridMode(newGridMode);
-
-    const overrides = {
-      engine: newEngine,
-      topology: newTopology,
-      palette: newPalette,
-      scale: newScale,
-      gridMode: newGridMode
-    };
-
-    if (selectedFile) {
-      processFix(selectedFile, overrides);
-    } else {
-      loadSample(overrides);
-    }
-  };
-
   const loadSample = async (overrides = {}) => {
     try {
       const resp = await fetch('/assets/sample-pixel-blur.png');
@@ -582,7 +608,6 @@ export default function PixelFixer({ lang = 'vi' }) {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    const eng = overrides.engine || engineMode;
     const top = overrides.topology || topology;
     const scl = overrides.scale || scaleFactor;
     const pal = overrides.palette || palette;
@@ -597,9 +622,6 @@ export default function PixelFixer({ lang = 'vi' }) {
     setIsProcessing(true);
     setErrorMsg('');
 
-    const formData = new FormData();
-    formData.append('file', targetFile);
-
     const isElastic = top === 'elastic';
     let maxColors = 0;
     if (pal === 'pico8') maxColors = 16;
@@ -607,9 +629,17 @@ export default function PixelFixer({ lang = 'vi' }) {
     else if (pal === 'nes') maxColors = 54;
     else if (pal === 'custom') maxColors = parseInt(clr, 10) || 16;
 
-    let queryParams = `mode=${eng}&elastic=${isElastic}&downscale=${scl}`;
+    const formData = new FormData();
+    formData.append('file', targetFile);
+    formData.append('palette', pal);
     if (maxColors > 0) {
-      queryParams += `&max_colors=${maxColors}`;
+      formData.append('k_colors', String(maxColors));
+      formData.append('max_colors', String(maxColors));
+    }
+
+    let queryParams = `palette=${pal}&elastic=${isElastic}&downscale=${scl}`;
+    if (maxColors > 0) {
+      queryParams += `&k_colors=${maxColors}&max_colors=${maxColors}`;
     }
 
     // Grid dimension parameters
@@ -659,14 +689,19 @@ export default function PixelFixer({ lang = 'vi' }) {
         ? `${Number(rawConsensus).toFixed(1)}%`
         : rawConsensus;
 
-      const algo = res.headers.get('X-Reconstruct-Algo') || (eng === 'advanced' ? 'OKLab SOTA' : 'Fast 2-Stage');
+      const algo = res.headers.get('X-Reconstruct-Algo') || 'OKLab SOTA';
 
       setGridInfo({ cols, rows, stepX, stepY, consensus: consensusDisplay, algo });
 
       const blob = await res.blob();
-      setResultBlob(blob);
+      rawBaseBlobRef.current = blob;
+      let finalBlob = blob;
+      if (pal && pal !== 'auto') {
+        finalBlob = await applyPaletteToBlob(blob, pal);
+      }
+      setResultBlob(finalBlob);
       if (resultUrl) URL.revokeObjectURL(resultUrl);
-      const newResultUrl = URL.createObjectURL(blob);
+      const newResultUrl = URL.createObjectURL(finalBlob);
       setResultUrl(newResultUrl);
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -744,17 +779,6 @@ export default function PixelFixer({ lang = 'vi' }) {
     setErrorMsg('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
-
-  const presetList = [
-    { id: 'auto', label: tr.pixel_preset_auto },
-    { id: 'crisp-sprite', label: tr.pixel_preset_crisp },
-    { id: 'transparent-icon', label: tr.pixel_preset_transparent },
-    { id: 'retro-console', label: tr.pixel_preset_retro },
-    { id: 'gameboy', label: tr.pixel_preset_gameboy_btn },
-    { id: 'nes', label: tr.pixel_preset_nes_btn },
-    { id: 'photo-pixel', label: tr.pixel_preset_photo },
-    { id: 'fine-details', label: tr.pixel_preset_fine },
-  ];
 
   return (
     <section id="section-pixel-mode" className="mode-section">
@@ -878,27 +902,6 @@ export default function PixelFixer({ lang = 'vi' }) {
         {/* Interactive Studio Workspace */}
         {selectedFile && sourceUrl && (
           <>
-            {/* Modern Presets Pill Chips inside Studio */}
-            <div className="pixel-presets-container">
-              <span className="pixel-presets-heading">
-                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                </svg>
-                {tr.pixel_presets_label}
-              </span>
-              <div className="pixel-presets-scroll">
-                {presetList.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className={`pixel-preset-chip ${activePreset === preset.id ? 'active' : ''}`}
-                    onClick={() => handlePresetSelect(preset.id)}
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
 
             {/* View Mode & Zoom Toolbar */}
             <div className="pixel-view-toolbar">
@@ -927,19 +930,6 @@ export default function PixelFixer({ lang = 'vi' }) {
                 </button>
               </div>
 
-              <div className="pixel-zoom-controls">
-                <span className="pixel-toolbar-label">Zoom:</span>
-                {[1, 2, 4].map((z) => (
-                  <button
-                    key={z}
-                    type="button"
-                    className={`pixel-toolbar-btn ${zoomLevel === z ? 'active' : ''}`}
-                    onClick={() => setZoomLevel(z)}
-                  >
-                    {z}x
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Viewer Display */}
@@ -953,13 +943,7 @@ export default function PixelFixer({ lang = 'vi' }) {
                 )}
 
                 {/* Unified Image Stage: Perfectly locked to original image bounds */}
-                <div 
-                  className="pixel-compare-stage"
-                  style={{ 
-                    transform: `scale(${zoomLevel})`, 
-                    transformOrigin: 'center' 
-                  }}
-                >
+                <div className="pixel-compare-stage">
                   {/* Layer 1: Base Original Image establishes exact width, height and aspect ratio */}
                   <img 
                     src={sourceUrl} 
@@ -1024,7 +1008,6 @@ export default function PixelFixer({ lang = 'vi' }) {
                     <img 
                       src={sourceUrl} 
                       alt="Original" 
-                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
                     />
                   </div>
                 </div>
@@ -1038,8 +1021,7 @@ export default function PixelFixer({ lang = 'vi' }) {
                     <img 
                       src={resultUrl || sourceUrl} 
                       alt="Restored Pixel Art" 
-                      className="pixel-render-img"
-                      style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                      className="pixel-render-img" 
                     />
                   </div>
                 </div>
@@ -1057,8 +1039,7 @@ export default function PixelFixer({ lang = 'vi' }) {
                 <img 
                   src={resultUrl || sourceUrl} 
                   alt="Restored Pixel Art" 
-                  className="pixel-render-img"
-                  style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'center' }} 
+                  className="pixel-render-img" 
                 />
               </div>
             )}
@@ -1290,8 +1271,14 @@ export default function PixelFixer({ lang = 'vi' }) {
                     { value: 'nes', label: tr.pixel_palette_nes },
                     { value: 'custom', label: tr.pixel_palette_custom }
                   ]}
-                  onChange={(val) => {
+                  onChange={async (val) => {
                     setPalette(val);
+                    if (rawBaseBlobRef.current) {
+                      const immediateBlob = await applyPaletteToBlob(rawBaseBlobRef.current, val);
+                      setResultBlob(immediateBlob);
+                      if (resultUrl) URL.revokeObjectURL(resultUrl);
+                      setResultUrl(URL.createObjectURL(immediateBlob));
+                    }
                     processFix(selectedFile, { palette: val });
                   }}
                 />
@@ -1334,21 +1321,6 @@ export default function PixelFixer({ lang = 'vi' }) {
                 }}
               />
 
-              {/* Option 4: Engine Mode */}
-              <PixelCustomSelect
-                icon={<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>}
-                label={tr.pixel_engine_label}
-                value={engineMode}
-                disabled={isProcessing}
-                options={[
-                  { value: 'fast', label: tr.pixel_engine_fast },
-                  { value: 'advanced', label: tr.pixel_engine_advanced }
-                ]}
-                onChange={(val) => {
-                  setEngineMode(val);
-                  processFix(selectedFile, { engine: val });
-                }}
-              />
 
               {/* Option 5: Topology */}
               <PixelCustomSelect

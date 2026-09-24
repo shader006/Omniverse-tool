@@ -144,12 +144,8 @@ if [ "$MOD_DOCKER" = true ]; then
         docker system df | awk '{print "   " $0}'
     else
         # 1. Build Cache
-        echo -e "🗑️  Đang dọn dẹp Docker Build Cache..."
-        if [ "$DEEP_MODE" = true ]; then
-            docker builder prune -a -f || true
-        else
-            docker builder prune --filter "until=48h" -f 2>/dev/null || docker builder prune -f || true
-        fi
+        echo -e "🗑️  Đang dọn dẹp sạch toàn bộ Docker Build Cache..."
+        docker builder prune -a -f || true
 
         # 2. Containers, Images, Networks
         echo -e "📦 Đang dọn dẹp Containers dừng, Networks thừa và Images..."
@@ -231,6 +227,17 @@ if [ "$MOD_APP" = true ]; then
 
     if [ "$DRY_RUN" = false ]; then
         rm -f bug_report*.md *_report*.json semgrep_report*.json 2>/dev/null || true
+    fi
+
+    # 4. Dọn dẹp cache build Rust target nếu ở chế độ dọn sâu (--deep)
+    if [ "$DEEP_MODE" = true ] && [ -d "backend/services/worker_pixelfixer/target" ]; then
+        if [ "$DRY_RUN" = true ]; then
+            RUST_TARGET_SIZE=$(du -sh backend/services/worker_pixelfixer/target 2>/dev/null | awk '{print $1}')
+            echo -e "   • Rust build target (worker_pixelfixer): Dung lượng khoảng ~${RUST_TARGET_SIZE} (--deep)"
+        else
+            rm -rf backend/services/worker_pixelfixer/target 2>/dev/null || true
+            echo -e "   ${GREEN}✓ Đã dọn sạch thư mục build Rust target trong worker_pixelfixer (--deep)${NC}"
+        fi
     fi
 fi
 

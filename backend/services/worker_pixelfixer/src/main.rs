@@ -192,12 +192,12 @@ pub struct DetectResponse {
 
 #[derive(Deserialize, Debug, Default)]
 pub struct DetectParams {
-    pub mode: Option<String>, // "full" or "fast"
+    pub mode: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Default)]
 pub struct FixParams {
-    pub mode: Option<String>, // "full", "fast", "elastic", or "legacy"
+    pub mode: Option<String>, // "advanced", "elastic", or "legacy"
     pub algo: Option<String>, // "sota" or "original"
     pub cols: Option<u32>,
     pub rows: Option<u32>,
@@ -208,20 +208,125 @@ pub struct FixParams {
     pub auto_palette: Option<bool>,
     pub two_stage: Option<bool>,
     pub k_colors: Option<usize>,
+    pub max_colors: Option<usize>,
+    pub palette: Option<String>,
     pub elastic: Option<bool>,
 }
 
-fn fnv1a_hash(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in data {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
+const PALETTE_GAMEBOY: &[[u8; 3]] = &[
+    [15, 56, 15],
+    [48, 98, 48],
+    [139, 172, 15],
+    [155, 188, 15],
+];
+
+const PALETTE_PICO8: &[[u8; 3]] = &[
+    [0, 0, 0], [29, 43, 83], [126, 37, 83], [0, 135, 81],
+    [171, 82, 54], [95, 87, 79], [194, 195, 199], [255, 241, 232],
+    [255, 0, 77], [255, 163, 0], [255, 236, 39], [0, 228, 54],
+    [41, 173, 255], [131, 118, 156], [255, 119, 168], [255, 204, 170],
+];
+
+const PALETTE_NES: &[[u8; 3]] = &[
+    [124, 124, 124], [0, 0, 252], [0, 0, 188], [68, 40, 188], [148, 0, 132], [168, 0, 32],
+    [168, 16, 0], [136, 20, 0], [80, 48, 0], [0, 120, 0], [0, 104, 0], [0, 88, 0],
+    [0, 64, 88], [0, 0, 0], [188, 188, 188], [0, 120, 248], [0, 88, 248], [104, 68, 252],
+    [216, 0, 204], [228, 0, 88], [248, 56, 0], [228, 92, 16], [172, 124, 0], [0, 184, 0],
+    [0, 168, 0], [0, 168, 68], [0, 136, 136], [248, 248, 248], [60, 188, 252], [104, 136, 252],
+    [152, 120, 248], [248, 120, 248], [248, 88, 152], [248, 120, 88], [252, 160, 68], [248, 184, 0],
+    [184, 248, 24], [88, 216, 84], [88, 248, 152], [0, 232, 216], [120, 120, 120], [252, 252, 252],
+    [164, 228, 252], [184, 184, 248], [216, 184, 248], [248, 184, 248], [248, 164, 192], [240, 208, 176],
+    [252, 224, 168], [248, 216, 120], [216, 248, 120], [184, 248, 184], [184, 248, 216], [0, 252, 252],
+];
+
+fn snap_to_palette(rgba: &mut [u8], palette: &[[u8; 3]]) {
+    for chunk in rgba.chunks_exact_mut(4) {
+        if chunk[3] < 32 {
+            chunk[3] = 0;
+            continue;
+        }
+        let r = chunk[0] as f64;
+        let g = chunk[1] as f64;
+        let b = chunk[2] as f64;
+        let mut min_d = f64::MAX;
+        let mut best = palette[0];
+        for &p in palette {
+            let dr = r - p[0] as f64;
+            let dg = g - p[1] as f64;
+            let db = b - p[2] as f64;
+            let d = dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114;
+            if d < min_d {
+                min_d = d;
+                best = p;
+            }
+        }
+        chunk[0] = best[0];
+        chunk[1] = best[1];
+        chunk[2] = best[2];
+        chunk[3] = 255;
     }
-    hash
 }
 
-fn compute_hash_10(data: &[u8]) -> String {
-    format!("{:016x}", fnv1a_hash(data))[..10].to_string()
+fn sha256_hex(data: &[u8]) -> String {
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let bit_len = (data.len() as u64) * 8;
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while (msg.len() + 8) % 64 != 0 {
+        msg.push(0x00);
+    }
+    msg.extend_from_slice(&bit_len.to_be_bytes());
+
+    for chunk in msg.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes([chunk[4 * i], chunk[4 * i + 1], chunk[4 * i + 2], chunk[4 * i + 3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+        }
+        let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h_val) =
+            (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ (!e & g);
+            let temp1 = h_val.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(maj);
+            h_val = g; g = f; f = e; e = d.wrapping_add(temp1);
+            d = c; c = b; b = a; a = temp1.wrapping_add(temp2);
+        }
+        h[0] = h[0].wrapping_add(a);
+        h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c);
+        h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e);
+        h[5] = h[5].wrapping_add(f);
+        h[6] = h[6].wrapping_add(g);
+        h[7] = h[7].wrapping_add(h_val);
+    }
+    format!("{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}",
+        h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7])
+}
+
+fn compute_hash_16(data: &[u8]) -> String {
+    sha256_hex(data)[..16].to_string()
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -346,7 +451,7 @@ async fn detect_handler(
     };
 
     let base_name = sanitize_filename(&original_filename);
-    let in_hash = compute_hash_10(&bytes);
+    let in_hash = compute_hash_16(&bytes);
     let in_filename = format!("{}_{}_input.png", in_hash, base_name);
 
     let download_dir = get_download_dir();
@@ -355,18 +460,17 @@ async fn detect_handler(
         let _ = std::fs::write(&in_filepath, &bytes);
     }
 
-    let mode = mode_override.unwrap_or_else(|| "full".to_string());
-    let detect_cache_filename = format!("{}_{}_detect_{}.json", in_hash, base_name, mode);
+    let detect_cache_filename = format!("{}_{}_detect_advanced.json", in_hash, base_name);
     let detect_cache_filepath = download_dir.join(&detect_cache_filename);
 
     if detect_cache_filepath.exists() {
         if let Ok(cached_str) = std::fs::read_to_string(&detect_cache_filepath) {
             if let Ok(mut resp) = serde_json::from_str::<DetectResponse>(&cached_str) {
-                if resp.consensus != "fastmode:lowconf" && resp.confidence >= 70 {
+                if resp.confidence >= 70 {
                     let dur_ms = t0.elapsed().as_secs_f64() * 1000.0;
                     tracing::info!(
-                        "⚡ [DETECT CACHE HIT] {} | mode: {} in {:.2}ms",
-                        in_filename, mode, dur_ms
+                        "⚡ [DETECT CACHE HIT] {} | mode: advanced in {:.2}ms",
+                        in_filename, dur_ms
                     );
                     resp.cached = Some(true);
                     resp.input_file = Some(in_filename.clone());
@@ -392,22 +496,16 @@ async fn detect_handler(
     let (w, h) = (rgba.width() as usize, rgba.height() as usize);
     let raw = rgba.as_raw();
 
-    let res = if mode == "fast" {
-        core::detect_fast(raw, w, h)
-    } else {
-        core::detect_full(raw, w, h)
-    };
+    let res = core::detect_full(raw, w, h);
 
     let (offset_x, offset_y) = reconstruct::find_grid_phase(raw, w, h, res.step_x, res.step_y);
     let avg_step = (res.step_x + res.step_y) / 2.0;
-    let confidence = if res.consensus.starts_with("fast:ac+rl") {
+    let confidence = if res.consensus == "arbitrated" {
         98
-    } else if res.consensus.starts_with("fast") {
-        92
-    } else if res.consensus == "arbitrated" {
+    } else if res.consensus.contains("consensus") {
         95
     } else {
-        60
+        85
     };
 
     let candidates = collect_candidates(avg_step, confidence);
@@ -415,14 +513,14 @@ async fn detect_handler(
     let dur_ms = secs * 1000.0;
 
     tracing::info!(
-        "🔍 [DETECT] {}x{} | mode: {} | grid: {}x{} (conf: {}%) in {:.2}ms",
-        w, h, mode, res.cols, res.rows, confidence, dur_ms
+        "🔍 [DETECT ADVANCED] {}x{} | grid: {}x{} (conf: {}%) in {:.2}ms",
+        w, h, res.cols, res.rows, confidence, dur_ms
     );
 
     let mut trace_attrs = HashMap::new();
     trace_attrs.insert("image.width".to_string(), serde_json::json!(w));
     trace_attrs.insert("image.height".to_string(), serde_json::json!(h));
-    trace_attrs.insert("detect.mode".to_string(), serde_json::json!(mode));
+    trace_attrs.insert("detect.mode".to_string(), serde_json::json!("advanced"));
     trace_attrs.insert("grid.cols".to_string(), serde_json::json!(res.cols));
     trace_attrs.insert("grid.rows".to_string(), serde_json::json!(res.rows));
     trace_attrs.insert("grid.confidence".to_string(), serde_json::json!(confidence));
@@ -430,7 +528,7 @@ async fn detect_handler(
     send_otlp_trace(
         trace_id,
         parent_span_id,
-        " └─ 👾 [Xử lý Rust] Nhận diện lưới pixel (Detect Grid)",
+        " └─ 👾 [Xử lý Rust] Nhận diện lưới pixel (Detect Grid - Advanced)",
         dur_ms,
         trace_attrs,
         false,
@@ -456,7 +554,7 @@ async fn detect_handler(
         download_url: Some(format!("/api/file/{}", in_filename)),
     };
 
-    if resp.consensus != "fastmode:lowconf" && resp.confidence >= 70 {
+    if resp.confidence >= 70 {
         if let Ok(resp_json) = serde_json::to_string(&resp) {
             let _ = std::fs::write(&detect_cache_filepath, resp_json);
         }
@@ -484,7 +582,8 @@ async fn fix_handler(
     let mut req_offset_y = query.offset_y;
     let mut _auto_palette = query.auto_palette.unwrap_or(true);
     let mut _req_two_stage = query.two_stage;
-    let mut req_k_colors = query.k_colors;
+    let mut req_k_colors = query.k_colors.or(query.max_colors);
+    let mut req_palette = query.palette;
     let mut req_elastic = query.elastic;
 
     while let Ok(Some(field)) = multipart.next_field().await {
@@ -518,8 +617,10 @@ async fn fix_handler(
             if let Ok(txt) = field.text().await { _auto_palette = txt == "true" || txt == "1"; }
         } else if name == "two_stage" {
             if let Ok(txt) = field.text().await { _req_two_stage = Some(txt == "true" || txt == "1"); }
-        } else if name == "k_colors" {
+        } else if name == "k_colors" || name == "max_colors" {
             if let Ok(txt) = field.text().await { req_k_colors = txt.parse().ok(); }
+        } else if name == "palette" {
+            if let Ok(txt) = field.text().await { req_palette = Some(txt); }
         } else if name == "elastic" {
             if let Ok(txt) = field.text().await { req_elastic = Some(txt == "true" || txt == "1"); }
         }
@@ -536,7 +637,7 @@ async fn fix_handler(
     };
 
     let base_name = sanitize_filename(&original_filename);
-    let in_hash = compute_hash_10(&bytes);
+    let in_hash = compute_hash_16(&bytes);
     let in_filename = format!("{}_{}_input.png", in_hash, base_name);
 
     let download_dir = get_download_dir();
@@ -550,12 +651,13 @@ async fn fix_handler(
     let is_elastic = req_elastic.unwrap_or_else(|| req_mode.as_deref() == Some("elastic") || req_mode.as_deref() == Some("elastic_sota"));
     let k_colors = req_k_colors.unwrap_or(0);
 
-    // 2. Tính toán Cache Key phân tách độc lập
+    // 2. Tính toán Cache Key phân tách độc lập (kèm palette)
+    let pal_str = req_palette.as_deref().unwrap_or("auto");
     let param_key = format!(
-        "{}_cols{:?}_rows{:?}_sx{:?}_sy{:?}_ox{:?}_oy{:?}_k{}_el{}",
-        in_hash, req_cols, req_rows, req_step_x, req_step_y, req_offset_x, req_offset_y, k_colors, is_elastic
+        "{}_cols{:?}_rows{:?}_sx{:?}_sy{:?}_ox{:?}_oy{:?}_k{}_pal{}_el{}",
+        in_hash, req_cols, req_rows, req_step_x, req_step_y, req_offset_x, req_offset_y, k_colors, pal_str, is_elastic
     );
-    let cache_key = compute_hash_10(param_key.as_bytes());
+    let cache_key = compute_hash_16(param_key.as_bytes());
     let out_filename = format!("{}_{}_pixel.png", cache_key, base_name);
     let meta_filename = format!("{}_{}_pixel.meta.json", cache_key, base_name);
     let out_filepath = download_dir.join(&out_filename);
@@ -663,12 +765,7 @@ async fn fix_handler(
             (sx, sy, c as usize, r as usize, "manual_cols_rows".to_string(), 0.0, 0.0)
         }
         _ => {
-            let is_fast = req_mode.as_deref() == Some("fast");
-            let d = if is_fast {
-                core::detect_fast(raw, w, h)
-            } else {
-                core::detect_full(raw, w, h)
-            };
+            let d = core::detect_full(raw, w, h);
             (d.step_x, d.step_y, d.cols.max(1) as usize, d.rows.max(1) as usize, d.consensus, d.offset_x, d.offset_y)
         }
     };
@@ -700,12 +797,19 @@ async fn fix_handler(
         offset_x,
         offset_y,
     );
-    let (recon_rgba, recon_cols, recon_rows, topology_label) = (
+    let (mut recon_rgba, recon_cols, recon_rows, topology_label) = (
         out.rgba,
         out.cols,
         out.rows,
         if is_elastic { "elastic_original" } else { "uniform_original" }
     );
+
+    match pal_str {
+        "gameboy" => snap_to_palette(&mut recon_rgba, PALETTE_GAMEBOY),
+        "pico8" => snap_to_palette(&mut recon_rgba, PALETTE_PICO8),
+        "nes" => snap_to_palette(&mut recon_rgba, PALETTE_NES),
+        _ => {}
+    }
 
     let out_img = match RgbaImage::from_raw(recon_cols as u32, recon_rows as u32, recon_rgba) {
         Some(img) => DynamicImage::ImageRgba8(img),

@@ -1,0 +1,1 @@
+export const CONVERT_WORKER_PORT = Symbol('CONVERT_WORKER_PORT');
