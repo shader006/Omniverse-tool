@@ -234,7 +234,6 @@ export default function LoginModal({ isOpen, onClose, lang = 'vi' }) {
               </button>
             </div>
           )}
-
           {/* OAuth Buttons */}
           <div className="pixel-oauth-group">
             <button

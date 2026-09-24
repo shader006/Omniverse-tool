@@ -61,7 +61,7 @@ export default function ToolsNavbar({ onGoHome, onOpenLogin, lang = 'vi', onTogg
           </ul>
         </div>
 
-        {/* Right: Social Links & Language Switcher */}
+        {/* Right: Social Links, Language Switcher & Avatar (sát bên phải) */}
         <div className="pixel-tools-nav-right">
           <a href="https://x.com" target="_blank" rel="noreferrer" className="pixel-social-icon-sm" title="X (Twitter)">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">

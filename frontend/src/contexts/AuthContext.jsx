@@ -1,49 +1,56 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  GithubAuthProvider,
-  updateProfile,
-} from 'firebase/auth';
-import { auth, isFirebaseConfigured } from '../lib/firebase';
+/**
+ * ============================================================
+ * CONTEXT / ADAPTER: AuthContext.jsx
+ * ============================================================
+ * Cung cấp React state cho tầng Presentation (UI).
+ * Kết nối Firebase Auth và Backend NestJS Session.
+ * Hỗ trợ chế độ offline / Demo mode khi chưa cấu hình Firebase.
+ * ============================================================
+ */
 
-// ============================================================
-// Auth Context
-// ============================================================
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, isFirebaseConfigured } from '../lib/firebase';
+import { authService } from '../services/auth.service';
 
 const AuthContext = createContext(null);
 
-// ── Pre-create OAuth providers 1 lần duy nhất (tránh khởi tạo lại mỗi lần click) ──
-const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('email');
-googleProvider.addScope('profile');
-// setCustomParameters giúp popup hiện nhanh hơn, không bắt chọn lại tài khoản
-googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-const githubProvider = new GithubAuthProvider();
-githubProvider.addScope('user:email');
-
-// Provider bọc toàn bộ App — cung cấp user state + methods
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);       // Firebase User object | null
-  const [loading, setLoading] = useState(true); // true trong khi kiểm tra session đầu tiên
+  const [user, setUser] = useState(null);               // Firebase User object | null
+  const [backendUser, setBackendUser] = useState(null); // NestJS DB User object | null
+  const [session, setSession] = useState(null);         // NestJS UserSession | null
+  const [loading, setLoading] = useState(true);         // Đang kiểm tra session ban đầu
 
-  // Lắng nghe thay đổi auth state (đăng nhập / đăng xuất / token refresh)
+  // Lắng nghe thay đổi auth state và đồng bộ sang Service Layer
   useEffect(() => {
     if (!auth) {
       setUser(null);
+      setBackendUser(null);
+      setSession(null);
       setLoading(false);
       return;
     }
+
     try {
-      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         setUser(firebaseUser);
+        if (firebaseUser) {
+          try {
+            const backendData = await authService.syncBackendSession(firebaseUser);
+            if (backendData) {
+              setBackendUser(backendData.user);
+              setSession(backendData.session);
+            }
+          } catch (syncErr) {
+            console.warn('[AuthContext] syncBackendSession warning:', syncErr);
+          }
+        } else {
+          setBackendUser(null);
+          setSession(null);
+        }
         setLoading(false);
       });
+
       return () => unsubscribe();
     } catch (err) {
       console.warn('[AuthContext] onAuthStateChanged warning:', err);
@@ -51,59 +58,74 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // ──────────────────────────────────────────────────────────
-  // Email / Password
-  // ──────────────────────────────────────────────────────────
-
-  /** Đăng nhập bằng email + password */
-  const loginEmail = (email, password) => {
+  const loginEmail = async (email, password) => {
     if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
-    return signInWithEmailAndPassword(auth, email, password);
+    const res = await authService.loginWithEmail(email, password);
+    if (res?.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
+    }
+    return res;
   };
 
-  /** Đăng ký tài khoản mới bằng email + password */
   const register = async (email, password, displayName) => {
     if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    if (displayName) {
-      await updateProfile(credential.user, { displayName });
+    const res = await authService.registerWithEmail(email, password, displayName);
+    if (res?.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
     }
-    return credential;
+    return res;
   };
 
-  // ──────────────────────────────────────────────────────────
-  // OAuth Providers (dùng provider singleton đã tạo ở trên)
-  // ──────────────────────────────────────────────────────────
-
-  /** Đăng nhập bằng Google — dùng provider singleton */
-  const loginGoogle = () => {
+  const loginGoogle = async () => {
     if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
-    return signInWithPopup(auth, googleProvider);
+    const res = await authService.loginWithGoogle();
+    if (res?.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
+    }
+    return res;
   };
 
-  /** Đăng nhập bằng GitHub — dùng provider singleton */
-  const loginGitHub = () => {
+  const loginGitHub = async () => {
     if (!auth) throw new Error('Firebase Auth chưa được kích hoạt hoặc chưa cấu hình API Key.');
-    return signInWithPopup(auth, githubProvider);
+    const res = await authService.loginWithGithub();
+    if (res?.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
+    }
+    return res;
   };
 
-  // ──────────────────────────────────────────────────────────
-  // Utilities
-  // ──────────────────────────────────────────────────────────
-
-  /** Đăng xuất */
-  const logout = () => {
-    if (!auth) return Promise.resolve();
-    return signOut(auth);
+  const logout = async () => {
+    if (session?.id) {
+      try {
+        await authService.logout(session.id);
+      } catch (err) {
+        console.warn('[AuthContext] logout error:', err);
+      }
+    } else if (auth) {
+      try {
+        await authService.logout();
+      } catch (err) {
+        console.warn('[AuthContext] logout error:', err);
+      }
+    }
+    setUser(null);
+    setBackendUser(null);
+    setSession(null);
   };
 
-  /**
-   * Lấy ID Token hiện tại (tự động refresh nếu hết hạn).
-   * Dùng để đính kèm vào header API calls.
-   * @param {boolean} forceRefresh - Bắt buộc refresh ngay cả khi chưa hết hạn
-   */
+  const switchLanguage = async (lang) => {
+    if (backendUser?.id) {
+      await authService.switchLanguage(backendUser.id, lang);
+      setBackendUser((prev) => (prev ? { ...prev, currentLanguage: lang } : null));
+    }
+  };
+
   const getIdToken = (forceRefresh = false) => {
-    if (!auth || !user) return Promise.resolve(null);
+    if (!user) return Promise.resolve(null);
     return user.getIdToken(forceRefresh);
   };
 
@@ -115,11 +137,19 @@ export function AuthProvider({ children }) {
       photoURL: null,
       getIdToken: () => Promise.resolve('mock-dev-token')
     });
+    setBackendUser({
+      id: 'demo-user-id',
+      email: email,
+      name: name,
+      role: 'member'
+    });
   };
 
   const value = {
-    user,           // Firebase User object (null nếu chưa đăng nhập)
-    loading,        // Đang kiểm tra session?
+    user,
+    backendUser,
+    session,
+    loading,
     isLoggedIn: !!user,
     isFirebaseConfigured,
     loginEmail,
@@ -128,6 +158,7 @@ export function AuthProvider({ children }) {
     loginGitHub,
     loginDemo,
     logout,
+    switchLanguage,
     getIdToken,
   };
 
@@ -139,4 +170,3 @@ export function AuthProvider({ children }) {
 }
 
 export default AuthContext;
-

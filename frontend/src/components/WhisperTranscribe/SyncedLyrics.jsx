@@ -129,6 +129,17 @@ export default function SyncedLyrics({ segments, currentTime, onSeek, fullText, 
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Auto scroll smoothly to keep active subtitle segment centered
+  useEffect(() => {
+    if (activeLineRef.current) {
+      activeLineRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest'
+      });
+    }
+  }, [currentTime]);
+
   return (
     <div id="lyrics-sync-view" className="spotify-lyrics-card">
       <div className="spotify-lyrics-header">

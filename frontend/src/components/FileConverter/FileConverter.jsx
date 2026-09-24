@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { formatFileBytes } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
+import { converterService } from '../../services/converter.service';
 
 export default function FileConverter({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
@@ -84,15 +85,10 @@ export default function FileConverter({ lang = 'vi' }) {
         setProgressStatus(targetFormat === 'docx' ? 'Đang tái cấu trúc tài liệu Word (.docx)...' : 'Gotenberg đang xử lý và xuất file PDF...');
       }, 400);
 
-      const res = await fetch('/api/convert/file', {
-        method: 'POST',
-        body: formData
+      const data = await converterService.convertDocument({
+        file: fileToConvert,
+        targetFormat: targetFormat
       });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.detail || 'Quá trình chuyển đổi tài liệu thất bại.');
-      }
 
       setProgressPercent(100);
       setProgressStatus(targetFormat === 'docx' ? 'Chuyển đổi sang Word (.docx) thành công!' : 'Chuyển đổi PDF thành công!');
@@ -213,10 +209,23 @@ export default function FileConverter({ lang = 'vi' }) {
           {!selectedFile ? (
             <div className="dropzone-prompt">
               <div className="dropzone-icon">
-                <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="17 8 12 3 7 8"></polyline>
-                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                <svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor" style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges' }}>
+                  {/* Pixel Document with Folded Corner & Stepped Upload Arrow */}
+                  <rect x="4" y="2" width="11" height="2" />
+                  <rect x="4" y="4" width="2" height="18" />
+                  <rect x="4" y="20" width="16" height="2" />
+                  <rect x="18" y="9" width="2" height="13" />
+                  {/* Folded Corner */}
+                  <rect x="15" y="4" width="2" height="2" />
+                  <rect x="17" y="6" width="2" height="3" />
+                  <rect x="14" y="4" width="1" height="5" />
+                  <rect x="14" y="8" width="5" height="1" />
+                  {/* Stepped Pixel Arrow */}
+                  <rect x="11" y="9" width="2" height="1" />
+                  <rect x="10" y="10" width="4" height="1" />
+                  <rect x="9" y="11" width="6" height="1" />
+                  <rect x="8" y="12" width="8" height="1" />
+                  <rect x="11" y="13" width="2" height="5" />
                 </svg>
               </div>
               <h3 className="dropzone-title">{tr.file_drop_title} <span className="browse-link">{tr.file_drop_browse}</span></h3>
@@ -299,7 +308,10 @@ export default function FileConverter({ lang = 'vi' }) {
 
                   <div className="option-field">
                     <label htmlFor="pdfa-format">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" shapeRendering="crispEdges">
+                        {/* Pixel Shield */}
+                        <path d="M2 1h12v7h-1v2h-1v2h-2v2H8v1H7v-1H5v-2H3v-2H2V8H1V1h1zm2 2v5h1v2h1v1h1v1h1v-1h1v-1h1V8h1V3H4z" />
+                      </svg>
                       {tr.file_pdfa_label}
                     </label>
                     <select 
@@ -331,8 +343,8 @@ export default function FileConverter({ lang = 'vi' }) {
                   </>
                 ) : (
                   <>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" shapeRendering="crispEdges">
+                      <path d="M9 1H6L3 9h4l-2 6 8-8H9l1-6z" />
                     </svg>
                     <span>{targetFormat === 'docx' ? tr.file_convert_btn_docx : tr.file_convert_btn_pdf}</span>
                   </>

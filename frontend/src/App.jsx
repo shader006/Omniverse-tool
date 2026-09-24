@@ -9,7 +9,6 @@ import RemoveBackground from './components/RemoveBackground/RemoveBackground';
 import PixelFixer from './components/PixelFixer/PixelFixer';
 import PictureUpscaler from './components/PictureUpscaler/PictureUpscaler';
 import Footer from './components/Footer';
-import LoginModal from './components/ui/pixelact-ui/LoginModal';
 import PixelMascot from './components/PixelMascot/PixelMascot';
 import { AuthProvider } from './contexts/AuthContext';
 
