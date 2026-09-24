@@ -833,7 +833,8 @@ body {
 }
 
 .mode-section {
-  animation: fadeIn 0.3s ease-out;
+  display: block;
+  opacity: 1;
 }
 
 /* File Converter Dropzone */

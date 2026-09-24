@@ -9,8 +9,34 @@ import RemoveBackground from './components/RemoveBackground/RemoveBackground';
 import PixelFixer from './components/PixelFixer/PixelFixer';
 import PictureUpscaler from './components/PictureUpscaler/PictureUpscaler';
 import Footer from './components/Footer';
+import LoginModal from './components/ui/pixelact-ui/LoginModal';
 import PixelMascot from './components/PixelMascot/PixelMascot';
 import { AuthProvider } from './contexts/AuthContext';
+
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, stack: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error: error?.toString(), stack: error?.stack };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("ErrorBoundary caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ color: '#ff3333', background: '#111', padding: '20px', border: '3px solid red' }}>
+          <h3>COMPONENT CRASHED:</h3>
+          <p>{this.state.error}</p>
+          <pre style={{ fontSize: '11px', whiteSpace: 'pre-wrap' }}>{this.state.stack}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const getInitialRoute = () => {
@@ -41,6 +67,8 @@ export default function App() {
         setCurrentPage('tools');
         if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
           setCurrentMode(hash);
+        } else if (!currentMode) {
+          setCurrentMode('url');
         }
       } else {
         setCurrentPage('home');
@@ -50,7 +78,7 @@ export default function App() {
     handleRoute();
     window.addEventListener('hashchange', handleRoute);
     return () => window.removeEventListener('hashchange', handleRoute);
-  }, []);
+  }, [currentMode]);
 
   const navigateToTools = (mode) => {
     setCurrentPage('tools');
@@ -99,12 +127,14 @@ export default function App() {
             <main className="container" style={{ flex: 1, paddingTop: '10px' }}>
               <ModeSwitcher currentMode={currentMode} onSelectMode={handleSelectMode} lang={lang} />
 
-              {currentMode === 'url' && <UrlDownloader lang={lang} />}
-              {currentMode === 'file' && <FileConverter lang={lang} />}
-              {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
-              {currentMode === 'bg' && <RemoveBackground lang={lang} />}
-              {currentMode === 'pixel' && <PixelFixer lang={lang} />}
-              {currentMode === 'upscale' && <PictureUpscaler lang={lang} />}
+              <ErrorBoundary>
+                {currentMode === 'url' && <UrlDownloader lang={lang} />}
+                {currentMode === 'file' && <FileConverter lang={lang} />}
+                {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
+                {currentMode === 'bg' && <RemoveBackground lang={lang} />}
+                {currentMode === 'pixel' && <PixelFixer lang={lang} />}
+                {currentMode === 'upscale' && <PictureUpscaler lang={lang} />}
+              </ErrorBoundary>
             </main>
 
             <Footer lang={lang} />
