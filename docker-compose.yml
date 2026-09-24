@@ -1,4 +1,21 @@
 services:
+  backend-nestjs:
+    build:
+      context: ./backend-nestjs
+      dockerfile: Dockerfile
+    container_name: oniverse_backend_nestjs
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data:/app/data
+      - ./secrets/firebase-sa.json:/run/secrets/firebase-sa.json:ro
+    environment:
+      - PORT=4000
+      - DATABASE_PATH=/app/data/oniverse.db
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-omniveser-b918a}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/firebase-sa.json
+
   gateway:
     build:
       context: ./backend

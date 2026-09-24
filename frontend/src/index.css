@@ -891,6 +891,11 @@ body {
   color: #fff;
 }
 
+.dropzone-icon svg {
+  image-rendering: pixelated;
+  shape-rendering: crispEdges;
+}
+
 .dropzone-title {
   font-family: 'Press Start 2P', monospace;
   font-size: 0.85rem;

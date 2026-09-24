@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import QualityTable from './QualityTable';
 import { translations } from '../../locales/translations';
+import { downloaderService } from '../../services/downloader.service';
 
 export default function UrlDownloader({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
@@ -103,18 +104,8 @@ export default function UrlDownloader({ lang = 'vi' }) {
     setCompletedKey(null);
 
     try {
-      const res = await fetch('/api/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: trimmedUrl })
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.detail || 'Không thể trích xuất thông tin video từ liên kết này.');
-      }
-
-      setMediaInfo(data.data);
+      const data = await downloaderService.extractVideoInfo(trimmedUrl);
+      setMediaInfo(data);
     } catch (err) {
       // Fallback test data để chạy qua luôn kiểm tra giao diện xuất file
       console.warn('Backend info fetch failed, using demo test info for UI preview:', err);
@@ -142,20 +133,11 @@ export default function UrlDownloader({ lang = 'vi' }) {
     });
 
     try {
-      const res = await fetch('/api/download', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: currentTargetUrl || 'https://www.youtube.com/watch?v=retro_cyber_pixel',
-          format: format,
-          quality: quality
-        })
+      const data = await downloaderService.requestDownload({
+        url: currentTargetUrl || 'https://www.youtube.com/watch?v=retro_cyber_pixel',
+        format: format,
+        quality: quality
       });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.detail || 'Không thể tạo tác vụ tải về.');
-      }
 
       const jobId = data.job_id;
       listenJobProgress(jobId, key);
@@ -274,10 +256,8 @@ export default function UrlDownloader({ lang = 'vi' }) {
   const fallbackPoll = (jobId, key) => {
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/status/${jobId}`);
-        if (!res.ok) return;
-        const job = await res.json();
-        handleProgressUpdate(job, key);
+        const job = await downloaderService.pollJobStatus(jobId);
+        if (job) handleProgressUpdate(job, key);
       } catch (err) {
         console.error('Polling error:', err);
       }
@@ -296,9 +276,9 @@ export default function UrlDownloader({ lang = 'vi' }) {
       <div className="card search-card">
         <form id="convert-form" className="convert-input-wrapper" onSubmit={handleConvertUrl}>
           <div className="input-field">
-            <svg className="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            <svg className="search-icon" width="18" height="18" viewBox="0 0 16 16" fill="currentColor" shapeRendering="crispEdges">
+              {/* Pixel Chain Link */}
+              <path d="M7 2H3v2H2v4h1v1h4V8H5V5h2V4h1V2H7zm2 6v1h2v3H9v1h4v-1h1V9h-1V8h-4zm-2 1h2v1H7V9z" />
             </svg>
             <input 
               type="url" 
@@ -309,18 +289,18 @@ export default function UrlDownloader({ lang = 'vi' }) {
               onChange={(e) => setUrl(e.target.value)}
             />
             <button type="button" id="paste-btn" className="btn-paste" title={tr.url_paste_btn} onClick={handlePaste}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" shapeRendering="crispEdges">
+                {/* Pixel Clipboard */}
+                <path d="M6 1h4v2H6V1zM4 3h1v2h6V3h1v12H4V3zm2 4h4v1H6V7zm0 2h4v1H6V9zm0 2h3v1H6v-1z" />
               </svg>
               <span>{tr.url_paste_btn}</span>
             </button>
           </div>
           <button type="submit" id="convert-btn" className="btn-convert" disabled={isLoadingInfo}>
             <span className="btn-text">{tr.url_convert_btn}</span>
-            <svg className="btn-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
+            <svg className="btn-arrow" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" shapeRendering="crispEdges">
+              {/* Pixel Arrow Right */}
+              <path d="M2 7h8v2H2V7zm6-4h2v2H8V3zm2 2h2v2h-2V5zm2 2h2v2h-2V7zm-2 2h2v2h-2V9zm-2 2h2v2H8v-2z" />
             </svg>
           </button>
         </form>

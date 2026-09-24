@@ -1,101 +1,112 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  onAuthStateChanged,
-  GoogleAuthProvider,
-  GithubAuthProvider,
-  updateProfile,
-} from 'firebase/auth';
-import { auth } from '../lib/firebase';
+/**
+ * ============================================================
+ * CONTEXT / ADAPTER: AuthContext.jsx
+ * ============================================================
+ * Cung cấp React state cho tầng Presentation (UI).
+ * Gọi trực tiếp xuống Service Layer (authService).
+ * ============================================================
+ */
 
-// ============================================================
-// Auth Context
-// ============================================================
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { authService } from '../services/auth.service';
 
 const AuthContext = createContext(null);
 
-// ── Pre-create OAuth providers 1 lần duy nhất (tránh khởi tạo lại mỗi lần click) ──
-const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('email');
-googleProvider.addScope('profile');
-// setCustomParameters giúp popup hiện nhanh hơn, không bắt chọn lại tài khoản
-googleProvider.setCustomParameters({ prompt: 'select_account' });
-
-const githubProvider = new GithubAuthProvider();
-githubProvider.addScope('user:email');
-
-// Provider bọc toàn bộ App — cung cấp user state + methods
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);       // Firebase User object | null
-  const [loading, setLoading] = useState(true); // true trong khi kiểm tra session đầu tiên
+  const [user, setUser] = useState(null);               // Firebase User object | null
+  const [backendUser, setBackendUser] = useState(null); // NestJS DB User object | null
+  const [session, setSession] = useState(null);         // NestJS UserSession | null
+  const [loading, setLoading] = useState(true);         // Đang kiểm tra session ban đầu
 
-  // Lắng nghe thay đổi auth state (đăng nhập / đăng xuất / token refresh)
+  // Lắng nghe thay đổi auth state và đồng bộ sang Service Layer
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
+      if (firebaseUser) {
+        const backendData = await authService.syncBackendSession(firebaseUser);
+        if (backendData) {
+          setBackendUser(backendData.user);
+          setSession(backendData.session);
+        }
+      } else {
+        setBackendUser(null);
+        setSession(null);
+      }
       setLoading(false);
     });
-    // Cleanup khi component unmount
+
     return () => unsubscribe();
   }, []);
 
-  // ──────────────────────────────────────────────────────────
-  // Email / Password
-  // ──────────────────────────────────────────────────────────
-
-  /** Đăng nhập bằng email + password */
-  const loginEmail = (email, password) =>
-    signInWithEmailAndPassword(auth, email, password);
-
-  /** Đăng ký tài khoản mới bằng email + password */
-  const register = async (email, password, displayName) => {
-    const credential = await createUserWithEmailAndPassword(auth, email, password);
-    // Cập nhật display name ngay sau khi tạo account
-    if (displayName) {
-      await updateProfile(credential.user, { displayName });
+  const loginEmail = async (email, password) => {
+    const res = await authService.loginWithEmail(email, password);
+    if (res.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
     }
-    return credential;
+    return res;
   };
 
-  // ──────────────────────────────────────────────────────────
-  // OAuth Providers (dùng provider singleton đã tạo ở trên)
-  // ──────────────────────────────────────────────────────────
+  const register = async (email, password, displayName) => {
+    const res = await authService.registerWithEmail(email, password, displayName);
+    if (res.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
+    }
+    return res;
+  };
 
-  /** Đăng nhập bằng Google — dùng provider singleton */
-  const loginGoogle = () => signInWithPopup(auth, googleProvider);
+  const loginGoogle = async () => {
+    const res = await authService.loginWithGoogle();
+    if (res.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
+    }
+    return res;
+  };
 
-  /** Đăng nhập bằng GitHub — dùng provider singleton */
-  const loginGitHub = () => signInWithPopup(auth, githubProvider);
+  const loginGitHub = async () => {
+    const res = await authService.loginWithGithub();
+    if (res.backendData) {
+      setBackendUser(res.backendData.user);
+      setSession(res.backendData.session);
+    }
+    return res;
+  };
 
-  // ──────────────────────────────────────────────────────────
-  // Utilities
-  // ──────────────────────────────────────────────────────────
+  const logout = async () => {
+    await authService.logout(session?.id);
+    setUser(null);
+    setBackendUser(null);
+    setSession(null);
+  };
 
-  /** Đăng xuất */
-  const logout = () => signOut(auth);
+  const switchLanguage = async (lang) => {
+    if (backendUser?.id) {
+      await authService.switchLanguage(backendUser.id, lang);
+      setBackendUser((prev) => (prev ? { ...prev, currentLanguage: lang } : null));
+    }
+  };
 
-  /**
-   * Lấy ID Token hiện tại (tự động refresh nếu hết hạn).
-   * Dùng để đính kèm vào header API calls.
-   * @param {boolean} forceRefresh - Bắt buộc refresh ngay cả khi chưa hết hạn
-   */
   const getIdToken = (forceRefresh = false) => {
     if (!user) return Promise.resolve(null);
     return user.getIdToken(forceRefresh);
   };
 
   const value = {
-    user,           // Firebase User object (null nếu chưa đăng nhập)
-    loading,        // Đang kiểm tra session?
+    user,
+    backendUser,
+    session,
+    loading,
     isLoggedIn: !!user,
     loginEmail,
     register,
     loginGoogle,
     loginGitHub,
     logout,
+    switchLanguage,
     getIdToken,
   };
 
@@ -107,4 +118,3 @@ export function AuthProvider({ children }) {
 }
 
 export default AuthContext;
-

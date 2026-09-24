@@ -1,4 +1,4 @@
-﻿import {
+import {
   Controller,
   Post,
   Body,
@@ -26,6 +26,17 @@ export class AuthController {
   login(@Body() loginDto: LoginDto, @Req() req: any) {
     const ip: string = req.ip || req.socket?.remoteAddress || 'unknown';
     return this.authService.login(loginDto, ip);
+  }
+
+  /**
+   * GET /auth/me
+   * Lay thong tin nguoi dung va phien hien tai tu Token hoac SessionId.
+   */
+  @Get('me')
+  getMe(@Req() req: any) {
+    const authHeader = req.headers['authorization'];
+    const sessionId = req.headers['x-session-id'] || req.cookies?.sessionId;
+    return this.authService.getMe(authHeader, sessionId);
   }
 
   /**

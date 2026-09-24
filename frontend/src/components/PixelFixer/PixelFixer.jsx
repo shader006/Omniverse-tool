@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { formatFileBytes } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
+import { aiService } from '../../services/ai.service';
 import './pixel-fixer.css';
 
 // ==========================================
@@ -552,28 +553,19 @@ export default function PixelFixer({ lang = 'vi' }) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-        const res = await fetch(`/api/pixel/fix?${queryParams}`, {
-          method: 'POST',
-          body: formData,
+        const { blob, gridInfo: gInfo } = await aiService.fixPixelGrid({
+          file: targetFile,
+          queryParams,
           signal: controller.signal
         });
         clearTimeout(timeoutId);
 
-        if (res.ok) {
-          const cols = res.headers.get('X-Grid-Cols') || 32;
-          const rows = res.headers.get('X-Grid-Rows') || 32;
-          const stepX = parseFloat(res.headers.get('X-Grid-StepX') || '3.0').toFixed(2);
-          const stepY = parseFloat(res.headers.get('X-Grid-StepY') || '3.0').toFixed(2);
-          const consensus = res.headers.get('X-Grid-Consensus') ? `${res.headers.get('X-Grid-Consensus')}%` : '98.5%';
-
-          setGridInfo({ cols, rows, stepX, stepY, consensus });
-          const blob = await res.blob();
-          setResultBlob(blob);
-          if (resultUrl && resultUrl.startsWith('blob:')) URL.revokeObjectURL(resultUrl);
-          const newResultUrl = URL.createObjectURL(blob);
-          setResultUrl(newResultUrl);
-          apiSuccess = true;
-        }
+        setGridInfo(gInfo);
+        setResultBlob(blob);
+        if (resultUrl && resultUrl.startsWith('blob:')) URL.revokeObjectURL(resultUrl);
+        const newResultUrl = URL.createObjectURL(blob);
+        setResultUrl(newResultUrl);
+        apiSuccess = true;
       } catch (e) {
         // Backend offline hoặc timeout -> tiếp tục với Canvas Fallback Engine
       }
@@ -743,11 +735,19 @@ export default function PixelFixer({ lang = 'vi' }) {
           >
             <div className="dropzone-prompt">
               <div className="dropzone-icon">
-                <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <rect x="3" y="3" width="7" height="7" rx="1"></rect>
-                  <rect x="14" y="3" width="7" height="7" rx="1"></rect>
-                  <rect x="14" y="14" width="7" height="7" rx="1"></rect>
-                  <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                <svg viewBox="0 0 24 24" width="44" height="44" fill="currentColor" style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges' }}>
+                  {/* Authentic 8-bit Pixel Grid Matrix */}
+                  <rect x="2" y="2" width="20" height="2" />
+                  <rect x="2" y="20" width="20" height="2" />
+                  <rect x="2" y="4" width="2" height="16" />
+                  <rect x="20" y="4" width="2" height="16" />
+                  <rect x="11" y="4" width="2" height="16" />
+                  <rect x="4" y="11" width="16" height="2" />
+                  {/* Pixel Blocks */}
+                  <rect x="5" y="5" width="5" height="5" />
+                  <rect x="14" y="5" width="5" height="5" opacity="0.4" />
+                  <rect x="5" y="14" width="5" height="5" opacity="0.7" />
+                  <rect x="14" y="14" width="5" height="5" />
                 </svg>
               </div>
               <h3 className="dropzone-title">{tr.pixel_drop_title}</h3>
@@ -926,7 +926,7 @@ export default function PixelFixer({ lang = 'vi' }) {
             <div className="pixel-settings-grid">
               {/* Engine mode */}
               <PixelCustomSelect
-                icon={<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>}
+                icon={<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" shapeRendering="crispEdges"><path d="M9 1H6L3 9h4l-2 6 8-8H9l1-6z"/></svg>}
                 label={tr.pixel_engine_label}
                 value={engineMode}
                 disabled={isProcessing}
@@ -942,7 +942,7 @@ export default function PixelFixer({ lang = 'vi' }) {
 
               {/* Topology */}
               <PixelCustomSelect
-                icon={<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>}
+                icon={<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" shapeRendering="crispEdges"><path d="M1 1h14v14H1V1zm2 2v4h4V3H3zm6 0v4h4V3H9zm-6 6v4h4V9H3zm6 0v4h4V9H9z"/></svg>}
                 label={tr.pixel_topology_label}
                 value={topology}
                 disabled={isProcessing}
@@ -958,7 +958,7 @@ export default function PixelFixer({ lang = 'vi' }) {
 
               {/* Resolution Scale */}
               <PixelCustomSelect
-                icon={<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>}
+                icon={<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" shapeRendering="crispEdges"><path d="M9 1h6v6h-2V4h-2V2H9V1zm-4 8H3v2H1v4h6v-2H5V9zm6 2h2v2h2v2h-4v-4zM5 5H3V3H1V1h4v4z"/></svg>}
                 label={tr.pixel_scale_label}
                 value={scaleFactor}
                 disabled={isProcessing}
@@ -977,7 +977,7 @@ export default function PixelFixer({ lang = 'vi' }) {
 
               {/* Palette */}
               <PixelCustomSelect
-                icon={<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="13.5" cy="6.5" r=".5"></circle><circle cx="17.5" cy="10.5" r=".5"></circle><circle cx="8.5" cy="7.5" r=".5"></circle><circle cx="6.5" cy="12.5" r=".5"></circle><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.5 17.5 2 12 2z"></path></svg>}
+                icon={<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" shapeRendering="crispEdges"><path d="M4 1h8v2h2v3h1v5h-2v2h-2v2H7v-2H5v-2H3V9H2V6h1V3h1V1zm1 4h2v2H5V5zm6 0h2v2h-2V5zm-4 4h2v2H7V9z"/></svg>}
                 label={tr.pixel_palette_label}
                 value={palette}
                 disabled={isProcessing}

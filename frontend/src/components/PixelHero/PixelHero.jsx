@@ -22,8 +22,11 @@ export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, l
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleStartNow = () => {
-    if (onOpenLogin) {
+  const handleStartNow = (e) => {
+    if (e) e.preventDefault();
+    if (isLoggedIn) {
+      handleOpenTools(e);
+    } else if (onOpenLogin) {
       onOpenLogin();
     } else {
       setIsLoginOpen(true);
@@ -48,7 +51,7 @@ export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, l
               </a>
             </li>
             <li>
-              <a href="#about" className="pixel-nav-link" onClick={handleStartNow}>
+              <a href="#about" className="pixel-nav-link" onClick={(e) => { e.preventDefault(); const f = document.querySelector('footer'); if (f) f.scrollIntoView({ behavior: 'smooth' }); }}>
                 {lang === 'vi' ? 'Về chúng tôi' : 'About us'}
               </a>
             </li>

@@ -269,10 +269,25 @@ export default function RemoveBackground({ lang = 'vi' }) {
           {!selectedFile ? (
             <div id="bg-dropzone-prompt" className="dropzone-prompt">
               <div className="dropzone-icon">
-                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21 15 16 10 5 21"></polyline>
+                <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor" style={{ imageRendering: 'pixelated', shapeRendering: 'crispEdges' }}>
+                  {/* Outer Pixel Photo Frame */}
+                  <rect x="2" y="2" width="20" height="2" />
+                  <rect x="2" y="20" width="20" height="2" />
+                  <rect x="2" y="4" width="2" height="16" />
+                  <rect x="20" y="4" width="2" height="16" />
+                  {/* Pixel Sun */}
+                  <rect x="5" y="5" width="4" height="4" />
+                  {/* Stepped Pixel Mountains */}
+                  <rect x="13" y="11" width="2" height="2" />
+                  <rect x="12" y="13" width="4" height="2" />
+                  <rect x="11" y="15" width="6" height="2" />
+                  <rect x="10" y="17" width="8" height="3" />
+                  <rect x="7" y="14" width="2" height="2" />
+                  <rect x="6" y="16" width="4" height="2" />
+                  <rect x="4" y="18" width="7" height="2" />
+                  {/* Pixel Sparkles (AI Transparency Magic) */}
+                  <rect x="17" y="5" width="1" height="3" />
+                  <rect x="16" y="6" width="3" height="1" />
                 </svg>
               </div>
               <h3 className="dropzone-title">{tr.bg_drop_title} <span className="highlight-text">{tr.bg_drop_browse}</span></h3>
@@ -327,7 +342,9 @@ export default function RemoveBackground({ lang = 'vi' }) {
             <div className="options-grid">
               <div className="option-item">
                 <label htmlFor="bg-engine-select" className="option-label">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
+                    <path d="M9 1H6L3 9h4l-2 6 8-8H9l1-6z" />
+                  </svg>
                   <span>{tr.bg_engine_label}</span>
                 </label>
                 <select 
@@ -347,7 +364,9 @@ export default function RemoveBackground({ lang = 'vi' }) {
 
               <div className="option-item" id="bg-model-select-wrapper">
                 <label htmlFor="bg-model-select" className="option-label">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
+                    <path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zm-3-2h2v2H9V5zm-4 4h2v2H5V9zm4 0h2v2H9V9zm-4-4h2v2H5V5z" />
+                  </svg>
                   <span>{tr.bg_model_label}</span>
                 </label>
                 <select 
@@ -362,7 +381,9 @@ export default function RemoveBackground({ lang = 'vi' }) {
 
               <div className="option-item">
                 <label htmlFor="bg-color-select" className="option-label">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0 0 20z" fill="currentColor"></path></svg>
+                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
+                    <path d="M5 1h6v2h2v2h1v6h-1v2h-2v2H5v-2H3v-2H2V5h1V3h2V1zm3 2v10h3v-2h1V5h-1V3H8z" />
+                  </svg>
                   <span>{tr.bg_color_label}</span>
                 </label>
                 <div className="bg-color-picker-wrapper">
@@ -432,8 +453,8 @@ export default function RemoveBackground({ lang = 'vi' }) {
                 disabled={isProcessing}
                 onClick={handleStartRemoveBg}
               >
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" shapeRendering="crispEdges">
+                  <path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zm-3-2h2v2H9V5zm-4 4h2v2H5V9zm4 0h2v2H9V9zm-4-4h2v2H5V5z" />
                 </svg>
                 <span>{isProcessing ? tr.bg_btn_processing : tr.bg_btn_action}</span>
               </button>

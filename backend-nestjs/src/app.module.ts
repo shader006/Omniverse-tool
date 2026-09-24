@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
@@ -12,10 +12,10 @@ import { UserSession } from './auth/entities/user-session.entity.js';
     // Ket noi CSDL dung better-sqlite3 (khong can cai dat rieng server)
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
-      database: 'oniverse.db',
+      database: process.env.DATABASE_PATH || 'oniverse.db',
       entities: [User, UserSession],
       synchronize: true,
-      logging: true,
+      logging: false,
     }),
     UserModule,
     AuthModule,
