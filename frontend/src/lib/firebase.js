@@ -15,12 +15,28 @@ const firebaseConfig = {
   storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId:     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-// Khởi tạo Firebase App (singleton)
-const app = initializeApp(firebaseConfig);
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.apiKey !== 'undefined' &&
+  firebaseConfig.apiKey !== 'YOUR_FIREBASE_API_KEY'
+);
 
-// Auth instance dùng chung toàn app
-export const auth = getAuth(app);
+let app = null;
+let auth = null;
 
+if (isFirebaseConfigured) {
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+  } catch (err) {
+    console.warn('[Firebase] Initialization error (auth disabled):', err);
+  }
+} else {
+  console.info('[Firebase] Firebase API key not provided. Running in guest mode without Firebase Auth.');
+}
+
+export { app, auth };
 export default app;

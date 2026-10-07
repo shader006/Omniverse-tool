@@ -33,7 +33,7 @@ import urllib.error
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80")
 WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent
 TEST_FILES_DIR = WORKSPACE_DIR / "malicious-pdf" / "output"
 DOWNLOADS_DIR = WORKSPACE_DIR / "downloads"

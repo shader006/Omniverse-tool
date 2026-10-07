@@ -41,7 +41,7 @@ export const authService = {
       if (res.ok) {
         const data = await res.json();
         if (data.session?.id) {
-          localStorage.setItem('oniverse_session_id', data.session.id);
+          localStorage.setItem('omniverse_session_id', data.session.id);
         }
         return data; // { user, session, message }
       }
@@ -94,13 +94,14 @@ export const authService = {
    * Đăng xuất: Thu hồi phiên trên NestJS backend rồi thoát Firebase
    */
   async logout(sessionId) {
-    const sid = sessionId || localStorage.getItem('oniverse_session_id');
+    const sid = sessionId || localStorage.getItem('omniverse_session_id') || localStorage.getItem('oniverse_session_id');
     if (sid) {
       try {
         await authApi.logout(sid);
       } catch (err) {
         console.warn('[AuthService] Lỗi thu hồi session backend:', err);
       }
+      localStorage.removeItem('omniverse_session_id');
       localStorage.removeItem('oniverse_session_id');
     }
     await signOut(auth);

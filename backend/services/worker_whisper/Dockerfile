@@ -1,5 +1,6 @@
-# ── Stage 1: Build whisper.cpp (AVX2 CPU optimization) ──
-FROM debian:bookworm-slim AS whisper-builder
+# ── Stage 1: Build whisper.cpp with CPU AVX2 / OpenMP ──
+FROM ubuntu:22.04 AS whisper-builder
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -9,27 +10,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /whisper
+
 RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git . \
-    && cmake -B build -DGGML_AVX2=ON -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
+    && cmake -B build \
+       -DWHISPER_BUILD_EXAMPLES=ON \
+       -DBUILD_SHARED_LIBS=OFF \
     && cmake --build build --config Release -j$(nproc)
 
 RUN mkdir -p /models && \
     curl -L -o /models/ggml-base.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin && \
     curl -L -o /models/ggml-small.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
 
-# ── Stage 2: Runtime Image ──
-FROM python:3.12-slim
+# ── Stage 2: Runtime Image (Python 3.10 Slim + FFmpeg) ──
+FROM python:3.10-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libgomp1 \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -u 1000 -m appuser
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
     fastapi>=0.115.0 \
     uvicorn[standard]>=0.32.0 \
     python-multipart>=0.0.12
@@ -53,3 +59,4 @@ EXPOSE 8002
 USER appuser
 
 CMD ["python3", "-m", "services.worker_whisper.main"]
+

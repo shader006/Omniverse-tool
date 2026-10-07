@@ -104,7 +104,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
     try {
       const res = await fetch('/assets/logo.png');
       const blob = await res.blob();
-      const demoFile = new File([blob], 'oniverse_logo_sample.png', { type: 'image/png' });
+      const demoFile = new File([blob], 'omniverse_logo_sample.png', { type: 'image/png' });
       handleFileSelect(demoFile);
     } catch (err) {
       console.warn('Demo logo fetch error:', err);
@@ -117,7 +117,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
       try {
         const res = await fetch('/assets/logo.png');
         const blob = await res.blob();
-        fileToProcess = new File([blob], 'oniverse_logo_sample.png', { type: 'image/png' });
+        fileToProcess = new File([blob], 'omniverse_logo_sample.png', { type: 'image/png' });
         setSelectedFile(fileToProcess);
         setSourceDataUrl('/assets/logo.png');
       } catch (e) {
@@ -153,7 +153,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
       // Fallback giả lập tách nền để chạy qua luôn kiểm tra giao diện xuất file
       console.warn('RMBG processing failed, simulating result for UI preview:', err);
       setTimeout(() => {
-        setProgressText('Đang bóc tách phông nền AI BiRefNet-Lite...');
+        setProgressText('Đang bóc tách nền ảnh...');
       }, 250);
 
       setTimeout(() => {
@@ -162,7 +162,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
           previewBase64: demoImgUrl,
           downloadUrl: demoImgUrl,
           processingTimeMs: 420,
-          engineDisplay: 'BiRefNet-Lite (AI SOTA)',
+          engineDisplay: '⚡ Xử lý tự động',
           filename: (fileToProcess?.name ? fileToProcess.name.replace(/\.[^/.]+$/, '') : 'removed_bg') + '.png'
         };
         setResultData(demoResult);
@@ -203,7 +203,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
     try {
       const res = await fetch(demoUrl);
       const blob = await res.blob();
-      const demoImgFile = new File([blob], 'oniverse_logo_sample.png', { type: 'image/png' });
+      const demoImgFile = new File([blob], 'omniverse_logo_sample.png', { type: 'image/png' });
       setSelectedFile(demoImgFile);
       setTransparentBlob(blob);
     } catch (e) {
@@ -215,7 +215,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
       downloadUrl: demoUrl,
       processingTimeMs: 420,
       engineDisplay: 'BiRefNet-Lite (AI SOTA)',
-      filename: 'oniverse_logo_removed_bg.png'
+      filename: 'omniverse_logo_removed_bg.png'
     });
   };
 
@@ -295,7 +295,10 @@ export default function RemoveBackground({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-quick-sample"
-                onClick={(e) => { e.stopPropagation(); handleLoadDemoImage(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLoadDemoImage(e);
+                }}
               >
                 {tr.bg_sample_btn}
               </button>
@@ -361,7 +364,6 @@ export default function RemoveBackground({ lang = 'vi' }) {
                   </option>
                 </select>
               </div>
-
               <div className="option-item" id="bg-model-select-wrapper">
                 <label htmlFor="bg-model-select" className="option-label">
                   <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
@@ -474,6 +476,9 @@ export default function RemoveBackground({ lang = 'vi' }) {
             <div className="progress-bar-track">
               <div id="bg-progress-bar" className="progress-bar-fill progress-bar-indeterminate"></div>
             </div>
+            <div style={{ marginTop: '8px', fontSize: '0.82rem', color: '#a1a1aa', textAlign: 'center' }}>
+              ℹ️ Lần đầu dùng có thể mất thời gian hơn dự kiến
+            </div>
           </div>
         )}
 
@@ -502,7 +507,7 @@ export default function RemoveBackground({ lang = 'vi' }) {
               <div className="result-meta">
                 <h3 className="result-title">{tr.bg_result_title}</h3>
                 <p id="bg-result-stats" className="result-subtitle">
-                  {tr.bg_result_time} {resultData.processingTimeMs || 0}ms • {resultData.engineDisplay || 'BiRefNet-Lite'}
+                  {tr.bg_result_time} {resultData.processingTimeMs || 0}ms • {resultData.engineDisplay || '⚡ Xử lý tự động'}
                 </p>
               </div>
             </div>
@@ -510,14 +515,14 @@ export default function RemoveBackground({ lang = 'vi' }) {
             {/* Comparison Slider */}
             <ComparisonSlider 
               beforeSrc={sourceDataUrl} 
-              afterSrc={resultData.previewBase64 || resultData.downloadUrl} 
+              afterSrc={resultData.downloadUrl || resultData.previewBase64} 
               lang={lang}
             />
 
             <div className="result-actions">
               <a 
                 id="bg-download-btn" 
-                href={resultData.downloadUrl} 
+                href={resultData.previewBase64 || resultData.downloadUrl} 
                 download={resultData.filename || 'removed_bg.png'} 
                 className="btn-download-pdf"
                 style={{ textDecoration: 'none' }}
@@ -538,10 +543,10 @@ export default function RemoveBackground({ lang = 'vi' }) {
         <div className="supported-formats-row">
           <span className="format-badge"><span className="badge-dot dot-word"></span> PNG Transparent</span>
           <span className="format-badge"><span className="badge-dot dot-excel"></span> JPG / JPEG</span>
-          <span className="format-badge"><span class="badge-dot dot-ppt"></span> WEBP</span>
-          <span className="format-badge"><span class="badge-dot dot-md"></span> BMP Image</span>
-          <span className="format-badge"><span class="badge-dot dot-html"></span> BiRefNet-Lite SOTA</span>
-          <span className="format-badge"><span class="badge-dot dot-txt"></span> Intel OpenVINO VNNI</span>
+          <span className="format-badge"><span className="badge-dot dot-ppt"></span> WEBP</span>
+          <span className="format-badge"><span className="badge-dot dot-md"></span> BMP Image</span>
+          <span className="format-badge"><span className="badge-dot dot-html"></span> AI HD Quality</span>
+          <span className="format-badge"><span className="badge-dot dot-txt"></span> Auto Optimized</span>
         </div>
       </div>
     </section>

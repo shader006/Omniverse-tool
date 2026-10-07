@@ -17,6 +17,21 @@ import uvicorn
 import pikepdf
 from pdf2docx import Converter
 
+# Tự động nạp cấu hình từ .env nếu có
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for _p in _env_paths:
+        if os.path.exists(_p):
+            load_dotenv(_p)
+            break
+except ImportError:
+    pass
+
 from post_processor import post_process_docx
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

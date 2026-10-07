@@ -18,7 +18,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
  * });
  */
 export async function apiFetch(url, options = {}) {
-  const currentUser = auth.currentUser;
+  const currentUser = auth?.currentUser;
 
   // Lấy token (tự refresh nếu hết hạn)
   const token = currentUser ? await currentUser.getIdToken() : null;

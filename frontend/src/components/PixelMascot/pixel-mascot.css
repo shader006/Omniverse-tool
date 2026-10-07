@@ -1,0 +1,244 @@
+/* ==================== PIXEL MASCOT COMPONENT STYLES ==================== */
+
+.pixel-mascot-container {
+  position: fixed;
+  bottom: 20px;
+  right: 28px;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+  pointer-events: auto;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.6));
+  animation: mascot-intro 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes mascot-intro {
+  0% {
+    transform: translateY(60px) scale(0.7);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Retro Pixel Speech Bubble */
+.pixel-mascot-bubble {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 8px;
+  background: #0f172a;
+  border: 2px solid #38bdf8;
+  box-shadow: 
+    -2px 0 0 0 #000,
+    2px 0 0 0 #000,
+    0 -2px 0 0 #000,
+    0 2px 0 0 #000,
+    0 4px 12px rgba(56, 189, 248, 0.3);
+  padding: 6px 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px) scale(0.92);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pixel-mascot-bubble.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.pixel-mascot-bubble-text {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.65rem;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.pixel-mascot-bubble-tail {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid #38bdf8;
+}
+
+/* Minimize Toggle Button */
+.pixel-mascot-minimize-btn {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  background: #1e293b;
+  border: 2px solid #475569;
+  border-radius: 50%;
+  color: #94a3b8;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+  z-index: 100;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.pixel-mascot-container:hover .pixel-mascot-minimize-btn {
+  opacity: 1;
+}
+
+.pixel-mascot-minimize-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #f87171;
+  transform: scale(1.15);
+}
+
+/* Main Interactive Mascot Button */
+.pixel-mascot-btn {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.1s ease;
+}
+
+.pixel-mascot-btn:focus-visible {
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.8));
+}
+
+.pixel-mascot-btn:hover {
+  transform: translateY(-2px);
+}
+
+.pixel-mascot-btn:active {
+  transform: translateY(1px);
+}
+
+.pixel-mascot-squash {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 82%;
+}
+
+/* Sprite Sheets Layer (Pixel Art Rendering) */
+.pixel-mascot-sprite-layer {
+  position: absolute;
+  inset: 0;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+  transition: opacity 0.08s ease-in-out;
+}
+
+/* Ground Shadow */
+.pixel-mascot-shadow {
+  width: 65%;
+  height: 10px;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.6) 0%, rgba(0, 0, 0, 0) 70%);
+  margin-top: -6px;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: shadow-breathe 2.5s ease-in-out infinite alternate;
+}
+
+@keyframes shadow-breathe {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0.85;
+  }
+}
+
+/* Minimized Floating Icon */
+.pixel-mascot-minimized-wrapper {
+  position: fixed;
+  bottom: 20px;
+  right: 28px;
+  z-index: 95;
+  animation: mascot-intro 0.3s ease-out;
+}
+
+.pixel-mascot-restore-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #0f172a;
+  border: 2px solid #38bdf8;
+  box-shadow: 
+    -2px 0 0 0 #000,
+    2px 0 0 0 #000,
+    0 -2px 0 0 #000,
+    0 2px 0 0 #000,
+    0 4px 10px rgba(0, 0, 0, 0.5);
+  padding: 6px 12px;
+  border-radius: 20px;
+  color: #38bdf8;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.6rem;
+  transition: all 0.15s ease;
+}
+
+.pixel-mascot-restore-btn:hover {
+  background: #1e293b;
+  transform: translateY(-2px);
+  box-shadow: 
+    -2px 0 0 0 #000,
+    2px 0 0 0 #000,
+    0 -2px 0 0 #000,
+    0 2px 0 0 #000,
+    0 0 12px rgba(56, 189, 248, 0.5);
+}
+
+.pixel-mascot-mini-icon {
+  font-size: 1rem;
+}
+
+/* Mobile Screen Adaptations */
+@media (max-width: 768px) {
+  .pixel-mascot-container {
+    bottom: 14px;
+    right: 14px;
+  }
+
+  .pixel-mascot-btn {
+    width: 80px !important;
+    height: 80px !important;
+  }
+
+  .pixel-mascot-bubble-text {
+    font-size: 0.55rem;
+  }
+
+  .pixel-mascot-minimized-wrapper {
+    bottom: 14px;
+    right: 14px;
+  }
+}

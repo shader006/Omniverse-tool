@@ -55,6 +55,14 @@ def safe_free_memory():
 rss_start = get_rss_mb()
 
 # 1. Warmup Model
+backend_dir = os.path.abspath("backend")
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 from app.rmbg.remover import remove_background, get_birefnet_engine
 engine = get_birefnet_engine()
 safe_free_memory()

@@ -1,9 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+
+  <!-- Trang chủ -->
   <url>
     <loc>https://www.omniversetool.online/</loc>
-    <lastmod>2026-09-03</lastmod>
+    <lastmod>2026-09-29</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="vi" href="https://www.omniversetool.online/"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://www.omniversetool.online/"/>
   </url>
+
+  <!-- Công cụ Tải MP3/MP4 từ URL -->
+  <url>
+    <loc>https://www.omniversetool.online/#url</loc>
+    <lastmod>2026-09-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- Công cụ Chuyển đổi File & PDF -->
+  <url>
+    <loc>https://www.omniversetool.online/#file</loc>
+    <lastmod>2026-09-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- Công cụ Nhận dạng giọng nói Whisper AI -->
+  <url>
+    <loc>https://www.omniversetool.online/#transcribe</loc>
+    <lastmod>2026-09-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- Công cụ Xóa phông ảnh AI -->
+  <url>
+    <loc>https://www.omniversetool.online/#bg</loc>
+    <lastmod>2026-09-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- Công cụ Pixel Art Fixer AI -->
+  <url>
+    <loc>https://www.omniversetool.online/#pixel</loc>
+    <lastmod>2026-09-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
 </urlset>

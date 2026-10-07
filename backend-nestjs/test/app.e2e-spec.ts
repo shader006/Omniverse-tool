@@ -26,6 +26,56 @@ describe('App & Auth (e2e)', () => {
     expect(res.body.project).toBe('Oniverse - Multi Media & AI Tools');
   });
 
+  it('/api/v1/auth/register & /login-jwt & /profile (POST, GET) - Chuan NestJS JWT Authentication', async () => {
+    const testEmail = `student_${Date.now()}@phenikaa.edu.vn`;
+    const testPass = 'Student@123';
+    const testUsername = 'NguyenVanA';
+
+    // 1. Dang ky tai khoan moi
+    const regRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        email: testEmail,
+        password: testPass,
+        username: testUsername,
+      })
+      .expect(201);
+
+    expect(regRes.body.message).toContain('Đăng ký tài khoản thành công');
+    expect(regRes.body.access_token).toBeDefined();
+    expect(regRes.body.user).toBeDefined();
+    expect(regRes.body.user.email).toBe(testEmail);
+    expect(regRes.body.user.password).toBeUndefined(); // Mật khẩu không bị lộ
+
+    // 2. Dang nhap voi Email & Password
+    const loginRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        email: testEmail,
+        password: testPass,
+      })
+      .expect(200);
+
+    expect(loginRes.body.message).toContain('Đăng nhập thành công');
+    expect(loginRes.body.access_token).toBeDefined();
+    const token = loginRes.body.access_token;
+
+    // 3. Truy cap route bao ve /profile khi khong co token -> 401 Unauthorized
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/profile')
+      .expect(401);
+
+    // 4. Truy cap route bao ve /profile voi Bearer token hop le -> 200 OK
+    const profileRes = await request(app.getHttpServer())
+      .get('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(profileRes.body.message).toContain('Xác thực JWT thành công');
+    expect(profileRes.body.user).toBeDefined();
+    expect(profileRes.body.user.email).toBe(testEmail);
+  });
+
   it('/api/v1/auth/login (POST) - Dang nhap voi token demo thanh cong', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/auth/login')
@@ -63,6 +113,8 @@ describe('App & Auth (e2e)', () => {
   });
 
   afterEach(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 });

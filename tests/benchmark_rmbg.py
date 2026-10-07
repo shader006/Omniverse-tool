@@ -25,6 +25,11 @@ except ImportError:
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 
 from app.rmbg.remover import remove_background, get_optimal_cpu_threads
 

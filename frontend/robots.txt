@@ -2,5 +2,14 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /downloads/
+Disallow: /admin/
+
+# Cho phép Googlebot crawl tất cả assets
+User-agent: Googlebot
+Allow: /assets/
+Allow: /fonts/
+
+# Tối ưu crawl budget
+Crawl-delay: 1
 
 Sitemap: https://www.omniversetool.online/sitemap.xml

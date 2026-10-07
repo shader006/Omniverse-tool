@@ -1,24 +1,3 @@
-﻿/**
- * ============================================================
- * ENTITY: User (Nguoi Dung)
- * ============================================================
- * Anh xa tu UML Class Diagram trong README.md:
- *
- *   class User {
- *     -String userId          --> firebaseUid (Firebase UID)
- *     -String username        --> username
- *     -String sessionToken    --> quan ly boi UserSession entity
- *     -String currentLanguage --> currentLanguage
- *     +createJob(...)         --> xu ly o MediaJobService
- *     +getJobStatus(jobId)    --> xu ly o MediaJobService
- *     +downloadResult(jobId)  --> xu ly o MediaJobService
- *     +switchLanguage(lang)   --> switchLanguage() method o day
- *   }
- *
- * Quan he:
- *   User (1) ---- (*) UserSession   [Aggregation: 1 user - nhieu phien]
- * ============================================================
- */
 
 import {
   Entity,
@@ -65,9 +44,14 @@ export class User {
   id: string;
 
   // ── Firebase UID: tương ứng -String userId trong UML ─────────────────────
-  @Column({ unique: true, nullable: false, name: 'firebase_uid' })
-  @IsNotEmpty()
-  firebaseUid: string;
+  @Column({ unique: true, nullable: true, name: 'firebase_uid' })
+  @IsOptional()
+  firebaseUid?: string;
+
+  // ── Password hash (cho NestJS JWT Authentication) ────────────────────────
+  @Column({ nullable: true, name: 'password', length: 255 })
+  @IsOptional()
+  password?: string;
 
   // ── Ten tai khoan: tuong ung -String username trong UML ───────────────────
   @Column({ nullable: true, name: 'username', length: 100 })

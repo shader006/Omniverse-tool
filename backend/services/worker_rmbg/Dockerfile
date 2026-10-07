@@ -1,5 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.10-slim
 
+# Cài đặt các thư viện hệ thống cần thiết cho OpenVINO / CPU
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     ca-certificates \
@@ -9,7 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir \
+# Cài đặt OpenVINO và ONNX Runtime tối ưu cho CPU Intel AVX / Iris Xe
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
     fastapi>=0.115.0 \
     uvicorn[standard]>=0.32.0 \
     python-multipart>=0.0.12 \
@@ -35,3 +38,4 @@ EXPOSE 8003
 USER appuser
 
 CMD ["python3", "-m", "services.worker_rmbg.main"]
+

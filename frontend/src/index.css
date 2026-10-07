@@ -748,16 +748,321 @@ body {
 
 /* Footer */
 .footer {
+  border-top: 3px solid #1e293b;
+  background: #05070a;
+  padding: 0;
+}
+
+.footer-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
   text-align: center;
-  padding: 30px 20px;
-  color: #64748b;
+}
+
+.footer-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.footer-logo-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.8rem;
+  color: #e2e8f0;
+  letter-spacing: 2px;
+  text-shadow:
+    -1px -1px 0 #000,
+     1px  1px 0 #000;
+}
+
+.footer-tagline {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.45rem;
+  color: #334155;
+  letter-spacing: 1px;
+}
+
+.footer-legal {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.footer-link {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.48rem;
+  color: #475569;
+  background: none;
+  border: none;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  padding: 2px 4px;
+  transition: color 0.1s ease;
+}
+
+.footer-link:hover {
+  color: #22c55e;
+  text-shadow: 0 0 8px rgba(34,197,94,0.3);
+}
+
+.footer-dot {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #1e293b;
+}
+
+.footer-copy {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  color: #1e293b;
+  letter-spacing: 0.5px;
+}
+
+/* ── About Us Page ── */
+.about-page {
+  background: #07090e;
+  min-height: 100vh;
+  flex: 1;
+}
+
+.about-hero {
+  text-align: center;
+  padding: 60px 20px 40px;
+  background: linear-gradient(180deg, #0d1117 0%, #07090e 100%);
+  border-bottom: 2px solid #1e293b;
+}
+
+.about-hero-badge {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #22c55e;
+  letter-spacing: 4px;
+  margin-bottom: 16px;
+  border: 1px solid #22c55e;
+  display: inline-block;
+  padding: 6px 16px;
+}
+
+.about-hero-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(1.2rem, 4vw, 2rem);
+  color: #f8fafc;
+  margin: 0 0 12px;
+  text-shadow:
+    -3px -3px 0 #000,
+     3px  3px 0 #000;
+  letter-spacing: 4px;
+}
+
+.about-hero-desc {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.45rem, 1.2vw, 0.6rem);
+  color: #475569;
+  margin: 0;
+  line-height: 2;
+  letter-spacing: 0.5px;
+}
+
+.about-content {
+  padding: 40px 20px 60px;
+}
+
+.about-section {
+  margin-bottom: 40px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid #0f172a;
+}
+
+.about-section:last-child {
+  border-bottom: none;
+}
+
+.about-section-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #22c55e;
+  letter-spacing: 3px;
+  margin-bottom: 20px;
+}
+
+/* Tools grid */
+.about-tools-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.about-tool-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #0d1117;
+  border: 2px solid #1e293b;
+  padding: 14px 16px;
+  transition: border-color 0.1s ease;
+}
+
+.about-tool-card:hover {
+  border-color: #334155;
+}
+
+.about-tool-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.about-tool-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  color: #e2e8f0;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.about-tool-desc {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.45rem;
+  color: #475569;
+  line-height: 1.8;
+  letter-spacing: 0.3px;
+}
+
+.about-cta-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #000;
+  background: #22c55e;
+  border: 2px solid #16a34a;
+  padding: 12px 20px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 #000;
+  transition: all 0.1s ease;
+  margin-top: 8px;
+}
+
+.about-cta-btn:hover {
+  background: #4ade80;
+  transform: translateY(-1px);
+  box-shadow: 4px 4px 0 #000;
+}
+
+/* Tech list */
+.about-tech-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.about-tech-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #94a3b8;
+  letter-spacing: 0.5px;
+  padding: 10px 14px;
+  background: #0a0c10;
+  border-left: 3px solid #1e293b;
+}
+
+.about-tech-role {
+  margin-left: auto;
+  color: #334155;
+  font-size: 0.42rem;
+}
+
+/* Policy cards in About */
+.about-policy-card {
+  display: flex;
+  gap: 16px;
+  background: #0d1117;
+  border: 2px solid #1e293b;
+  padding: 20px;
+  align-items: flex-start;
+}
+
+.about-policy-card-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+
+.about-policy-card-content {
+  flex: 1;
+}
+
+.about-policy-card-title {
   font-family: 'Press Start 2P', monospace;
   font-size: 0.65rem;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+  letter-spacing: 0.5px;
+}
+
+.about-policy-card-desc {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.48rem;
+  color: #475569;
+  line-height: 2;
+  margin-bottom: 14px;
+  letter-spacing: 0.3px;
+}
+
+.about-policy-read-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #22c55e;
+  background: transparent;
+  border: 1px solid #22c55e;
+  padding: 8px 14px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.1s ease;
+}
+
+.about-policy-read-btn:hover {
+  background: rgba(34,197,94,0.1);
+  box-shadow: 0 0 8px rgba(34,197,94,0.2);
+}
+
+/* Contact */
+.about-contact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-contact-list div {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #475569;
   letter-spacing: 0.5px;
   line-height: 1.8;
-  border-top: 4px solid #111827;
-  background: #050608;
 }
+
+@media (max-width: 640px) {
+  .about-tool-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .about-policy-card {
+    flex-direction: column;
+  }
+  .footer-inner {
+    gap: 12px;
+  }
+}
+
 
 .hidden {
   display: none !important;
@@ -860,14 +1165,14 @@ body {
 }
 
 .file-input-hidden {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 5;
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  left: -9999px !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
 }
 
 .dropzone-icon {
@@ -1496,6 +1801,7 @@ body {
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+  position: relative;
 }
 
 .spotify-lyrics-header {
@@ -1555,8 +1861,7 @@ body {
 .spotify-lyrics-body {
   max-height: 420px;
   overflow-y: auto;
-  padding: 28px 24px;
-  scroll-behavior: smooth;
+  padding: 24px;
 }
 
 .spotify-lyrics-body::-webkit-scrollbar {
@@ -1579,21 +1884,24 @@ body {
 .spotify-lyric-item,
 .spotify-lyrics-line {
   padding: 12px 16px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: flex-start;
   gap: 16px;
-  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   user-select: none;
   border: 1px solid transparent;
+  border-left: 4px solid transparent;
+  box-sizing: border-box;
 }
 
 .spotify-lyric-item:hover,
 .spotify-lyrics-line:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);
+  border-left-color: rgba(168, 85, 247, 0.4);
 }
 
 .spotify-lyric-time,
@@ -1629,12 +1937,12 @@ body {
 .spotify-lyric-text,
 .lyrics-text {
   flex: 1;
-  font-size: 0.84rem !important;
+  font-size: 0.88rem !important;
   font-weight: 500;
   color: #94a3b8;
-  line-height: 1.8;
+  line-height: 1.7;
   letter-spacing: 0.01em;
-  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
 .spotify-lyric-item:hover .spotify-lyric-text,
@@ -1642,15 +1950,13 @@ body {
   color: #f1f5f9;
 }
 
-/* ACTIVE LYRIC (Highlighted during audio playback) */
+/* ACTIVE LYRIC (Highlighted during audio playback - zero layout shifts) */
 .spotify-lyric-item.active-lyric,
 .spotify-lyrics-line.active {
   background: rgba(147, 51, 234, 0.22) !important;
   border: 1px solid rgba(168, 85, 247, 0.5) !important;
-  border-left: 5px solid #a855f7 !important;
-  padding-left: 18px;
+  border-left: 4px solid #a855f7 !important;
   box-shadow: 0 4px 20px rgba(147, 51, 234, 0.25), inset 0 0 15px rgba(168, 85, 247, 0.12);
-  transform: translateX(4px);
 }
 
 .spotify-lyric-item.active-lyric .spotify-lyric-time,
@@ -1670,7 +1976,7 @@ body {
 .spotify-lyrics-line.active .lyrics-text {
   color: #ffffff !important;
   font-weight: 700;
-  font-size: 0.90rem !important;
+  font-size: 0.88rem !important;
   text-shadow: 0 0 12px rgba(255, 255, 255, 0.6), 0 0 20px rgba(168, 85, 247, 0.6) !important;
 }
 
@@ -1690,6 +1996,47 @@ body {
   padding: 40px 20px;
   color: var(--text-muted);
   font-size: 1rem;
+}
+
+/* Floating Return to Current Lyric button */
+.lyrics-sync-back-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 24px;
+  z-index: 20;
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.95), rgba(126, 34, 206, 0.95));
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(192, 132, 252, 0.5);
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(147, 51, 234, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: lyricsBtnFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lyrics-sync-back-btn:hover {
+  background: linear-gradient(135deg, #a855f7, #9333ea);
+  border-color: #e9d5ff;
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 24px rgba(147, 51, 234, 0.55), 0 0 20px rgba(168, 85, 247, 0.6);
+}
+
+@keyframes lyricsBtnFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Responsive */
@@ -1899,6 +2246,7 @@ body {
   color: var(--text-main, #f8fafc);
 }
 
+/* Legacy grid (kept for fallback) */
 .faq-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -1934,6 +2282,349 @@ body {
   line-height: 1.6;
   color: #94a3b8;
   margin: 0;
+}
+
+/* ==================== FAQ ACCORDION (ENHANCED SEO) ==================== */
+.faq-section-enhanced {
+  margin-top: 56px;
+  margin-bottom: 48px;
+}
+
+.faq-title-pixel {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.75rem, 2vw, 1rem);
+  color: #f8fafc;
+  text-align: center;
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+  text-shadow:
+    -2px -2px 0 #000,
+     2px -2px 0 #000,
+    -2px  2px 0 #000,
+     2px  2px 0 #000;
+}
+
+.faq-subtitle-pixel {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #64748b;
+  text-align: center;
+  margin-bottom: 28px;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
+}
+
+.faq-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 2px solid #1e293b;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.faq-accordion-item {
+  border-bottom: 2px solid #1e293b;
+}
+.faq-accordion-item:last-child {
+  border-bottom: none;
+}
+
+.faq-accordion-btn {
+  width: 100%;
+  background: #090a0d;
+  border: none;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+  position: relative;
+}
+
+.faq-accordion-btn:hover {
+  background: #0d1117;
+}
+
+.faq-accordion-btn.open {
+  background: #0f172a;
+  border-left: 3px solid #22c55e;
+}
+
+.faq-accordion-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  width: 28px;
+  text-align: center;
+}
+
+.faq-accordion-q {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.58rem, 1.5vw, 0.72rem);
+  color: #e2e8f0;
+  line-height: 1.6;
+  flex: 1;
+  margin: 0;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+}
+
+.faq-accordion-btn.open .faq-accordion-q {
+  color: #22c55e;
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+}
+
+.faq-accordion-chevron {
+  font-size: 0.6rem;
+  color: #475569;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.faq-accordion-chevron.rotated {
+  transform: rotate(180deg);
+  color: #22c55e;
+}
+
+.faq-accordion-body {
+  background: #070a10;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.28s ease, padding 0.2s ease;
+  padding: 0 20px;
+}
+
+.faq-accordion-body.expanded {
+  max-height: 400px;
+  padding: 14px 20px 18px 60px;
+}
+
+.faq-accordion-body p {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.62rem;
+  color: #94a3b8;
+  line-height: 2;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+/* ==================== FEATURES GRID SEO (ENHANCED) ==================== */
+.features-section-seo {
+  margin-top: 56px;
+  margin-bottom: 48px;
+}
+
+.features-heading-seo {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.65rem, 1.8vw, 0.9rem);
+  color: #f8fafc;
+  text-align: center;
+  margin-bottom: 10px;
+  letter-spacing: 1px;
+  text-shadow:
+    -2px -2px 0 #000,
+     2px -2px 0 #000,
+    -2px  2px 0 #000,
+     2px  2px 0 #000;
+}
+
+.features-subheading-seo {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  color: #64748b;
+  text-align: center;
+  margin-bottom: 32px;
+  line-height: 1.9;
+  letter-spacing: 0.3px;
+}
+
+.features-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.feature-card-seo {
+  background: #090a0d;
+  border: 2px solid #1e293b;
+  box-shadow: 3px 3px 0 #000;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-card-seo::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--card-accent, #22c55e);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.feature-card-seo:hover {
+  transform: translateY(-3px);
+  border-color: var(--card-accent, #22c55e);
+  box-shadow: 5px 5px 0 #000, 0 0 14px rgba(34, 197, 94, 0.15);
+}
+
+.feature-card-seo:hover::before {
+  opacity: 1;
+}
+
+.feature-card-inner {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+
+.feature-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.feature-card-emoji {
+  font-size: 1.6rem;
+}
+
+.feature-card-badge {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.45rem;
+  padding: 4px 8px;
+  border: 1px solid;
+  letter-spacing: 0.5px;
+  background: transparent;
+}
+
+.feature-card-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.68rem;
+  color: #f8fafc;
+  line-height: 1.7;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.feature-card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.feature-card-link:hover {
+  color: var(--card-accent, #22c55e);
+}
+
+.feature-card-desc {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  color: #64748b;
+  line-height: 1.9;
+  margin: 0;
+  letter-spacing: 0.3px;
+  flex: 1;
+}
+
+/* Hidden keyword list – visible to crawlers, hidden visually */
+.feature-card-keywords {
+  display: none;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feature-card-cta {
+  display: inline-block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.58rem;
+  color: #000;
+  font-weight: bold;
+  padding: 10px 14px;
+  text-decoration: none;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+  transition: filter 0.15s ease, transform 0.1s ease;
+  align-self: flex-start;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.feature-card-cta:hover {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+  box-shadow: 3px 3px 0 #000;
+}
+
+.feature-card-cta:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 #000;
+}
+
+/* ==================== STATS BAR ==================== */
+.features-stats-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 32px;
+  padding: 20px;
+  background: #090a0d;
+  border: 2px solid #1e293b;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat-number {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.9rem, 2vw, 1.2rem);
+  color: #22c55e;
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+  letter-spacing: 1px;
+}
+
+.stat-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #475569;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.stat-divider {
+  color: #1e293b;
+  font-size: 1.5rem;
+  user-select: none;
+}
+
+@media (max-width: 640px) {
+  .faq-accordion-body.expanded {
+    padding-left: 20px;
+  }
+  .features-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .features-stats-bar {
+    gap: 16px;
+  }
+  .stat-divider {
+    display: none;
+  }
 }
 
 /* Quick demo sample button for export UI testing */

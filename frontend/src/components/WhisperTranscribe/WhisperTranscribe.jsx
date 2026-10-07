@@ -1,17 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { formatFileBytes, formatDurationHuman } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
-import { aiService } from '../../services/ai.service';
+import { transcribeHybrid } from '../../utils/whisperClient';
 import SyncedLyrics from './SyncedLyrics';
 import RawTextView from './RawTextView';
+import WhisperArchitectureModal from './WhisperArchitectureModal';
 
 export default function WhisperTranscribe({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
 
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isArchModalOpen, setIsArchModalOpen] = useState(false);
   const [language, setLanguage] = useState('auto');
   const [format, setFormat] = useState('txt');
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [progressText, setProgressText] = useState('');
+  const [progressPercent, setProgressPercent] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
   const [resultData, setResultData] = useState(null);
   const [mediaBlobUrl, setMediaBlobUrl] = useState('');
@@ -68,7 +72,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
   const getDemoSegments = () => {
     if (lang === 'en') {
       return [
-        { id: 1, start: 0.0, end: 4.2, text: "Welcome to Oniverse Tool - The multi-media suite with authentic 8-bit retro pixel style." },
+        { id: 1, start: 0.0, end: 4.2, text: "Welcome to Omniverse Tool - The multi-media suite with authentic 8-bit retro pixel style." },
         { id: 2, start: 4.5, end: 9.8, text: "OpenAI Whisper AI automatically transcribes speech and detects timestamps with high precision." },
         { id: 3, start: 10.2, end: 16.5, text: "Supports real-time Live Synced Lyrics synchronization and raw text viewing." },
         { id: 4, start: 17.0, end: 23.4, text: "You can click any lyric segment below to seek and jump playback instantly." },
@@ -76,7 +80,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       ];
     }
     return [
-      { id: 1, start: 0.0, end: 4.2, text: "Chào mừng bạn đến với Oniverse Tool - Bộ công cụ Media đa năng phong cách Pixel." },
+      { id: 1, start: 0.0, end: 4.2, text: "Chào mừng bạn đến với Omniverse Tool - Bộ công cụ Media đa năng phong cách Pixel." },
       { id: 2, start: 4.5, end: 9.8, text: "Công nghệ Whisper AI tự động nhận diện và bóc tách giọng nói với độ chính xác cao." },
       { id: 3, start: 10.2, end: 16.5, text: "Hỗ trợ đồng bộ lời bài hát trực tiếp (Live Synced Lyrics) và xem văn bản thô tiện lợi." },
       { id: 4, start: 17.0, end: 23.4, text: "Bạn có thể bấm vào bất kỳ câu nào để nghe phát lại đoạn âm thanh tương ứng." },
@@ -141,7 +145,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     if (e) e.stopPropagation();
     const demoWav = generateDemoWavBlob(30);
     if (demoWav) {
-      const demoFile = new File([demoWav], 'oniverse_voice_sample.wav', { type: 'audio/wav' });
+      const demoFile = new File([demoWav], 'omniverse_voice_sample.wav', { type: 'audio/wav' });
       handleFileChange(demoFile);
     }
   };
@@ -151,26 +155,35 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
     if (!fileToTranscribe) {
       const demoWav = generateDemoWavBlob(30);
       if (demoWav) {
-        fileToTranscribe = new File([demoWav], 'oniverse_voice_sample.wav', { type: 'audio/wav' });
+        fileToTranscribe = new File([demoWav], 'omniverse_voice_sample.wav', { type: 'audio/wav' });
         setSelectedFile(fileToTranscribe);
       }
     }
 
     setErrorMsg('');
     setIsTranscribing(true);
+    setProgressText('Đang chuẩn bị bộ xử lý AI (Lần đầu dùng có thể mất thời gian hơn dự kiến)...');
+    setProgressPercent(10);
     setResultData(null);
 
-    const formData = new FormData();
-    if (fileToTranscribe) formData.append('file', fileToTranscribe);
-    formData.append('language', language);
-    formData.append('format', format);
+    const reqStartTime = performance.now();
 
     try {
-      const data = await aiService.transcribeAudio({
-        file: fileToTranscribe,
-        language: language,
-        format: format,
-      });
+      const data = await transcribeHybrid(
+        fileToTranscribe,
+        {
+          language,
+          format,
+          task: 'transcribe'
+        },
+        (msg, pct) => {
+          if (msg) setProgressText(msg);
+          if (typeof pct === 'number') setProgressPercent(pct);
+        }
+      );
+
+      const totalElapsedSec = Number(((performance.now() - reqStartTime) / 1000).toFixed(2));
+      if (!data.total_e2e_time) data.total_e2e_time = totalElapsedSec;
 
       if (fileToTranscribe) {
         const blobUrl = URL.createObjectURL(fileToTranscribe);
@@ -180,14 +193,13 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       setLyricsView('live');
       setIsTranscribing(false);
     } catch (err) {
-      // Fallback giả lập dữ liệu mẫu để chạy qua luôn kiểm tra giao diện xuất file
-      console.warn('Whisper server offline, simulating transcribe result for UI preview:', err);
+      console.warn('Whisper transcribe error, simulating transcribe result for UI preview:', err);
       setTimeout(() => {
         const demoSegments = getDemoSegments();
         const demoFullText = demoSegments.map(s => s.text).join('\n\n');
         const dummyBlob = new Blob([demoFullText], { type: 'text/plain;charset=utf-8' });
         const dummyDownloadUrl = URL.createObjectURL(dummyBlob);
-        const fileName = fileToTranscribe?.name ? fileToTranscribe.name.replace(/\.[^/.]+$/, '') : 'oniverse_voice_sample';
+        const fileName = fileToTranscribe?.name ? fileToTranscribe.name.replace(/\.[^/.]+$/, '') : 'omniverse_voice_sample';
 
         if (!mediaBlobUrl) {
           if (fileToTranscribe && fileToTranscribe.size > 1000 && !fileToTranscribe.name.includes('dummy')) {
@@ -237,7 +249,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       const demoWav = generateDemoWavBlob(30);
       if (demoWav) {
         audioUrl = URL.createObjectURL(demoWav);
-        const demoAudioFile = new File([demoWav], 'oniverse_voice_sample.wav', { type: 'audio/wav' });
+        const demoAudioFile = new File([demoWav], 'omniverse_voice_sample.wav', { type: 'audio/wav' });
         setSelectedFile(demoAudioFile);
       }
     }
@@ -255,7 +267,7 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       audio_duration: 29.5,
       processing_time: 1.2,
       model_used: 'whisper-small',
-      filename: 'oniverse_voice_sample.txt',
+      filename: 'omniverse_voice_sample.txt',
       download_url: dummyDownloadUrl,
       text: demoFullText,
       segments: demoSegments
@@ -286,8 +298,8 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       </div>
 
       <div className="card file-converter-card">
-        {/* Nút Test Giao Diện Xuất File */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+        {/* Nút Test Giao Diện & Nút Xem Kiến Trúc AI Whisper */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
           <button 
             type="button" 
             className="btn-test-export"
@@ -295,6 +307,16 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
             title={tr.whisper_test_btn}
           >
             {tr.whisper_test_btn}
+          </button>
+
+          <button
+            type="button"
+            className="btn-test-export"
+            style={{ borderColor: '#38bdf8', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.08)' }}
+            onClick={() => setIsArchModalOpen(true)}
+            title={lang === 'vi' ? 'Xem Sơ Đồ Kiến Trúc Đa Tầng AI Whisper' : 'Explore Whisper AI Architecture'}
+          >
+            🏛️ {lang === 'vi' ? 'Kiến Trúc AI Whisper' : 'AI Architecture'}
           </button>
         </div>
 
@@ -347,7 +369,10 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-quick-sample"
-                onClick={(e) => { e.stopPropagation(); handleLoadDemoAudio(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLoadDemoAudio(e);
+                }}
               >
                 {tr.whisper_sample_btn}
               </button>
@@ -472,11 +497,14 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
         {isTranscribing && (
           <div className="active-progress-banner" style={{ marginTop: '16px' }}>
             <div className="progress-info-row">
-              <span>{tr.whisper_progress_banner}</span>
-              <span>Silero VAD</span>
+              <span>{progressText || tr.whisper_progress_banner}</span>
+              <span>{progressPercent ? `${progressPercent}%` : 'Đang xử lý'}</span>
             </div>
             <div className="progress-track">
-              <div className="progress-bar-fill" style={{ width: '75%', background: 'linear-gradient(90deg, #9333ea, #3b82f6)' }}></div>
+              <div className="progress-bar-fill" style={{ width: `${progressPercent || 75}%`, background: 'linear-gradient(90deg, #9333ea, #3b82f6)' }}></div>
+            </div>
+            <div style={{ marginTop: '8px', fontSize: '0.82rem', color: '#a1a1aa', textAlign: 'center' }}>
+              ℹ️ Lần đầu dùng có thể mất thời gian hơn dự kiến
             </div>
           </div>
         )}
@@ -490,12 +518,19 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
                 <div className="result-header-text">
                   <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{tr.whisper_result_success}</h4>
                   <div className="transcribe-meta-tags">
-                    <span className="meta-tag" style={{ background: 'rgba(147, 51, 234, 0.2)', borderColor: 'rgba(147, 51, 234, 0.4)', color: '#c084fc', fontWeight: 700 }}>
-                      AI: {rawModel || 'SMALL'}
+                    <span className="meta-tag" style={{ background: 'rgba(16, 185, 129, 0.2)', borderColor: 'rgba(16, 185, 129, 0.4)', color: '#34d399', fontWeight: 700 }}>
+                      {resultData.engineDisplay || '⚡ Xử lý tự động'}
                     </span>
                     <span className="meta-tag">{tr.whisper_result_lang} {(resultData.detected_language || (lang === 'en' ? 'en' : 'vi')).toUpperCase()}</span>
                     <span className="meta-tag">{tr.whisper_result_duration} {formatDurationHuman(resultData.audio_duration)}</span>
-                    <span className="meta-tag">{tr.whisper_result_process_time} {resultData.processing_time || 0}s</span>
+                    <span className="meta-tag" title="Thời gian AI phân tích và trích xuất giọng nói" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#34d399', fontWeight: 600 }}>
+                      ⚡ {tr.whisper_result_process_time} {resultData.processing_time || 0}s
+                    </span>
+                    {resultData.total_e2e_time ? (
+                      <span className="meta-tag" title="Tổng thời gian toàn trình từ lúc tải lên" style={{ background: 'rgba(59, 130, 246, 0.15)', borderColor: 'rgba(59, 130, 246, 0.35)', color: '#60a5fa', fontWeight: 600 }}>
+                        ⏱️ {tr.whisper_result_total_time} {resultData.total_e2e_time}s
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -601,6 +636,13 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
           <span className="format-badge"><span className="badge-dot dot-txt"></span> FLAC / OGG</span>
         </div>
       </div>
+
+      {/* Sơ đồ Tượng đài Kiến trúc AI Whisper */}
+      <WhisperArchitectureModal 
+        isOpen={isArchModalOpen} 
+        onClose={() => setIsArchModalOpen(false)} 
+        lang={lang} 
+      />
     </section>
   );
 }

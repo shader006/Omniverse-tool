@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import './tools-navbar.css';
 
-export default function ToolsNavbar({ onGoHome, onOpenLogin, lang = 'vi', onToggleLang }) {
+export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onOpenLogin, lang = 'vi', onToggleLang, currentPage = 'tools' }) {
   const { user, isLoggedIn, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const menuRef = useRef(null);
@@ -36,27 +36,35 @@ export default function ToolsNavbar({ onGoHome, onOpenLogin, lang = 'vi', onTogg
   return (
     <header className="pixel-tools-navbar">
       <div className="pixel-tools-nav-inner">
-        {/* Left: Logo & Nav Links */}
+        {/* Left: Nav Links */}
         <div className="pixel-tools-nav-left">
-          <button type="button" className="pixel-logo-btn" onClick={onGoHome} title="Về trang chủ">
-            <img src="/assets/logo.png" alt="ONIVERSE Logo" className="pixel-tools-logo-img" />
-          </button>
-          
           <ul className="pixel-tools-nav-links">
             <li>
-              <button type="button" className="pixel-nav-link-item" onClick={onGoHome}>
+              <button 
+                type="button" 
+                className={`pixel-nav-link-item${currentPage === 'home' ? ' active' : ''}`} 
+                onClick={onGoHome}
+              >
                 {lang === 'vi' ? 'Trang chủ' : 'Home'}
               </button>
             </li>
             <li>
-              <button type="button" className="pixel-nav-link-item" onClick={onOpenLogin}>
+              <button 
+                type="button" 
+                className={`pixel-nav-link-item${currentPage === 'about' ? ' active' : ''}`} 
+                onClick={onGoAbout}
+              >
                 {lang === 'vi' ? 'Về chúng tôi' : 'About us'}
               </button>
             </li>
             <li>
-              <span className="pixel-nav-link-item active">
+              <button
+                type="button"
+                className={`pixel-nav-link-item${currentPage === 'tools' ? ' active' : ''}`}
+                onClick={onGoTools}
+              >
                 {lang === 'vi' ? 'Công cụ AI' : 'AI Tools'}
-              </span>
+              </button>
             </li>
           </ul>
         </div>

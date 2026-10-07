@@ -7,9 +7,13 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { RegisterDto } from './dto/register.dto.js';
+import { JwtLoginDto } from './dto/jwt-login.dto.js';
+import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 
 @Controller('auth')
 export class AuthController {
@@ -17,20 +21,58 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   /**
-   * POST /auth/login
-   * Dang nhap bang Firebase ID Token tu frontend.
-   * Frontend gui token nay sau khi Google/GitHub OAuth thanh cong.
+   * POST /api/v1/auth/register
+   * Đăng ký tài khoản mới bằng Email & Mật khẩu (Chuẩn NestJS JWT)
    */
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  login(@Body() loginDto: LoginDto, @Req() req: any) {
-    const ip: string = req.ip || req.socket?.remoteAddress || 'unknown';
-    return this.authService.login(loginDto, ip);
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  register(@Body() registerDto: RegisterDto) {
+    return this.authService.register(registerDto);
   }
 
   /**
-   * GET /auth/me
-   * Lay thong tin nguoi dung va phien hien tai tu Token hoac SessionId.
+   * POST /api/v1/auth/login-jwt
+   * Đăng nhập bằng Email & Mật khẩu -> Trả về JWT Access Token
+   */
+  @Post('login-jwt')
+  @HttpCode(HttpStatus.OK)
+  loginJwt(@Body() jwtLoginDto: JwtLoginDto) {
+    return this.authService.jwtLogin(jwtLoginDto);
+  }
+
+  /**
+   * POST /api/v1/auth/login
+   * Hỗ trợ linh hoạt:
+   * 1. Nếu gửi { email, password } -> Thực hiện đăng nhập NestJS JWT
+   * 2. Nếu gửi { idToken } -> Thực hiện đăng nhập Firebase
+   */
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  login(@Body() body: any, @Req() req: any) {
+    if (body.email && body.password) {
+      return this.authService.jwtLogin(body as JwtLoginDto);
+    }
+    const ip: string = req.ip || req.socket?.remoteAddress || 'unknown';
+    return this.authService.login(body as LoginDto, ip);
+  }
+
+  /**
+   * GET /api/v1/auth/profile
+   * API được bảo vệ bằng JwtAuthGuard (Yêu cầu Header Authorization: Bearer <token>)
+   * Chuẩn theo tài liệu NestJS: https://docs.nestjs.com/security/authentication#jwt-functionality
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('profile')
+  getProfile(@Req() req: any) {
+    return {
+      message: 'Xác thực JWT thành công! Truy cập tài nguyên bảo mật hợp lệ.',
+      user: req.user,
+    };
+  }
+
+  /**
+   * GET /api/v1/auth/me
+   * Lấy thông tin người dùng hiện tại từ Bearer Token hoặc Session ID.
    */
   @Get('me')
   getMe(@Req() req: any) {
@@ -40,8 +82,8 @@ export class AuthController {
   }
 
   /**
-   * POST /auth/logout/:sessionId
-   * Dang xuat - thu hoi phien dang nhap hien tai.
+   * POST /api/v1/auth/logout/:sessionId
+   * Đăng xuất - thu hồi phiên làm việc.
    */
   @Post('logout/:sessionId')
   @HttpCode(HttpStatus.OK)
@@ -50,20 +92,11 @@ export class AuthController {
   }
 
   /**
-   * GET /auth/session/:sessionId/verify
-   * Kiem tra phien co con hop le khong.
+   * GET /api/v1/auth/session/:sessionId/verify
+   * Kiểm tra phiên có còn hợp lệ không.
    */
   @Get('session/:sessionId/verify')
   verifySession(@Param('sessionId') sessionId: string) {
     return this.authService.verifySession(sessionId);
-  }
-
-  /**
-   * GET /auth/sessions/user/:userId
-   * Lay tat ca phien dang nhap cua mot nguoi dung.
-   */
-  @Get('sessions/user/:userId')
-  getSessionsByUser(@Param('userId') userId: string) {
-    return this.authService.getSessionsByUser(userId);
   }
 }

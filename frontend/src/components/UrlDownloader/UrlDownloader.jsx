@@ -51,7 +51,7 @@ export default function UrlDownloader({ lang = 'vi' }) {
     setTimeout(() => {
       setIsLoadingInfo(false);
       setMediaInfo({
-        title: 'Cyber Wave - 8-Bit Pixel Synthwave (Official Oniverse Audio)',
+        title: 'Cyber Wave - 8-Bit Pixel Synthwave (Official Omniverse Audio)',
         thumbnail: '/assets/hero-bg.jpg',
         duration_str: '03:45',
         duration: 225
@@ -65,14 +65,14 @@ export default function UrlDownloader({ lang = 'vi' }) {
     setIsLoadingInfo(false);
     setErrorMsg('');
     setMediaInfo({
-      title: 'Cyber Wave - 8-Bit Pixel Synthwave (Official Oniverse Audio)',
+      title: 'Cyber Wave - 8-Bit Pixel Synthwave (Official Omniverse Audio)',
       thumbnail: '/assets/hero-bg.jpg',
       duration_str: '03:45',
       duration: 225
     });
 
     const cleanName = 'Cyber_Wave_8Bit_Retro_320k.mp3';
-    const dummyBlob = new Blob(['Demo exported media stream from Oniverse Tool'], { type: 'audio/mpeg' });
+    const dummyBlob = new Blob(['Demo exported media stream from Omniverse Tool'], { type: 'audio/mpeg' });
     const dummyUrl = URL.createObjectURL(dummyBlob);
 
     setDownloadingKey(null);
@@ -162,8 +162,8 @@ export default function UrlDownloader({ lang = 'vi' }) {
       }, 600);
 
       setTimeout(() => {
-        const cleanName = `Oniverse_Audio_${quality}k.${format}`;
-        const dummyBlob = new Blob(['Demo exported media stream from Oniverse Tool'], { 
+        const cleanName = `Omniverse_Audio_${quality}k.${format}`;
+        const dummyBlob = new Blob(['Demo exported media stream from Omniverse Tool'], { 
           type: format === 'mp3' ? 'audio/mpeg' : 'video/mp4' 
         });
         const dummyUrl = URL.createObjectURL(dummyBlob);

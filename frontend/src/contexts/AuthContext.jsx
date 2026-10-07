@@ -3,13 +3,14 @@
  * CONTEXT / ADAPTER: AuthContext.jsx
  * ============================================================
  * Cung cấp React state cho tầng Presentation (UI).
- * Gọi trực tiếp xuống Service Layer (authService).
+ * Tích hợp Firebase Auth + Service Layer (authService).
+ * Hỗ trợ chế độ Demo 1-click & kiểm tra cấu hình an toàn.
  * ============================================================
  */
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth, isFirebaseConfigured } from '../lib/firebase';
 import { authService } from '../services/auth.service';
 
 const AuthContext = createContext(null);
@@ -22,22 +23,37 @@ export function AuthProvider({ children }) {
 
   // Lắng nghe thay đổi auth state và đồng bộ sang Service Layer
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        const backendData = await authService.syncBackendSession(firebaseUser);
-        if (backendData) {
-          setBackendUser(backendData.user);
-          setSession(backendData.session);
-        }
-      } else {
-        setBackendUser(null);
-        setSession(null);
-      }
+    if (!auth) {
+      setUser(null);
       setLoading(false);
-    });
+      return;
+    }
 
-    return () => unsubscribe();
+    try {
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+        setUser(firebaseUser);
+        if (firebaseUser) {
+          try {
+            const backendData = await authService.syncBackendSession(firebaseUser);
+            if (backendData) {
+              setBackendUser(backendData.user);
+              setSession(backendData.session);
+            }
+          } catch (e) {
+            console.warn('[AuthContext] syncBackendSession error:', e);
+          }
+        } else {
+          setBackendUser(null);
+          setSession(null);
+        }
+        setLoading(false);
+      });
+
+      return () => unsubscribe();
+    } catch (err) {
+      console.warn('[AuthContext] onAuthStateChanged warning:', err);
+      setLoading(false);
+    }
   }, []);
 
   const loginEmail = async (email, password) => {
@@ -76,8 +92,22 @@ export function AuthProvider({ children }) {
     return res;
   };
 
+  /** Đăng nhập mô phỏng (dành cho chế độ Test / Local khi chưa có Firebase Key) */
+  const loginDemo = (name = 'Demo Gamer', email = 'gamer@omniverse.local') => {
+    setUser({
+      displayName: name,
+      email: email,
+      photoURL: null,
+      getIdToken: () => Promise.resolve('mock-dev-token')
+    });
+  };
+
   const logout = async () => {
-    await authService.logout(session?.id);
+    try {
+      await authService.logout(session?.id);
+    } catch (e) {
+      console.warn('[AuthContext] logout error:', e);
+    }
     setUser(null);
     setBackendUser(null);
     setSession(null);
@@ -92,7 +122,10 @@ export function AuthProvider({ children }) {
 
   const getIdToken = (forceRefresh = false) => {
     if (!user) return Promise.resolve(null);
-    return user.getIdToken(forceRefresh);
+    if (typeof user.getIdToken === 'function') {
+      return user.getIdToken(forceRefresh);
+    }
+    return Promise.resolve('mock-dev-token');
   };
 
   const value = {
@@ -101,10 +134,12 @@ export function AuthProvider({ children }) {
     session,
     loading,
     isLoggedIn: !!user,
+    isFirebaseConfigured,
     loginEmail,
     register,
     loginGoogle,
     loginGitHub,
+    loginDemo,
     logout,
     switchLanguage,
     getIdToken,
@@ -115,6 +150,14 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
 }
 
 export default AuthContext;

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { formatFileBytes } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
 import { aiService } from '../../services/ai.service';
+import { PresetVisualCard, PresetComparisonModal } from './PresetVisualGuide';
 import './pixel-fixer.css';
 
 // ==========================================
@@ -210,6 +211,8 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [resultBlob, setResultBlob] = useState(null);
   const [sliderPos, setSliderPos] = useState(50);
   const [activePreset, setActivePreset] = useState('auto');
+  const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
 
   // Studio Controls
   const [engineMode, setEngineMode] = useState('fast'); // 'fast' | 'advanced'
@@ -502,6 +505,20 @@ export default function PixelFixer({ lang = 'vi' }) {
     }
   };
 
+  const handleLoadPresetSample = async (preset) => {
+    try {
+      const samplePath = preset.sampleFile || preset.beforeImg || preset.afterImg;
+      const resp = await fetch(samplePath);
+      if (!resp.ok) throw new Error('Preset sample not found');
+      const blob = await resp.blob();
+      const sampleFile = new File([blob], `sample_${preset.id}.png`, { type: 'image/png' });
+      handlePresetSelect(preset.id);
+      onSelectFile(sampleFile);
+    } catch (err) {
+      console.warn('Failed to load preset sample:', err);
+    }
+  };
+
   const processFix = async (fileObj, overrides = {}) => {
     const targetFile = fileObj || selectedFile;
     if (!targetFile && !sourceUrl) return;
@@ -600,6 +617,20 @@ export default function PixelFixer({ lang = 'vi' }) {
     document.body.removeChild(a);
   };
 
+  const handleCopyClipboard = async () => {
+    if (!resultBlob) return;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': resultBlob })
+      ]);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.warn('Không thể sao chép vào clipboard:', err);
+      setErrorMsg('Trình duyệt không hỗ trợ sao chép ảnh trực tiếp vào Clipboard.');
+    }
+  };
+
   const resetStudio = () => {
     setSelectedFile(null);
     setSourceUrl('');
@@ -661,7 +692,26 @@ export default function PixelFixer({ lang = 'vi' }) {
           >
             {tr.pixel_preset_fine}
           </button>
+          <button
+            type="button"
+            className="pixel-preset-btn pixel-preset-guide-toggle-btn"
+            style={{ borderColor: '#38bdf8', color: '#38bdf8' }}
+            onClick={() => setIsPresetModalOpen(true)}
+            title={tr.pixel_preset_view_all_modal || 'Xem cả 6 tùy chỉnh'}
+          >
+            👁️ {tr.pixel_presets_guide_btn || 'Xem ví dụ 6 tùy chỉnh'}
+          </button>
         </div>
+
+        {/* Visual Example Card for Active Preset */}
+        <PresetVisualCard
+          activePreset={activePreset}
+          onSelectPreset={handlePresetSelect}
+          onLoadSample={handleLoadPresetSample}
+          onOpenModal={() => setIsPresetModalOpen(true)}
+          lang={lang}
+          tr={tr}
+        />
       </div>
 
       {/* ==================== MAIN STUDIO CARD ==================== */}
@@ -1031,18 +1081,33 @@ export default function PixelFixer({ lang = 'vi' }) {
               </button>
 
               {resultUrl && (
-                <button 
-                  type="button" 
-                  className="btn-pixel-download"
-                  onClick={(e) => { e.stopPropagation(); handleDownload(); }}
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                  </svg>
-                  <span>{tr.pixel_btn_download}</span>
-                </button>
+                <>
+                  <button 
+                    type="button" 
+                    className="btn-pixel-download"
+                    onClick={(e) => { e.stopPropagation(); handleDownload(); }}
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>{tr.pixel_btn_download}</span>
+                  </button>
+
+                  <button 
+                    type="button" 
+                    className="btn-pixel-copy"
+                    onClick={(e) => { e.stopPropagation(); handleCopyClipboard(); }}
+                    title={tr.pixel_btn_copy || 'Sao chép ảnh vào Clipboard'}
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span>{isCopied ? (tr.pixel_btn_copied || 'Đã sao chép!') : (tr.pixel_btn_copy || 'Sao chép')}</span>
+                  </button>
+                </>
               )}
 
               <button 
@@ -1056,6 +1121,17 @@ export default function PixelFixer({ lang = 'vi' }) {
           </>
         )}
       </div>
+
+      {/* Preset Visual Comparison Gallery Modal */}
+      <PresetComparisonModal
+        isOpen={isPresetModalOpen}
+        onClose={() => setIsPresetModalOpen(false)}
+        activePreset={activePreset}
+        onSelectPreset={handlePresetSelect}
+        onLoadSample={handleLoadPresetSample}
+        lang={lang}
+        tr={tr}
+      />
     </section>
   );
 }

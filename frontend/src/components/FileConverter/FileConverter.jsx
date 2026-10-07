@@ -119,7 +119,7 @@ export default function FileConverter({ lang = 'vi' }) {
         const isDocx = targetFormat === 'docx';
         const demoBlob = isDocx 
           ? new Blob(['Demo Word Content'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-          : new Blob(['%PDF-1.4\nDemo PDF Content from Oniverse Gotenberg Engine'], { type: 'application/pdf' });
+          : new Blob(['%PDF-1.4\nDemo PDF Content from Omniverse Gotenberg Engine'], { type: 'application/pdf' });
         const demoUrl = URL.createObjectURL(demoBlob);
         const baseName = fileToConvert?.name ? fileToConvert.name.replace(/\.[^/.]+$/, '') : 'Tai_lieu_Omniverse_2026';
         setResultData({
@@ -140,7 +140,7 @@ export default function FileConverter({ lang = 'vi' }) {
     const isDocx = targetFormat === 'docx';
     const demoBlob = isDocx 
       ? new Blob(['Demo Word Content'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })
-      : new Blob(['%PDF-1.4\nDemo PDF Content from Oniverse Gotenberg Engine'], { type: 'application/pdf' });
+      : new Blob(['%PDF-1.4\nDemo PDF Content from Omniverse Gotenberg Engine'], { type: 'application/pdf' });
     const demoUrl = URL.createObjectURL(demoBlob);
     const demoDocFile = new File(['Sample'], isDocx ? 'Bao_cao_Omniverse_2026.pdf' : 'Bao_cao_Omniverse_2026.docx', { 
       type: isDocx ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
@@ -233,7 +233,10 @@ export default function FileConverter({ lang = 'vi' }) {
               <button 
                 type="button" 
                 className="btn-quick-sample"
-                onClick={(e) => { e.stopPropagation(); handleLoadDemoFile(); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleLoadDemoFile(e);
+                }}
               >
                 {tr.file_sample_btn}
               </button>

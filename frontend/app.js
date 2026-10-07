@@ -783,13 +783,26 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tabLyricsRaw) tabLyricsRaw.addEventListener('click', () => switchLyricsView('raw'));
 
   // Detect user scroll on lyrics container to pause auto-scrolling temporarily
+  let isProgrammaticScrollLyrics = false;
+  let programmaticTimerLyrics = null;
+
+  function registerUserScrollLyrics() {
+    isUserScrollingLyrics = true;
+    clearTimeout(userScrollTimeout);
+    userScrollTimeout = setTimeout(() => {
+      isUserScrollingLyrics = false;
+    }, 4000);
+  }
+
   if (transcribeLyricsContainer) {
-    transcribeLyricsContainer.addEventListener('wheel', () => {
-      isUserScrollingLyrics = true;
-      clearTimeout(userScrollTimeout);
-      userScrollTimeout = setTimeout(() => {
-        isUserScrollingLyrics = false;
-      }, 2500);
+    transcribeLyricsContainer.addEventListener('wheel', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('touchstart', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('touchmove', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('mousedown', registerUserScrollLyrics, { passive: true });
+    transcribeLyricsContainer.addEventListener('scroll', () => {
+      if (!isProgrammaticScrollLyrics) {
+        registerUserScrollLyrics();
+      }
     }, { passive: true });
   }
 
@@ -865,7 +878,17 @@ document.addEventListener('DOMContentLoaded', () => {
           line.classList.add('active-lyric');
           line.classList.remove('past-lyric');
           if (!isUserScrollingLyrics || forceScroll) {
-            line.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            const container = transcribeLyricsContainer;
+            const containerRect = container.getBoundingClientRect();
+            const lineRect = line.getBoundingClientRect();
+            const relativeTop = lineRect.top - containerRect.top;
+            const targetScrollTop = container.scrollTop + relativeTop - (container.clientHeight / 2) + (lineRect.height / 2);
+            isProgrammaticScrollLyrics = true;
+            container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+            if (programmaticTimerLyrics) clearTimeout(programmaticTimerLyrics);
+            programmaticTimerLyrics = setTimeout(() => {
+              isProgrammaticScrollLyrics = false;
+            }, 600);
           }
         }
       } else if (idx < activeIndex) {
@@ -1070,6 +1093,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('format', transcribeFormatSelect.value);
       }
 
+      const reqStartTime = performance.now();
       try {
         const res = await fetch('/api/transcribe', {
           method: 'POST',
@@ -1135,7 +1159,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tagModel) tagModel.textContent = `AI: ${rawModel}`;
         if (tagLang) tagLang.textContent = `Ngôn ngữ: ${(data.detected_language || 'vi').toUpperCase()}`;
         if (tagDuration) tagDuration.textContent = `Thời lượng: ${formatDuration(data.audio_duration)}`;
-        if (tagTime) tagTime.textContent = `Xử lý: ${data.processing_time || 0}s`;
+        const e2eSec = ((performance.now() - reqStartTime) / 1000).toFixed(2);
+        if (tagTime) tagTime.textContent = `AI: ${data.processing_time || 0}s • Toàn trình: ${e2eSec}s`;
 
         if (transcribeDownloadBtn) {
           transcribeDownloadBtn.href = data.download_url;
@@ -1509,6 +1534,9 @@ document.addEventListener('DOMContentLoaded', () => {
           const resp = await fetch('/api/remove-bg', { method: 'POST', body: formData });
           result = await resp.json();
           if (!result.success) throw new Error(result.detail || 'Lỗi server');
+          result.downloadUrl = result.downloadUrl || result.download_url;
+          result.previewBase64 = result.previewBase64 || result.preview_base64 || result.download_url;
+          result.filename = result.filename || 'removed_bg.png';
         }
 
         if (!result || !result.success) {
@@ -1520,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', () => {
           URL.revokeObjectURL(currentResultDownloadUrl);
         }
         lastTransparentBlob = result.transparentBlob || null;
-        currentResultDownloadUrl = result.downloadUrl;
+        currentResultDownloadUrl = result.downloadUrl || result.download_url;
 
         // Ẩn tiến trình, hiện kết quả
         if (bgProgressCard) bgProgressCard.classList.add('hidden');
@@ -1531,7 +1559,7 @@ document.addEventListener('DOMContentLoaded', () => {
           bgCompareBeforeImg.src = bgSourceDataUrl;
         }
 
-        const resultImgSrc = result.previewBase64 || result.downloadUrl;
+        const resultImgSrc = result.previewBase64 || result.preview_base64 || result.downloadUrl || result.download_url;
         if (bgCompareAfterImg) {
           bgCompareAfterImg.src = resultImgSrc;
           bgCompareAfterImg.alt = selectedBgFile ? `Hình ảnh sau khi tách nền: ${selectedBgFile.name}` : 'Hình ảnh sau khi đã tách nền trong suốt';
@@ -1562,7 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Download Button
         if (bgDownloadBtn) {
-          bgDownloadBtn.href = result.downloadUrl;
+          bgDownloadBtn.href = result.previewBase64 || result.downloadUrl;
           bgDownloadBtn.setAttribute('download', result.filename || 'removed_bg.png');
         }
 

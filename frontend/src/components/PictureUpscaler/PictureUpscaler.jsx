@@ -1,0 +1,610 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { formatFileBytes } from '../../utils/formatters';
+import { translations } from '../../locales/translations';
+import { runWebGPURealPLKSR, isWebGPUSupported } from '../../utils/realplksrClient';
+import './picture-upscaler.css';
+
+export const UPSCALE_MODELS = [
+  {
+    id: 'realplksr',
+    name: 'RealPLKSR (2024 SOTA Native)',
+    badge: 'Độc Quyền • Cực Nét & Tự Nhiên',
+    badgeEn: 'Exclusive • Ultra Sharp & Natural',
+    desc: 'Kiến trúc Partial Large Kernel 17x17 Conv hiện đại. Triệt tiêu hoàn toàn nhiễu mờ nén JPEG nặng, tái tạo đường viền sắc nét tự nhiên và bảo toàn màu sắc chân thực.',
+    descEn: 'Modern Partial Large Kernel 17x17 Conv architecture. Eliminates severe JPEG compression blur, recovers ultra-sharp natural edges, and preserves authentic colors.',
+    speed: '⚡ 1-2s GPU',
+    scale: [2, 4],
+  },
+];
+
+export default function PictureUpscaler({ lang = 'vi' }) {
+  const tr = translations[lang] || translations.vi;
+
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewOriginal, setPreviewOriginal] = useState('');
+  const [previewUpscaled, setPreviewUpscaled] = useState('');
+  const [scaleFactor, setScaleFactor] = useState(4);
+  const [selectedModel, setSelectedModel] = useState('realplksr');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progressText, setProgressText] = useState('');
+  const [sliderPos, setSliderPos] = useState(50);
+  const [isHoldingOriginal, setIsHoldingOriginal] = useState(false);
+  const [viewMode, setViewMode] = useState('slider'); // 'slider' | 'side-by-side'
+  const [engineUsed, setEngineUsed] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [imageMeta, setImageMeta] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const sliderContainerRef = useRef(null);
+  const originalBlobUrlRef = useRef('');
+  const upscaledBlobUrlRef = useRef('');
+
+  // Chỉ dọn dẹp blob URL khi component unmount hoàn toàn
+  useEffect(() => {
+    return () => {
+      if (originalBlobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(originalBlobUrlRef.current);
+      }
+      if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(upscaledBlobUrlRef.current);
+      }
+    };
+  }, []);
+
+  // Phím tắt Space để giữ và nhấp nháy so sánh ảnh Gốc và 4K
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space' && previewUpscaled && !['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) {
+        e.preventDefault();
+        setIsHoldingOriginal(true);
+      }
+    };
+    const handleKeyUp = (e) => {
+      if (e.code === 'Space') {
+        setIsHoldingOriginal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [previewUpscaled]);
+
+  const handleFile = (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg(lang === 'vi' ? 'Vui lòng chọn file hình ảnh (PNG, JPG, WEBP).' : 'Please select a valid image file (PNG, JPG, WEBP).');
+      return;
+    }
+    setErrorMsg('');
+    setSelectedFile(file);
+
+    // Dọn dẹp URL cũ trước khi tạo URL mới cho file mới
+    if (originalBlobUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(originalBlobUrlRef.current);
+    }
+    if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+      URL.revokeObjectURL(upscaledBlobUrlRef.current);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    originalBlobUrlRef.current = objectUrl;
+    upscaledBlobUrlRef.current = '';
+    setPreviewOriginal(objectUrl);
+    setPreviewUpscaled('');
+
+    const img = new Image();
+    img.onload = () => {
+      setImageMeta({
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        size: file.size,
+        name: file.name
+      });
+    };
+    img.src = objectUrl;
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const loadSampleImage = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 160;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d');
+    
+    const grad = ctx.createLinearGradient(0, 0, 160, 160);
+    grad.addColorStop(0, '#0284c7');
+    grad.addColorStop(1, '#1e1b4b');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 160, 160);
+
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(80, 70, 32, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('OMNIVERSE', 28, 125);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('LOW-RES SAMPLE', 34, 142);
+
+    canvas.toBlob((blob) => {
+      const sampleFile = new File([blob], 'cyber_logo_lowres.png', { type: 'image/png' });
+      handleFile(sampleFile);
+    }, 'image/png');
+  };
+
+  const runUpscale = async () => {
+    if (!selectedFile) return;
+    setIsProcessing(true);
+    setErrorMsg('');
+
+    try {
+      // 1. Luôn tự động ưu tiên kiểm tra WebGPU trên thiết bị của người dùng
+      const hasWebGPU = await isWebGPUSupported();
+
+      // ── TẦNG 1: Client WebGPU Execution (Nếu máy có WebGPU) ──
+      if (hasWebGPU) {
+        setProgressText(lang === 'vi' ? `⚡ Đang khởi động RealPLKSR ONNX WebGPU x${scaleFactor}...` : `⚡ Initializing RealPLKSR ONNX WebGPU x${scaleFactor}...`);
+        try {
+          const img = new Image();
+          img.src = previewOriginal;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+
+          const t0 = performance.now();
+          // Thực thi mô hình neural RealPLKSR ONNX trực tiếp trên WebGPU
+          const result = await runWebGPURealPLKSR(img, scaleFactor, (msg) => {
+            setProgressText(msg);
+          });
+          const elapsed = Math.round(performance.now() - t0);
+
+          if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+            URL.revokeObjectURL(upscaledBlobUrlRef.current);
+          }
+          upscaledBlobUrlRef.current = result.upscaledUrl;
+          setPreviewUpscaled(result.upscaledUrl);
+          setEngineUsed(`⚡ WebGPU: ${result.gpuHardware || 'Card GPU'} (${elapsed}ms)`);
+          setIsProcessing(false);
+          return;
+        } catch (webgpuErr) {
+          console.warn('[RealPLKSR] WebGPU thất bại, tự động chuyển tiếp sang Backend Server:', webgpuErr);
+          setProgressText(lang === 'vi' ? 'WebGPU không phản hồi, đang tự động chuyển tiếp sang Máy Chủ AI RealPLKSR...' : 'Falling back to RealPLKSR AI Server...');
+        }
+      }
+
+      // ── TẦNG 2: Backend Server Fallback (Khi máy User KHÔNG có WebGPU hoặc WebGPU lỗi) ──
+      setProgressText(lang === 'vi' ? '☁️ Đang xử lý RealPLKSR trên Máy Chủ AI (CPU AVX2 / CUDA Turbo)...' : '☁️ Processing RealPLKSR on AI Server (CPU AVX2 / CUDA Turbo)...');
+
+      const formData = new FormData();
+      formData.append('file', selectedFile);
+      formData.append('scale', scaleFactor.toString());
+      formData.append('model', 'realplksr');
+
+      const resp = await fetch('/api/upscale', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const errJson = await resp.json().catch(() => ({}));
+        throw new Error(errJson.detail || errJson.error || `Máy chủ phản hồi lỗi ${resp.status}`);
+      }
+
+      const resData = await resp.json();
+      if (!resData.success || !resData.download_url) {
+        throw new Error(resData.detail || resData.error || 'Dữ liệu trả về từ máy chủ không hợp lệ.');
+      }
+
+      if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+        URL.revokeObjectURL(upscaledBlobUrlRef.current);
+      }
+      upscaledBlobUrlRef.current = resData.download_url;
+      setPreviewUpscaled(resData.download_url);
+      setEngineUsed(`☁️ AI Server (${resData.processing_time_ms ? resData.processing_time_ms + 'ms' : 'Native Worker 8006'})`);
+      setIsProcessing(false);
+
+    } catch (err) {
+      console.error('[Upscaler] Error:', err);
+      setErrorMsg(err.message || (lang === 'vi' ? 'Quá trình upscale ảnh gặp sự cố.' : 'Failed to upscale picture.'));
+      setIsProcessing(false);
+    }
+  };
+
+  const currentModelMeta = UPSCALE_MODELS.find(m => m.id === selectedModel) || UPSCALE_MODELS[0];
+
+  return (
+    <section className="picture-upscaler-container">
+      <div className="upscaler-header">
+        <div className="upscaler-title-badge">
+          <span className="badge-sparkle">✨</span>
+          <span>SUPER RESOLUTION STUDIO</span>
+        </div>
+        <h2 className="upscaler-title">
+          {lang === 'vi' ? 'Nâng Cấp Độ Phân Giải Ảnh ' : 'AI Picture Upscaling '}
+          <span className="title-gradient">(AI 2x / 4x)</span>
+        </h2>
+        <p className="upscaler-subtitle">
+          {lang === 'vi'
+            ? 'Khôi phục độ sắc nét và tăng chi tiết ảnh với kiến trúc SOTA Partial Large Kernel 17x17 Conv: RealPLKSR (2024).'
+            : 'Enhance resolution and reconstruct ultra-crisp textures powered by SOTA RealPLKSR (Partial Large Kernel Conv).'}
+        </p>
+      </div>
+
+      <div className="card upscaler-card">
+        {!selectedFile ? (
+          <div
+            id="upscale-drop-zone"
+            className={`file-dropzone ${isDragOver ? 'drag-over' : ''}`}
+            onDrop={handleDrop}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="file-input-hidden"
+              accept="image/png,image/jpeg,image/webp,image/bmp"
+              onChange={(e) => e.target.files && handleFile(e.target.files[0])}
+            />
+            <div className="dropzone-content">
+              <div className="dropzone-icon upscaler-drop-icon">
+                <svg viewBox="0 0 24 24" width="38" height="38" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+              </div>
+              <h3 className="dropzone-title">
+                {lang === 'vi' ? 'Kéo & thả hình ảnh cần Upscale vào đây' : 'Drag & drop picture to upscale here'}
+              </h3>
+              <p className="dropzone-subtitle">
+                {lang === 'vi' ? 'hoặc ' : 'or '}
+                <span className="browse-link">{lang === 'vi' ? 'chọn ảnh từ máy tính' : 'browse from your device'}</span>
+              </p>
+              <div className="dropzone-hint">PNG, JPG, WEBP (Tối đa 30MB)</div>
+              <button
+                type="button"
+                className="btn-quick-sample"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  loadSampleImage();
+                }}
+              >
+                🧪 {lang === 'vi' ? 'Thử ảnh mẫu Low-Res' : 'Try Low-Res Sample'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="upscaler-workspace">
+            <div className="upscaler-toolbar">
+              <div className="file-info-chip">
+                <span className="chip-name">{imageMeta?.name || 'Picture'}</span>
+                <span className="chip-dim">{imageMeta ? `${imageMeta.width}×${imageMeta.height}` : ''}</span>
+                <span className="chip-size">{imageMeta ? formatFileBytes(imageMeta.size) : ''}</span>
+              </div>
+              <button
+                type="button"
+                className="btn-change-image"
+                onClick={() => {
+                  if (originalBlobUrlRef.current?.startsWith('blob:')) {
+                    URL.revokeObjectURL(originalBlobUrlRef.current);
+                  }
+                  if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+                    URL.revokeObjectURL(upscaledBlobUrlRef.current);
+                  }
+                  originalBlobUrlRef.current = '';
+                  upscaledBlobUrlRef.current = '';
+                  setSelectedFile(null);
+                  setPreviewOriginal('');
+                  setPreviewUpscaled('');
+                }}
+              >
+                ✕ {lang === 'vi' ? 'Đổi ảnh khác' : 'Change Image'}
+              </button>
+            </div>
+
+            <div className="upscaler-controls-grid">
+              <div className="control-group">
+                <label className="control-label">
+                  <span className="label-icon">🔍</span>
+                  {lang === 'vi' ? 'Hệ Số Phóng To (Scale):' : 'Upscale Factor:'}
+                </label>
+                <div className="scale-pill-buttons">
+                  <button
+                    type="button"
+                    className={`scale-pill ${scaleFactor === 2 ? 'active' : ''}`}
+                    onClick={() => setScaleFactor(2)}
+                  >
+                    2x
+                  </button>
+                  <button
+                    type="button"
+                    className={`scale-pill ${scaleFactor === 4 ? 'active' : ''}`}
+                    onClick={() => setScaleFactor(4)}
+                  >
+                    4x
+                  </button>
+                </div>
+              </div>
+
+              <div className="control-group">
+                <label className="control-label">
+                  <span className="label-icon">🧠</span>
+                  {lang === 'vi' ? 'Thuật Toán Độc Quyền:' : 'AI Super-Resolution Engine:'}
+                </label>
+                <div className="model-select-wrapper" style={{ display: 'flex', alignItems: 'center' }}>
+                  <div style={{ padding: '9px 14px', background: '#1e293b', border: '1px solid #38bdf8', borderRadius: '6px', color: '#38bdf8', fontWeight: 700, fontSize: '0.82rem', width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>⚡ RealPLKSR (Partial Large Kernel SOTA)</span>
+                    <span style={{ fontSize: '0.7rem', color: '#34d399', background: 'rgba(16, 185, 129, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>GPU & CPU Turbo</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="model-detail-card">
+              <div className="model-detail-header">
+                <span className="model-title">{currentModelMeta.name}</span>
+                <span className="model-speed-badge">⚡ {currentModelMeta.speed}</span>
+              </div>
+              <p className="model-desc-text">
+                {lang === 'vi' ? currentModelMeta.desc : currentModelMeta.descEn}
+              </p>
+            </div>
+
+            {!previewUpscaled && (
+              <div className="action-row">
+                <button
+                  type="button"
+                  className="btn-start-upscale"
+                  disabled={isProcessing}
+                  onClick={runUpscale}
+                >
+                  {isProcessing ? (
+                    <>
+                      <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div>
+                      <span>{progressText}</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                      </svg>
+                      <span>
+                        {lang === 'vi' ? `Bắt Đầu Upscale ${scaleFactor}x` : `Start Upscaling ${scaleFactor}x`}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {errorMsg && (
+              <div className="error-box" style={{ marginTop: '16px' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {previewUpscaled && (
+              <div className="comparison-section">
+                <div className="comparison-meta-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="meta-pill meta-original">
+                      <span>GỐC: {imageMeta?.width}×{imageMeta?.height}</span>
+                    </div>
+                    <div className="meta-pill meta-result">
+                      <span>✨ RealPLKSR x{scaleFactor}: {imageMeta ? `${imageMeta.width * scaleFactor}×${imageMeta.height * scaleFactor}` : ''}</span>
+                    </div>
+                    {engineUsed && (
+                      <span style={{ fontSize: '0.72rem', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '3px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                        {engineUsed}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Comparison Controls: Hold to compare & View mode */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    {/* Hold to compare button */}
+                    <button
+                      type="button"
+                      className={`btn-hold-compare ${isHoldingOriginal ? 'active' : ''}`}
+                      onMouseDown={() => setIsHoldingOriginal(true)}
+                      onMouseUp={() => setIsHoldingOriginal(false)}
+                      onTouchStart={() => setIsHoldingOriginal(true)}
+                      onTouchEnd={() => setIsHoldingOriginal(false)}
+                      title={lang === 'vi' ? 'Nhấn giữ nút hoặc nhấn giữ phím Space để chớp xem ảnh gốc' : 'Press & hold or Space to compare'}
+                    >
+                      <span>👁️</span>
+                      <span>
+                        {isHoldingOriginal
+                          ? (lang === 'vi' ? 'ĐANG XEM ẢNH GỐC' : 'VIEWING ORIGINAL')
+                          : (lang === 'vi' ? 'Giữ Chuột Xem Gốc (Space)' : 'Hold to Compare (Space)')}
+                      </span>
+                    </button>
+
+                    {/* View Mode Toggle */}
+                    <div style={{ display: 'flex', background: '#1e293b', padding: '2px', borderRadius: '6px', border: '1px solid #334155' }}>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('slider')}
+                        style={{
+                          padding: '3px 8px',
+                          background: viewMode === 'slider' ? '#0284c7' : 'transparent',
+                          color: viewMode === 'slider' ? '#fff' : '#94a3b8',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        {lang === 'vi' ? '◫ Trượt' : '◫ Slider'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('side-by-side')}
+                        style={{
+                          padding: '3px 8px',
+                          background: viewMode === 'side-by-side' ? '#0284c7' : 'transparent',
+                          color: viewMode === 'side-by-side' ? '#fff' : '#94a3b8',
+                          border: 'none',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        {lang === 'vi' ? '◫ Song Song' : '◫ Side-by-Side'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* VIEW MODE 1: SIDE-BY-SIDE */}
+                {viewMode === 'side-by-side' && (
+                  <div className="comparison-side-by-side">
+                    <div className="side-box">
+                      <img 
+                        src={previewOriginal} 
+                        alt="Original" 
+                        className="img-before" 
+                      />
+                      <span className="slider-badge badge-before">
+                        GỐC ({imageMeta?.width}×{imageMeta?.height})
+                      </span>
+                    </div>
+                    <div className="side-box">
+                      <img 
+                        src={previewUpscaled} 
+                        alt="Upscaled" 
+                        className="img-after" 
+                      />
+                      <span className="slider-badge badge-after">
+                        ✨ REALPLKSR {scaleFactor}x ({imageMeta ? imageMeta.width * scaleFactor : ''}×{imageMeta ? imageMeta.height * scaleFactor : ''})
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* VIEW MODE 2: SPLIT SLIDER */}
+                {viewMode === 'slider' && (
+                  <div
+                    className="before-after-container"
+                    ref={sliderContainerRef}
+                  >
+                    {/* Layer 1: Upscaled Image (hoặc toàn bộ gốc khi bấm Hold to compare) */}
+                    <img 
+                      src={isHoldingOriginal ? previewOriginal : previewUpscaled} 
+                      alt="Upscaled" 
+                      className={`img-compare ${isHoldingOriginal ? 'img-before' : 'img-after'}`} 
+                    />
+
+                    {/* Layer 2: Clipped Original Image */}
+                    {!isHoldingOriginal && (
+                      <div 
+                        className="img-compare-clipped" 
+                        style={{ 
+                          clipPath: `polygon(0 0, ${sliderPos}% 0, ${sliderPos}% 100%, 0 100%)`,
+                        }}
+                      >
+                        <img 
+                          src={previewOriginal} 
+                          alt="Original" 
+                          className="img-compare img-before" 
+                        />
+                      </div>
+                    )}
+
+                    {/* Divider Line & Knob */}
+                    {!isHoldingOriginal && (
+                      <>
+                        <div className="slider-divider-bar" style={{ left: `${sliderPos}%` }}>
+                          <div className="slider-handle-circle">
+                            <span>◀▶</span>
+                          </div>
+                        </div>
+
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={sliderPos}
+                          onChange={(e) => setSliderPos(Number(e.target.value))}
+                          className="slider-range-overlay"
+                          aria-label="Before after comparison slider"
+                        />
+                      </>
+                    )}
+
+                    <span className="slider-badge badge-before">
+                      {isHoldingOriginal 
+                        ? '👁️ ĐANG XEM ẢNH GỐC (THẢ CHUỘT ĐỂ XEM 4X)' 
+                        : `GỐC (${imageMeta?.width}×${imageMeta?.height})`}
+                    </span>
+                    {!isHoldingOriginal && (
+                      <span className="slider-badge badge-after">
+                        ✨ REALPLKSR {scaleFactor}x HD
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div className="result-actions" style={{ marginTop: '20px' }}>
+                  <a
+                    href={previewUpscaled}
+                    download={`upscaled_${scaleFactor}x_${selectedModel}_${selectedFile.name}`}
+                    className="btn-download-result"
+                    style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>
+                      {lang === 'vi' ? `Tải Ảnh ${scaleFactor}x Về Máy` : `Download ${scaleFactor}x Picture`}
+                    </span>
+                  </a>
+                  <button
+                    type="button"
+                    className="btn-another"
+                    onClick={() => {
+                      if (upscaledBlobUrlRef.current?.startsWith('blob:')) {
+                        URL.revokeObjectURL(upscaledBlobUrlRef.current);
+                      }
+                      upscaledBlobUrlRef.current = '';
+                      setPreviewUpscaled('');
+                    }}
+                  >
+                    ↺ {lang === 'vi' ? 'Chọn Hệ Số Khác' : 'Change Scale'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

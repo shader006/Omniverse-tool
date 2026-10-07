@@ -117,18 +117,51 @@ def get_birefnet_model_path() -> str:
     return model_path
 
 
+# Backward-compatible Image Resampling constants (hỗ trợ cả Pillow < 9.1 và >= 10.0)
+_RESAMPLE_BOX = getattr(getattr(Image, "Resampling", None), "BOX", getattr(Image, "BOX", 4))
+_RESAMPLE_BILINEAR = getattr(getattr(Image, "Resampling", None), "BILINEAR", getattr(Image, "BILINEAR", 2))
+_RESAMPLE_BICUBIC = getattr(getattr(Image, "Resampling", None), "BICUBIC", getattr(Image, "BICUBIC", 3))
+
+
+def _preload_nvidia_libs():
+    """Tự động preload các thư viện CUDA/cuDNN/TensorRT từ site-packages nếu có để ONNX Runtime GPU tìm thấy libcudnn và libnvinfer."""
+    try:
+        import ctypes
+        import site
+        for base_p in site.getsitepackages():
+            for sub in [
+                os.path.join("nvidia", "cudnn", "lib"),
+                os.path.join("nvidia", "cublas", "lib"),
+                "tensorrt_libs",
+            ]:
+                target_dir = os.path.join(base_p, sub)
+                if os.path.exists(target_dir):
+                    for fname in sorted(os.listdir(target_dir)):
+                        if ".so" in fname:
+                            try:
+                                ctypes.CDLL(os.path.join(target_dir, fname), mode=ctypes.RTLD_GLOBAL)
+                            except Exception:
+                                pass
+    except Exception:
+        pass
+
+_preload_nvidia_libs()
+
+
 class BiRefNetOpenVINOEngine:
-    """Engine tách nền BiRefNet-Lite tăng tốc bởi Intel OpenVINO."""
+    """Engine tách nền BiRefNet-Lite ưu tiên tăng tốc GPU NVIDIA (CUDA), tự động fallback CPU (OpenVINO / ONNX)."""
 
     def __init__(self, model_path: str, num_threads: Optional[int] = None):
         self.model_path = model_path
         self.num_threads = num_threads if (num_threads and num_threads > 0) else get_optimal_cpu_threads()
         self.backend = "unknown"
+        self.device = "cpu"
         self.compiled_model = None
         self._init_engine()
 
-    def _init_engine(self):
-        # 1. OpenVINO Runtime
+    def _init_cpu_fallback(self):
+        """Khởi tạo engine fallback CPU khi GPU không khả dụng hoặc gặp lỗi."""
+        # 1. Thử Intel OpenVINO CPU
         try:
             import openvino as ov
             core = ov.Core()
@@ -145,13 +178,14 @@ class BiRefNetOpenVINOEngine:
 
             self.compiled_model = core.compile_model(model, "CPU", config)
             self.backend = "openvino"
+            self.device = "cpu"
             thread_str = f"{self.num_threads} CPU threads" if self.num_threads else "Auto TBB threads"
-            logger.info(f"🚀 [OpenVINO] BiRefNet-Lite đã nạp thành công ({thread_str}).")
+            logger.info(f"⚡ [CPU OpenVINO] BiRefNet-Lite đã nạp thành công ({thread_str}).")
             return
         except Exception as e:
-            logger.warning(f"Lỗi OpenVINO Core: {e}. Thử chuyển sang ONNX Runtime...")
+            logger.warning(f"Lỗi OpenVINO Core: {e}. Thử chuyển sang ONNX Runtime CPU...")
 
-        # 2. Fallback sang ONNX Runtime
+        # 2. Thử ONNX Runtime CPU
         try:
             import onnxruntime as ort
             opts = ort.SessionOptions()
@@ -167,13 +201,129 @@ class BiRefNetOpenVINOEngine:
                 sess_options=opts,
                 providers=["CPUExecutionProvider"],
             )
-            self.backend = "onnxruntime"
+            self.backend = "onnxruntime_cpu"
+            self.device = "cpu"
             thread_str = f"{self.num_threads} CPU threads" if self.num_threads else "Auto threads"
-            logger.info(f"⚡ [ONNX Runtime] BiRefNet-Lite đã nạp thành công ({thread_str}).")
+            logger.info(f"⚡ [CPU ONNX Runtime] BiRefNet-Lite đã nạp thành công ({thread_str}).")
         except Exception as e:
-            logger.error(f"Lỗi khởi tạo ONNX Runtime: {e}")
+            logger.error(f"Lỗi khởi tạo ONNX Runtime CPU: {e}")
             self.compiled_model = None
             self.backend = "failed"
+            self.device = "none"
+
+    def _init_engine(self):
+        # ── ƯU TIÊN 1: Khởi tạo GPU với NVIDIA TensorRT FP16 (hoặc CUDA với giới hạn trần VRAM) ──
+        try:
+            import onnxruntime as ort
+            available_providers = ort.get_available_providers()
+            trt_cache_dir = os.path.join(os.path.dirname(self.model_path), "trt_cache")
+            os.makedirs(trt_cache_dir, exist_ok=True)
+
+            providers = []
+            enable_trt = os.getenv("ENABLE_TENSORRT", "false").strip().lower() in ("true", "1", "yes")
+            if enable_trt and "TensorrtExecutionProvider" in available_providers:
+                trt_opts = {
+                    "device_id": 0,
+                    "trt_max_workspace_size": 2 * 1024 * 1024 * 1024,  # Khống chế 2GB Workspace VRAM
+                    "trt_fp16_enable": True,                             # Tăng tốc FP16
+                    "trt_engine_cache_enable": True,                     # Lưu cache .engine trên ổ đĩa để tái sử dụng
+                    "trt_engine_cache_path": trt_cache_dir,
+                }
+                providers.append(("TensorrtExecutionProvider", trt_opts))
+
+            cuda_device_id = int(os.getenv("CUDA_DEVICE_ID", os.getenv("RMBG_GPU_DEVICE_ID", "0")))
+            gpu_mem_limit_gb = float(os.getenv("RMBG_GPU_MEM_LIMIT_GB", "2.0"))
+            gpu_mem_limit_bytes = int(gpu_mem_limit_gb * 1024 * 1024 * 1024)
+
+            if "CUDAExecutionProvider" in available_providers:
+                cuda_opts = {
+                    "device_id": cuda_device_id,
+                    "arena_extend_strategy": "kSameAsRequested",
+                    "gpu_mem_limit": gpu_mem_limit_bytes,             # Trần cứng tối đa 2GB VRAM (thay vì 6GB)
+                    "cudnn_conv_algo_search": "HEURISTIC",            # Dùng heuristic tối ưu, tránh cấp phát workspace khổng lồ
+                    "do_copy_in_default_stream": True,
+                }
+                providers.append(("CUDAExecutionProvider", cuda_opts))
+
+            providers.append("CPUExecutionProvider")
+
+            if len(providers) > 1:
+                sess_opts = ort.SessionOptions()
+                sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                sess_opts.log_severity_level = 3  # Ẩn các log cảnh báo verbose không cần thiết
+
+                session = ort.InferenceSession(
+                    self.model_path,
+                    sess_options=sess_opts,
+                    providers=providers,
+                )
+                active_providers = session.get_providers()
+                if "TensorrtExecutionProvider" in active_providers:
+                    self.compiled_model = session
+                    self.backend = "tensorrt"
+                    self.device = "gpu"
+                    logger.info("⚡ [GPU TensorRT] BiRefNet-Lite đã nạp thành công với TensorRT Engine FP16.")
+                    return
+                elif "CUDAExecutionProvider" in active_providers:
+                    self.compiled_model = session
+                    self.backend = "cuda"
+                    self.device = "gpu"
+                    logger.info("🚀 [GPU CUDA] BiRefNet-Lite đã nạp thành công trên GPU NVIDIA (CUDAExecutionProvider).")
+                    return
+                else:
+                    logger.warning("⚠️ Không kích hoạt được GPU TensorRT/CUDA, chuyển sang CPU fallback...")
+        except Exception as e_gpu:
+            logger.warning(f"⚠️ Không thể khởi động GPU TensorRT/CUDA ({e_gpu}). Tự động chuyển sang fallback CPU...")
+
+        # ── ƯU TIÊN 2: Fallback sang OpenVINO CPU ──
+        try:
+            import openvino as ov
+            core = ov.Core()
+            logger.info(f"Loading BiRefNet-Lite into OpenVINO Core from: {self.model_path}")
+            model = core.read_model(self.model_path)
+
+            config = {
+                "PERFORMANCE_HINT": "LATENCY",
+                "NUM_STREAMS": "1",
+                "ENABLE_CPU_PINNING": "NO",
+            }
+            if self.num_threads and self.num_threads > 0:
+                config["INFERENCE_NUM_THREADS"] = str(self.num_threads)
+
+            self.compiled_model = core.compile_model(model, "CPU", config)
+            self.backend = "openvino"
+            self.device = "cpu"
+            thread_str = f"{self.num_threads} CPU threads" if self.num_threads else "Auto TBB threads"
+            logger.info(f"⚡ [CPU OpenVINO] BiRefNet-Lite đã nạp thành công ({thread_str}).")
+            return
+        except Exception as e:
+            logger.warning(f"Lỗi OpenVINO Core: {e}. Thử chuyển sang ONNX Runtime CPU...")
+
+        # ── ƯU TIÊN 3: Fallback sang ONNX Runtime CPU ──
+        try:
+            import onnxruntime as ort
+            opts = ort.SessionOptions()
+            if self.num_threads and self.num_threads > 0:
+                opts.intra_op_num_threads = self.num_threads
+            opts.inter_op_num_threads = 1
+            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            opts.enable_cpu_mem_arena = False
+
+            self.compiled_model = ort.InferenceSession(
+                self.model_path,
+                sess_options=opts,
+                providers=["CPUExecutionProvider"],
+            )
+            self.backend = "onnxruntime_cpu"
+            self.device = "cpu"
+            thread_str = f"{self.num_threads} CPU threads" if self.num_threads else "Auto threads"
+            logger.info(f"⚡ [CPU ONNX Runtime] BiRefNet-Lite đã nạp thành công ({thread_str}).")
+        except Exception as e:
+            logger.error(f"Lỗi khởi tạo ONNX Runtime CPU: {e}")
+            self.compiled_model = None
+            self.backend = "failed"
+            self.device = "none"
 
     def predict_mask(self, pil_img: Image.Image) -> Optional[Image.Image]:
         """Tạo Alpha Matte mask sắc nét từ ảnh PIL với quản lý bộ nhớ nghiêm ngặt."""
@@ -182,9 +332,9 @@ class BiRefNetOpenVINOEngine:
 
         orig_w, orig_h = pil_img.size
 
-        # Preprocessing: Chuyển RGB -> Resize 1024x1024 (BOX / Area Sampling chống mất tóc) -> Normalize ImageNet
+        # Preprocessing: Chuyển RGB -> Resize 1024x1024 (BILINEAR chuẩn theo kiến trúc BiRefNet) -> Normalize ImageNet
         rgb_img = pil_img.convert("RGB")
-        resized = rgb_img.resize(TARGET_INFERENCE_SIZE, Image.Resampling.BOX)
+        resized = rgb_img.resize(TARGET_INFERENCE_SIZE, _RESAMPLE_BILINEAR)
 
         # Tối ưu RAM: Scale in-place, không cấp phát thêm 12MB mảng float32 trung gian thứ hai
         arr = np.asarray(resized, dtype=np.float32)
@@ -198,22 +348,42 @@ class BiRefNetOpenVINOEngine:
         del resized, arr, rgb_img
 
         # Inference: Khóa _INFERENCE_LOCK để đảm bảo chuẩn 1 inference tại một thời điểm
+        out_tensor = None
         with _INFERENCE_LOCK:
             if self.backend == "openvino":
                 infer_req = self.compiled_model.create_infer_request()
                 results = infer_req.infer({0: tensor})
                 out_tensor = list(results.values())[0]
                 del infer_req, results
-            elif self.backend == "onnxruntime":
-                input_name = self.compiled_model.get_inputs()[0].name
-                results = self.compiled_model.run(None, {input_name: tensor})
-                out_tensor = results[0]
-                del results
+            elif self.backend in ("tensorrt", "cuda", "onnxruntime", "onnxruntime_cpu"):
+                try:
+                    input_name = self.compiled_model.get_inputs()[0].name
+                    results = self.compiled_model.run(None, {input_name: tensor})
+                    out_tensor = results[0]
+                    del results
+                except Exception as e_run:
+                    logger.warning(f"Lỗi runtime inference backend '{self.backend}': {e_run}")
+                    # Nếu đang chạy GPU mà bị lỗi, tự động chuyển về CPU ngay lập tức
+                    if self.backend in ("tensorrt", "cuda"):
+                        logger.info("Đang tự động chuyển đổi engine sang CPU fallback...")
+                        self._init_cpu_fallback()
+                        if self.backend == "openvino":
+                            infer_req = self.compiled_model.create_infer_request()
+                            results = infer_req.infer({0: tensor})
+                            out_tensor = list(results.values())[0]
+                            del infer_req, results
+                        elif self.backend in ("onnxruntime", "onnxruntime_cpu"):
+                            input_name = self.compiled_model.get_inputs()[0].name
+                            results = self.compiled_model.run(None, {input_name: tensor})
+                            out_tensor = results[0]
+                            del results
             else:
                 del tensor
                 return None
 
         del tensor
+        if out_tensor is None:
+            return None
 
         # Postprocessing: Squeeze -> Sigmoid (nếu là logits) -> uint8
         out_mask = np.squeeze(out_tensor)
@@ -226,7 +396,7 @@ class BiRefNetOpenVINOEngine:
 
         # Resize mask về đúng kích thước ảnh đầu vào (BICUBIC mượt viền cong, chống răng cưa)
         if (orig_w, orig_h) != TARGET_INFERENCE_SIZE:
-            mask_img = mask_img.resize((orig_w, orig_h), Image.Resampling.BICUBIC)
+            mask_img = mask_img.resize((orig_w, orig_h), _RESAMPLE_BICUBIC)
 
         return mask_img
 
@@ -290,7 +460,7 @@ def remove_background(
     # Thu nhỏ an toàn về tối đa MAX_IMAGE_SIZE (2560px) bằng BILINEAR để tránh peak RAM khi nén PNG
     if pil_img.width > MAX_IMAGE_SIZE or pil_img.height > MAX_IMAGE_SIZE:
         logger.info(f"Tối ưu ảnh lớn ({pil_img.size}) về tối đa {MAX_IMAGE_SIZE}px để đảm bảo an toàn bộ nhớ.")
-        pil_img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), Image.Resampling.BILINEAR)
+        pil_img.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE), _RESAMPLE_BILINEAR)
 
     load_time_ms = (time.perf_counter() - start_load) * 1000
 
@@ -300,18 +470,28 @@ def remove_background(
     output_img = None
     backend_display = "BiRefNet-Lite (Fallback)"
 
+    device = "cpu"
     if engine and engine.compiled_model is not None:
         mask = engine.predict_mask(pil_img)
         if mask is not None:
             rgba = pil_img.convert("RGBA")
             rgba.putalpha(mask)
             output_img = rgba
-            backend_display = f"BiRefNet-Lite ({engine.backend.upper()})"
+            device = getattr(engine, "device", "cpu")
+            if engine.backend == "tensorrt":
+                backend_display = "BiRefNet-Lite (NVIDIA TensorRT FP16)"
+            elif engine.backend == "cuda":
+                backend_display = "BiRefNet-Lite (CUDA GPU)"
+            elif engine.backend == "openvino":
+                backend_display = "BiRefNet-Lite (OpenVINO CPU)"
+            else:
+                backend_display = f"BiRefNet-Lite ({engine.backend.upper()})"
             del mask
 
     if output_img is None:
         output_img = _fallback_remove_bg(pil_img)
         backend_display = "Color-Distance Fallback"
+        device = "cpu"
 
     infer_time_ms = (time.perf_counter() - start_infer) * 1000
 
@@ -330,6 +510,7 @@ def remove_background(
         "model": "birefnet-lite",
         "model_display": backend_display,
         "backend": backend_display,
+        "device": device,
         "original_dimensions": [orig_width, orig_height],
         "output_dimensions": [output_img.width, output_img.height],
         "timing_ms": {

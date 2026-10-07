@@ -1,0 +1,177 @@
+/* ================================================================
+   AD SLOT – Google AdSense Component Styles (Pixel Art Theme)
+   ================================================================ */
+
+.ad-slot-wrapper {
+  width: 100%;
+  margin: 20px 0;
+  position: relative;
+}
+
+/* ── Label "QUẢNG CÁO" ── */
+.ad-slot-label {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+
+.ad-slot-label span {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  color: #334155;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border: 1px solid #1e293b;
+  background: #07090e;
+}
+
+/* ── DEV Placeholder ── */
+.ad-placeholder {
+  background: #07090e;
+  border: 2px dashed #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Shimmer effect */
+.ad-placeholder::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(34, 197, 94, 0.03) 50%,
+    transparent 100%
+  );
+  animation: ad-shimmer 2.5s infinite;
+}
+
+@keyframes ad-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Format sizes */
+.ad-placeholder--auto,
+.ad-placeholder--fluid {
+  min-height: 90px;
+  width: 100%;
+}
+
+.ad-placeholder--horizontal {
+  height: 90px;
+  width: 100%;
+}
+
+.ad-placeholder--rectangle {
+  height: 250px;
+  width: 100%;
+  max-width: 336px;
+  margin: 0 auto;
+}
+
+.ad-placeholder--vertical {
+  height: 600px;
+  width: 100%;
+  max-width: 160px;
+  margin: 0 auto;
+}
+
+.ad-placeholder-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+  z-index: 1;
+  position: relative;
+}
+
+.ad-placeholder-icon {
+  font-size: 1.5rem;
+  opacity: 0.4;
+}
+
+.ad-placeholder-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #334155;
+  letter-spacing: 1px;
+}
+
+.ad-placeholder-slot {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.45rem;
+  color: #22c55e;
+  opacity: 0.5;
+}
+
+.ad-placeholder-note {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.4rem;
+  color: #ef4444;
+  opacity: 0.6;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.ad-placeholder-net-badge {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  border: 2px solid;
+  padding: 4px 10px;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.ad-placeholder-link {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  text-decoration: none;
+  letter-spacing: 0.5px;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.ad-placeholder-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.ad-slot-inner {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+
+/* ── REAL AD (adsbygoogle) ── */
+.adsbygoogle {
+  display: block !important;
+}
+
+/* ── Vị trí đặc biệt: Between Tools ── */
+.ad-slot-wrapper.ad-between-tools {
+  margin: 28px 0;
+  padding: 0;
+}
+
+/* ── Sidebar sticky ad ── */
+.ad-slot-wrapper.ad-sidebar {
+  position: sticky;
+  top: 80px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .ad-placeholder--rectangle,
+  .ad-placeholder--vertical {
+    max-width: 100%;
+    height: 200px;
+  }
+}

@@ -18,12 +18,16 @@
 import { Injectable, UnauthorizedException, OnModuleInit, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { JwtService } from '@nestjs/jwt';
+import bcrypt from 'bcryptjs';
 import { initializeApp, getApps, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import * as fs from 'fs';
 import { UserSession, SessionStatus } from './entities/user-session.entity.js';
 import { UserService } from '../user/user.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { RegisterDto } from './dto/register.dto.js';
+import { JwtLoginDto } from './dto/jwt-login.dto.js';
 import { User, AuthProvider } from '../user/entities/user.entity.js';
 
 // Kieu tra ve khi giai ma Firebase token
@@ -43,6 +47,7 @@ export class AuthService implements OnModuleInit {
     @InjectRepository(UserSession)
     private readonly sessionRepository: Repository<UserSession>,
     private readonly userService: UserService,
+    private readonly jwtService: JwtService,
   ) {}
 
   onModuleInit() {
@@ -71,7 +76,65 @@ export class AuthService implements OnModuleInit {
     }
   }
 
-  // ─── DANG NHAP ───────────────────────────────────────────────────────────
+  // ─── NESTJS JWT AUTHENTICATION ──────────────────────────────────────────
+
+  /**
+   * Kiem tra email va password nguoi dung bang bcrypt.
+   * Chuan theo tai lieu: https://docs.nestjs.com/security/authentication#jwt-functionality
+   */
+  async validateUser(email: string, pass: string): Promise<any> {
+    const user = await this.userService.findByEmail(email);
+    if (user && user.password) {
+      const isMatch = await bcrypt.compare(pass, user.password);
+      if (isMatch) {
+        const { password, ...result } = user as any;
+        return result;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Dang ky tai khoan nguoi dung moi (NestJS JWT)
+   */
+  async register(registerDto: RegisterDto): Promise<{ message: string; user: any; access_token: string }> {
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(registerDto.password, salt);
+    const user = await this.userService.registerWithPassword(
+      registerDto.email,
+      passwordHash,
+      registerDto.username,
+    );
+
+    const payload = { sub: user.id, email: user.email, username: user.username, role: user.role };
+    const access_token = this.jwtService.sign(payload);
+
+    const { password, ...userWithoutPass } = user as any;
+    return {
+      message: 'Đăng ký tài khoản thành công.',
+      user: userWithoutPass,
+      access_token,
+    };
+  }
+
+  /**
+   * Dang nhap bang Email & Mật khẩu -> Tra ve JWT Access Token
+   */
+  async jwtLogin(jwtLoginDto: JwtLoginDto): Promise<{ message: string; user: any; access_token: string }> {
+    const user = await this.validateUser(jwtLoginDto.email, jwtLoginDto.password);
+    if (!user) {
+      throw new UnauthorizedException('Email hoặc mật khẩu không chính xác.');
+    }
+
+    const payload = { sub: user.id, email: user.email, username: user.username, role: user.role };
+    return {
+      message: 'Đăng nhập thành công.',
+      user,
+      access_token: this.jwtService.sign(payload),
+    };
+  }
+
+  // ─── DANG NHAP (FIREBASE) ────────────────────────────────────────────────
 
   /**
    * Xu ly dang nhap bang Firebase ID Token.

@@ -1,0 +1,335 @@
+/* ================================================================
+   POLICY MODAL – Pixel Art Legal Document Viewer
+   ================================================================ */
+
+.policy-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.92);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 20px;
+  animation: policy-overlay-in 0.2s ease;
+}
+
+@keyframes policy-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.policy-modal {
+  width: 100%;
+  max-width: 620px;
+  max-height: 88vh;
+  background: #07090e;
+  border: 3px solid #1e293b;
+  box-shadow:
+    0 0 0 3px #000,
+    12px 12px 0 rgba(0,0,0,0.8),
+    0 0 40px rgba(34, 197, 94, 0.1);
+  display: flex;
+  flex-direction: column;
+  animation: policy-modal-in 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes policy-modal-in {
+  from { transform: scale(0.94) translateY(16px); opacity: 0; }
+  to   { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* ── Header ── */
+.policy-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: #0d1117;
+  border-bottom: 2px solid #1e293b;
+  flex-shrink: 0;
+}
+
+.policy-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.policy-header-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.policy-header-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.55rem, 1.5vw, 0.72rem);
+  color: #f8fafc;
+  letter-spacing: 1px;
+  text-shadow:
+    -1px -1px 0 #000,
+     1px  1px 0 #000;
+}
+
+.policy-header-sub {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.45rem;
+  color: #475569;
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+
+.policy-close-btn {
+  background: transparent;
+  border: 2px solid #334155;
+  color: #64748b;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.1s ease;
+}
+
+.policy-close-btn:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239,68,68,0.1);
+}
+
+/* ── Progress Bar ── */
+.policy-progress-bar {
+  height: 6px;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  position: relative;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.policy-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+  transition: width 0.15s ease;
+  position: relative;
+}
+
+.policy-progress-fill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 20px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15));
+}
+
+.policy-progress-label {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.4rem;
+  color: #475569;
+}
+
+/* ── Body (scrollable) ── */
+.policy-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+.policy-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.policy-modal-body::-webkit-scrollbar-track {
+  background: #07090e;
+}
+.policy-modal-body::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+.policy-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* ── Sections ── */
+.policy-section {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #0f172a;
+}
+
+.policy-section:last-of-type {
+  border-bottom: none;
+}
+
+.policy-section--highlight {
+  background: rgba(239, 68, 68, 0.04);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.policy-section--highlight .policy-section-heading {
+  color: #fca5a5;
+}
+
+.policy-section-heading {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(0.55rem, 1.4vw, 0.68rem);
+  color: #22c55e;
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+}
+
+.policy-section-body {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  color: #94a3b8;
+  line-height: 2.2;
+  white-space: pre-line;
+  letter-spacing: 0.3px;
+}
+
+/* ── Doc Footer ── */
+.policy-doc-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 2px solid #1e293b;
+}
+
+.policy-doc-footer span {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  color: #334155;
+  letter-spacing: 0.5px;
+}
+
+/* ── Modal Footer ── */
+.policy-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #0d1117;
+  border-top: 2px solid #1e293b;
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.policy-read-note {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.45rem;
+  color: #475569;
+  letter-spacing: 0.5px;
+  line-height: 1.5;
+}
+
+.policy-close-action {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #000;
+  background: #22c55e;
+  border: 2px solid #16a34a;
+  padding: 10px 18px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  box-shadow: 2px 2px 0 #000;
+  transition: all 0.1s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.policy-close-action:hover {
+  background: #4ade80;
+  transform: translateY(-1px);
+  box-shadow: 3px 3px 0 #000;
+}
+
+.policy-close-action:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 #000;
+}
+
+/* ── Policy Link (inline trigger) ── */
+.policy-link {
+  font-family: inherit;
+  font-size: inherit;
+  color: #22c55e;
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  letter-spacing: inherit;
+  transition: color 0.1s ease;
+}
+
+.policy-link:hover {
+  color: #4ade80;
+  text-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+/* ── About Us page tabs ── */
+.policy-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #1e293b;
+  margin-bottom: 24px;
+}
+
+.policy-tab-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.52rem;
+  color: #475569;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 12px 16px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.1s ease;
+  margin-bottom: -2px;
+}
+
+.policy-tab-btn:hover {
+  color: #94a3b8;
+  background: #0d1117;
+}
+
+.policy-tab-btn.active {
+  color: #22c55e;
+  border-bottom-color: #22c55e;
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .policy-modal {
+    max-height: 95vh;
+  }
+  .policy-doc-footer {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .policy-modal-footer {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+  .policy-close-action {
+    width: 100%;
+  }
+}

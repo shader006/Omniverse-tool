@@ -13,8 +13,28 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
+# Tự động nạp cấu hình từ .env nếu có
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for _p in _env_paths:
+        if os.path.exists(_p):
+            load_dotenv(_p)
+            break
+except ImportError:
+    pass
+
 # Thêm app vào sys.path để tái sử dụng module url_conver
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 from app.url_conver.metadata import get_media_info
 from app.url_conver.downloader import run_download_task, DEFAULT_DOWNLOAD_DIR
 from app.url_conver.utils import clean_url_key
@@ -185,6 +205,9 @@ def fetch_info(req: InfoRequest, request: Request):
     start = time.perf_counter()
     try:
         data = get_media_info(req.url)
+        if not data:
+            raise ValueError(f"Không thể lấy thông tin video từ liên kết: {req.url}")
+
         proc_ms = (time.perf_counter() - start) * 1000.0
 
         # Lưu cache trong bộ nhớ theo cache_key chuẩn hoá

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ============================================================
  * SERVICE: UserService
  * ============================================================
@@ -11,7 +11,7 @@
  * ============================================================
  */
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User, AppLanguage } from './entities/user.entity.js';
@@ -31,6 +31,23 @@ export class UserService {
   /** Tao moi mot nguoi dung */
   async create(createUserDto: CreateUserDto): Promise<User> {
     const user = this.userRepository.create(createUserDto);
+    return this.userRepository.save(user);
+  }
+
+  /** Đăng ký người dùng mới với mật khẩu đã băm (NestJS JWT Auth) */
+  async registerWithPassword(email: string, passwordHash: string, username?: string): Promise<User> {
+    const existing = await this.findByEmail(email);
+    if (existing) {
+      throw new BadRequestException('Email này đã được sử dụng. Vui lòng chọn email khác.');
+    }
+
+    const user = this.userRepository.create({
+      email,
+      password: passwordHash,
+      username: username || email.split('@')[0],
+      firebaseUid: 'jwt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    });
+
     return this.userRepository.save(user);
   }
 
@@ -78,7 +95,7 @@ export class UserService {
     return this.userRepository.findOne({ where: { firebaseUid } });
   }
 
-  /** Tim nguoi dung theo email */
+  /** Tim nguoi dung theo email (kèm mật khẩu) */
   async findByEmail(email: string): Promise<User | null> {
     return this.userRepository.findOne({ where: { email } });
   }

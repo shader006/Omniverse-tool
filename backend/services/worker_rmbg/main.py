@@ -5,8 +5,10 @@ import io
 import base64
 import logging
 import queue
+import re
 from typing import Optional, Union, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse
 from PIL import Image
 import uvicorn
 
@@ -16,8 +18,28 @@ import urllib.request
 import threading
 import time
 
+# Tự động nạp cấu hình từ .env nếu có
+try:
+    from dotenv import load_dotenv
+    _env_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env")),
+        os.path.abspath(".env")
+    ]
+    for _p in _env_paths:
+        if os.path.exists(_p):
+            load_dotenv(_p)
+            break
+except ImportError:
+    pass
+
 # Thêm app vào sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+try:
+    import app_python
+    sys.modules["app"] = app_python
+except ImportError:
+    pass
 from app.rmbg.remover import remove_background, get_birefnet_engine, free_system_memory
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -25,14 +47,25 @@ logger = logging.getLogger("worker_rmbg")
 
 _IS_WARMED_UP = False
 _ACTIVE_BACKEND = "None"
+_DEVICE = "cpu"
 _LAST_REQUEST_TIME = time.time()
 _ACTIVE_REQUESTS = 0
 _COMPLETED_REQUESTS = 0
 _FAILED_REQUESTS = 0
 _STATE_LOCK = threading.Lock()
 
-IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "300"))  # 0 = Giữ thường trực trong RAM vĩnh viễn không giải phóng
-DOWNLOAD_DIR = os.getenv("DOWNLOAD_DIR", "/app/downloads")
+IDLE_RECYCLE_SECONDS = int(os.getenv("IDLE_RECYCLE_SECONDS", "0"))  # 0 = Giữ thường trực trong RAM vĩnh viễn không giải phóng
+
+def _get_download_dir():
+    env_dir = os.getenv("DOWNLOAD_DIR")
+    if env_dir:
+        return env_dir
+    if os.path.exists("/app") and os.access("/app", os.W_OK):
+        return "/app/downloads"
+    local_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "downloads"))
+    return local_dir
+
+DOWNLOAD_DIR = _get_download_dir()
 
 # ── TELEMETRY QUEUE & SINGLE WORKER THREAD ──
 # Dùng Queue + 1 worker thread duy nhất, không tạo thread mới cho mỗi request
@@ -144,14 +177,15 @@ def send_otlp_trace(
         logger.warning("Telemetry queue đầy, bỏ qua trace để ưu tiên CPU.")
 
 def _warmup_worker():
-    global _IS_WARMED_UP, _ACTIVE_BACKEND
-    logger.info("🚀 [WARM-UP] Nạp sẵn BiRefNet-Lite (Intel OpenVINO) vào RAM...")
+    global _IS_WARMED_UP, _ACTIVE_BACKEND, _DEVICE
+    logger.info("🚀 [WARM-UP] Khởi tạo BiRefNet Engine (Ưu tiên GPU NVIDIA CUDA, fallback CPU)...")
     try:
         engine = get_birefnet_engine()
         if engine and engine.compiled_model is not None:
             _IS_WARMED_UP = True
             _ACTIVE_BACKEND = engine.backend
-            logger.info(f"✅ [WARM-UP] BiRefNet-Lite ({engine.backend.upper()}) sẵn sàng phục vụ.")
+            _DEVICE = getattr(engine, "device", "cpu")
+            logger.info(f"✅ [WARM-UP] BiRefNet-Lite sẵn sàng phục vụ trên {_DEVICE.upper()} (Backend: {_ACTIVE_BACKEND}).")
     except Exception as e:
         logger.warning(f"⚠️ [WARM-UP] Lỗi warm-up BiRefNet-Lite: {e}")
 
@@ -182,7 +216,14 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=_idle_monitor, daemon=True).start()
     yield
 
-app = FastAPI(title="BiRefNet-Lite OpenVINO Worker", version="2.1.0", lifespan=lifespan)
+app = FastAPI(title="BiRefNet-Lite Worker (GPU & CPU Fallback)", version="2.2.0", lifespan=lifespan)
+ 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "detail": exc.detail},
+    )
 
 @app.get("/health")
 def health_check():
@@ -191,6 +232,7 @@ def health_check():
         "status": "ready" if _IS_WARMED_UP else "warming",
         "service": "worker-rmbg",
         "model": "BiRefNet-Lite",
+        "device": _DEVICE,
         "backend": _ACTIVE_BACKEND,
         "warmed_up": _IS_WARMED_UP,
         "completed_requests": _COMPLETED_REQUESTS,
@@ -234,7 +276,10 @@ async def remove_bg(
         raise HTTPException(status_code=400, detail=f"Định dạng '{ext}' không được hỗ trợ. Vui lòng chọn ảnh PNG, JPG, WEBP hoặc BMP.")
 
     temp_id = uuid.uuid4().hex[:8]
-    base_name = os.path.splitext(file.filename)[0]
+    raw_base = os.path.splitext(os.path.basename(file.filename))[0]
+    base_name = re.sub(r'[^a-zA-Z0-9_\-.]', '_', raw_base)
+    if not base_name:
+        base_name = "image"
     out_filename = f"{temp_id}_{base_name}_nobg.png"
     out_filepath = os.path.join(DOWNLOAD_DIR, out_filename)
 
@@ -279,15 +324,20 @@ async def remove_bg(
         out_img.save(out_filepath, "PNG", optimize=False)
         file_size = os.path.getsize(out_filepath)
 
-        # Tối ưu RAM: Resize trực tiếp sang ảnh nhỏ 320px mà KHÔNG gọi out_img.copy() (tránh cấp phát thêm ~97MB RAM)
+        # Tạo preview chất lượng cao sắc nét (giữ nguyên độ phân giải gốc tới tối đa 2048px, chuẩn WebP ~80-150KB)
         orig_w, orig_h = out_img.size
-        scale = min(320.0 / max(orig_w, 1), 320.0 / max(orig_h, 1), 1.0)
-        thumb_w, thumb_h = max(1, int(orig_w * scale)), max(1, int(orig_h * scale))
-        preview_img = out_img.resize((thumb_w, thumb_h), Image.Resampling.BILINEAR)
+        max_preview_dim = 2048.0
+        resample_filter = getattr(getattr(Image, "Resampling", None), "LANCZOS", getattr(Image, "LANCZOS", 1))
+        if max(orig_w, orig_h) > max_preview_dim:
+            scale = max_preview_dim / max(orig_w, orig_h)
+            thumb_w, thumb_h = max(1, int(orig_w * scale)), max(1, int(orig_h * scale))
+            preview_img = out_img.resize((thumb_w, thumb_h), resample_filter)
+        else:
+            preview_img = out_img
 
         preview_buf = io.BytesIO()
         try:
-            preview_img.save(preview_buf, format="WEBP", quality=80)
+            preview_img.save(preview_buf, format="WEBP", quality=92, method=4)
             b64_mime = "image/webp"
         except Exception:
             preview_buf.seek(0)
@@ -299,18 +349,21 @@ async def remove_bg(
         b64_preview = f"data:{b64_mime};base64,{b64_str}"
 
         # Giải phóng biến tạm ngay lập tức
-        del preview_img, preview_buf, content, out_img
+        if preview_img is not out_img:
+            del preview_img
+        del preview_buf, content, out_img
         free_system_memory()
 
         duration_ms = (time.perf_counter() - req_start) * 1000.0
         send_otlp_trace(
-            name=" └─ 🖼️ [Xử lý AI] Tách nền ảnh BiRefNet (OpenVINO)",
+            name=f" └─ 🖼️ [Xử lý AI] Tách nền ảnh {metadata.get('model_display', 'BiRefNet')}",
             duration_ms=duration_ms,
             attributes={
                 "http.route": "/api/remove-bg",
                 "http.method": "POST",
                 "http.status_code": 200,
-                "ai.model": "BiRefNet-Lite (Intel OpenVINO)",
+                "ai.model": metadata.get("model_display", "BiRefNet-Lite"),
+                "ai.device": metadata.get("device", "cpu"),
                 "ai.inference_ms": metadata.get("timing_ms", {}).get("inference", 0),
                 "ai.preprocess_ms": metadata.get("timing_ms", {}).get("preprocess", 0),
                 "ai.postprocess_ms": metadata.get("timing_ms", {}).get("postprocess", 0),
@@ -362,6 +415,31 @@ async def remove_bg(
         with _STATE_LOCK:
             _ACTIVE_REQUESTS = max(0, _ACTIVE_REQUESTS - 1)
             _LAST_REQUEST_TIME = time.time()
+
+@app.api_route("/api/file/{filename}", methods=["GET", "HEAD"])
+async def get_file(filename: str):
+    """Phục vụ file ảnh tĩnh đã xử lý tách nền từ thư mục DOWNLOAD_DIR."""
+    # Chống lỗ hổng Path Traversal
+    safe_filename = os.path.basename(filename)
+    file_path = os.path.join(DOWNLOAD_DIR, safe_filename)
+    if not os.path.isfile(file_path):
+        logger.warning(f"File không tồn tại trên worker rmbg: {file_path}")
+        raise HTTPException(status_code=404, detail="File không tồn tại hoặc đã hết hạn.")
+
+    ext = os.path.splitext(safe_filename)[1].lower()
+    media_type = "application/octet-stream"
+    if ext == ".png":
+        media_type = "image/png"
+    elif ext in [".jpg", ".jpeg"]:
+        media_type = "image/jpeg"
+    elif ext == ".webp":
+        media_type = "image/webp"
+
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        filename=safe_filename
+    )
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8003"))

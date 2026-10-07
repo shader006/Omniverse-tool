@@ -13,7 +13,7 @@ try:
 except ImportError:
     HAS_PIL = False
 
-BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000" if os.path.exists("/app") else "http://localhost:80")
 
 
 def create_test_image_bytes(width=200, height=200) -> bytes:
