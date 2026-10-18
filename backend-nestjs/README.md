@@ -2,123 +2,124 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+# Oniverse Backend - NestJS JWT Authentication Service
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Ứng dụng backend xây dựng bằng framework **NestJS**, hiện thực hóa hệ thống xác thực người dùng chuẩn **Passport-JWT Authentication** theo tài liệu chính thức của NestJS ([docs.nestjs.com/security/authentication](https://docs.nestjs.com/security/authentication#jwt-functionality)), tích hợp lưu trữ SQLite với TypeORM và mã hóa mật khẩu bảo mật một chiều bằng **bcrypt**.
 
-## Description
+---
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 1. Sơ đồ quy trình hoạt động (Sequence Diagram)
 
-## Project setup
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Client (Postman / REST Client / Web)
+    participant Ctrl as AuthController
+    participant Guard as JwtAuthGuard
+    participant Strat as JwtStrategy (Passport)
+    participant Svc as AuthService
+    participant DB as SQLite (User Entity)
 
+    %% GIAI ĐOẠN 1: ĐĂNG KÝ / ĐĂNG NHẬP
+    Note over Client, DB: 1. ĐĂNG KÝ & ĐĂNG NHẬP LẤY TOKEN
+    Client->>Ctrl: POST /api/v1/auth/login (email, password)
+    Ctrl->>Svc: jwtLogin(dto)
+    Svc->>DB: findByEmail(email)
+    DB-->>Svc: Trả về User (kèm password hash)
+    Svc->>Svc: bcrypt.compare(password, hash)
+    Svc->>Svc: jwtService.sign(payload: sub, email, role)
+    Svc-->>Ctrl: { access_token, user }
+    Ctrl-->>Client: 200 OK: Trả về access_token
+
+    %% GIAI ĐOẠN 2: TRUY CẬP TÀI NGUYÊN BẢO MẬT
+    Note over Client, DB: 2. GỌI API BẢO MẬT (PROFILE)
+    Client->>Ctrl: GET /api/v1/auth/profile (Header: Authorization: Bearer <token>)
+    Ctrl->>Guard: Kích hoạt @UseGuards(JwtAuthGuard)
+    Guard->>Strat: Trích xuất Bearer token & verify
+    alt Token hợp lệ & còn hạn
+        Strat->>Strat: Giải mã payload (sub, email, username)
+        Strat-->>Ctrl: Gán payload vào req.user
+        Ctrl-->>Client: 200 OK: Trả về thông tin profile người dùng
+    else Token sai, thiếu hoặc hết hạn
+        Guard-->>Client: 401 Unauthorized (Chặn truy cập ngay lập tức)
+    end
+```
+
+---
+
+## 2. Chi tiết các bước thực thi kỹ thuật
+
+### 2.1. Đăng ký tài khoản (`POST /api/v1/auth/register`)
+- **Dữ liệu gửi lên (Body):** `{ email, password, username }`.
+- **Luồng xử lý:**
+  1. DTO `RegisterDto` kiểm tra tính hợp lệ của dữ liệu đầu vào.
+  2. `AuthService.register()` sử dụng thư viện **bcrypt** băm mật khẩu với `saltRounds = 10` thành chuỗi hash an toàn dạng `$2b$10$...` (tuyệt đối không lưu mật khẩu bản rõ vào database).
+  3. Lưu thông tin người dùng vào cơ sở dữ liệu SQLite thông qua `UserService.registerWithPassword()`.
+  4. Khởi tạo `access_token` bằng `jwtService.sign(payload)` với payload chứa `{ sub: user.id, email, username, role }`.
+- **Kết quả trả về:** HTTP 201 Created kèm thông tin người dùng và chuỗi `access_token`.
+
+### 2.2. Đăng nhập (`POST /api/v1/auth/login`)
+- **Dữ liệu gửi lên (Body):** `{ email, password }`.
+- **Luồng xử lý:**
+  1. `AuthService.jwtLogin()` gọi `validateUser(email, password)`.
+  2. Truy vấn người dùng trong database bằng email qua `UserService.findByEmail()`.
+  3. Sử dụng `bcrypt.compare(password, user.password)` để so khớp mật khẩu người dùng nhập với chuỗi băm trong DB.
+  4. Nếu không khớp: Ném lỗi `401 Unauthorized ('Email hoặc mật khẩu không chính xác.')`.
+  5. Nếu khớp: Đóng gói payload `{ sub: user.id, email: user.email, username: user.username, role: user.role }`.
+  6. Ký và tạo chuỗi JWT bằng secret key (`jwtConstants.secret`) với thời hạn hiệu lực 1 ngày (`expiresIn: '1d'`).
+- **Kết quả trả về:** HTTP 200 OK kèm `access_token` và thông tin `user`.
+
+### 2.3. Gọi tài nguyên bảo mật (`GET /api/v1/auth/profile`)
+- **Dữ liệu gửi lên:** Header `Authorization: Bearer <access_token>`.
+- **Luồng xử lý:**
+  1. Request gửi đến endpoint `/auth/profile`, gặp decorator `@UseGuards(JwtAuthGuard)`.
+  2. `JwtAuthGuard` (kế thừa `AuthGuard('jwt')` của Passport) bắt request và kích hoạt `JwtStrategy`.
+  3. `JwtStrategy` tự động trích xuất chuỗi Bearer token từ Header và giải mã bằng `jwtConstants.secret`:
+     - Nếu token không tồn tại, bị làm giả hoặc đã hết hạn: Passport chặn lại ngay lập tức và phản hồi mã lỗi `401 Unauthorized`.
+     - Nếu token hợp lệ: Hàm `validate(payload)` trích xuất thông tin `{ userId: payload.sub, email: payload.email, username: payload.username, role: payload.role }` và tự động gắn vào đối tượng `req.user`.
+  4. Controller nhận request hợp lệ, lấy dữ liệu từ `req.user` và trả về profile người dùng.
+
+---
+
+## 3. Danh mục mã nguồn và vai trò các file
+
+| Thành phần | Đường dẫn file | Vai trò & Nhiệm vụ |
+| :--- | :--- | :--- |
+| **Cấu hình Secret** | `src/auth/constants.ts` | Lưu `jwtConstants.secret` dùng làm khóa bí mật để ký và giải mã JWT token. |
+| **Module Auth** | `src/auth/auth.module.ts` | Khai báo `PassportModule`, cấu hình `JwtModule.register()` với secret và thời hạn token. |
+| **DTOs Xác thực** | `src/auth/dto/register.dto.ts`<br>`src/auth/dto/jwt-login.dto.ts` | Định nghĩa schema và kiểm tra dữ liệu đầu vào khi Client đăng ký, đăng nhập. |
+| **Entity Database** | `src/user/entities/user.entity.ts` | Bảng `users` trong SQLite (lưu trường `password` hash bcrypt, `email`, `role`,...). |
+| **User Service** | `src/user/user.service.ts` | Xử lý nghiệp vụ người dùng: `registerWithPassword` (lưu user mới), `findByEmail` (tìm theo email). |
+| **Auth Service** | `src/auth/auth.service.ts` | Băm mật khẩu bcrypt, kiểm tra đăng nhập (`validateUser`), ký JWT token (`jwtLogin`, `register`). |
+| **Passport Strategy** | `src/auth/strategies/jwt.strategy.ts` | Kế thừa `PassportStrategy(Strategy)`, tự động bóc tách Bearer token từ Header và giải mã payload vào `req.user`. |
+| **Auth Guard** | `src/auth/guards/jwt-auth.guard.ts` | Decorator `@UseGuards(JwtAuthGuard)` làm chốt chặn bảo vệ các endpoint yêu cầu xác thực. |
+| **Auth Controller** | `src/auth/auth.controller.ts` | Cung cấp các endpoint: `POST /auth/register`, `POST /auth/login`, `GET /auth/profile`. |
+| **Kiểm thử tự động** | `test/app.e2e-spec.ts` | Bộ test tự động toàn diện e2e (3/3 passed) kiểm tra luồng Register -> Login -> Profile. |
+| **Kiểm thử nhanh** | `test.http` | File kịch bản test bằng extension REST Client trong VS Code. |
+
+---
+
+## 4. Hướng dẫn cài đặt và Chạy thử nghiệm
+
+### 4.1. Cài đặt thư viện phụ thuộc
 ```bash
 $ npm install
 ```
 
-## Compile and run the project
-
+### 4.2. Khởi chạy máy chủ phát triển
 ```bash
-# development
-$ npm run start
-
-# watch mode
 $ npm run start:dev
-
-# production mode
-$ npm run start:prod
 ```
+Server backend sẽ lắng nghe tại cổng `http://localhost:4000/api/v1`.
 
-## Run tests
-
+### 4.3. Chạy kiểm thử tự động (E2E Test)
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
 $ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/overview) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### 4.4. Kiểm thử trực tiếp bằng REST Client
+Mở file `test.http` trong VS Code (đã cài extension REST Client) và bấm **Send Request** trên từng request:
+1. `POST /auth/register`: Đăng ký tài khoản mới.
+2. `POST /auth/login`: Đăng nhập lấy Bearer token.
+3. `GET /auth/profile`: Gửi kèm `Authorization: Bearer <token>` để kiểm tra truy cập thành công.
+4. `GET /auth/profile` (không token): Kiểm tra Guard chặn `401 Unauthorized`.

@@ -184,42 +184,47 @@
 .pixel-user-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   background: #111827;
   border: 2px solid #22c55e;
-  padding: 4px 12px 4px 4px;
   cursor: pointer;
   box-shadow: 2px 2px 0 #000, 0 0 8px rgba(34, 197, 94, 0.2);
   transition: all 0.15s ease;
-  font-family: 'Press Start 2P', monospace;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .pixel-user-chip:hover {
   border-color: #4ade80;
-  background: #1a2332;
+  background: #111827;
   box-shadow: 2px 2px 0 #000, 0 0 14px rgba(34, 197, 94, 0.35);
   transform: translateY(-1px);
 }
 
 .pixel-user-avatar {
-  width: 26px;
-  height: 26px;
-  border: 2px solid #22c55e;
+  width: 100%;
+  height: 100%;
+  border: none;
   object-fit: cover;
   image-rendering: auto;
   flex-shrink: 0;
+  display: block;
 }
 
 .pixel-user-avatar--initial {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
   color: #000;
   font-family: 'Press Start 2P', monospace;
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   font-weight: bold;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.3);
 }
 
 .pixel-user-name {
@@ -313,6 +318,7 @@
   letter-spacing: 0.5px;
   transition: all 0.1s ease;
   text-align: left;
+  white-space: nowrap;
 }
 
 .pixel-user-dropdown-item:hover {
@@ -329,8 +335,141 @@
   stroke: #ef4444;
 }
 
-/* ── Mobile: thu gọn user chip ── */
+/* =========================================================
+   HAMBURGER 3-BAR BUTTON & MOBILE DROPDOWN (TOOLS NAVBAR)
+   ========================================================= */
+
+.pixel-hamburger-wrapper {
+  position: relative;
+  display: none; /* Ẩn mặc định trên Desktop */
+}
+
+.pixel-hamburger-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 36px;
+  height: 36px;
+  background: #111827;
+  border: 2px solid #334155;
+  box-shadow: 2px 2px 0 #000;
+  cursor: pointer;
+  padding: 5px;
+  transition: all 0.15s ease;
+}
+
+.pixel-hamburger-btn:hover,
+.pixel-hamburger-btn.active {
+  border-color: #22c55e;
+  background: #141720;
+  box-shadow: 2px 2px 0 #000, 0 0 10px rgba(34, 197, 94, 0.4);
+}
+
+.pixel-hamburger-bar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background-color: #f8fafc;
+  box-shadow: 0 1px 0 #000;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.pixel-hamburger-btn.active .pixel-hamburger-bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.pixel-hamburger-btn.active .pixel-hamburger-bar:nth-child(2) {
+  opacity: 0;
+}
+
+.pixel-hamburger-btn.active .pixel-hamburger-bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* Mobile Nav Dropdown */
+.pixel-mobile-nav-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 210px;
+  background: #0d0f14;
+  border: 2px solid #22c55e;
+  box-shadow: 4px 4px 0 #000, 0 0 20px rgba(0, 0, 0, 0.8);
+  z-index: 250;
+  animation: pixel-dropdown-pop 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.pixel-mobile-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pixel-mobile-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: transparent;
+  border: none;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.62rem;
+  color: #cbd5e1;
+  text-decoration: none;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-align: left;
+  transition: all 0.1s ease;
+  white-space: nowrap;
+}
+
+.pixel-mobile-nav-item:hover {
+  background: #141720;
+  color: #22c55e;
+}
+
+.pixel-nav-icon {
+  font-size: 0.85rem;
+  width: 18px;
+  text-align: center;
+  display: inline-block;
+}
+
+.pixel-mobile-nav-divider {
+  height: 2px;
+  background: #1e222d;
+  margin: 6px 12px;
+}
+
+.pixel-mobile-nav-item--logout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.pixel-mobile-nav-item--login:hover {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+/* ── Mobile: thu gọn navbar & bật 3 gạch ── */
 @media (max-width: 768px) {
+  .pixel-tools-navbar {
+    padding: 10px 14px;
+  }
+  .pixel-tools-nav-left {
+    display: none;
+  }
+  .pixel-social-desktop {
+    display: none;
+  }
+  .pixel-hamburger-wrapper {
+    display: block !important;
+  }
   .pixel-user-name {
     display: none;
   }
@@ -341,8 +480,9 @@
     padding: 3px;
   }
   .pixel-user-dropdown {
-    right: -20px;
+    right: 0;
     min-width: 180px;
   }
 }
+
 

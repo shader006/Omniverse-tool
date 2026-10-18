@@ -80,7 +80,6 @@ export class AuthService implements OnModuleInit {
 
   /**
    * Kiem tra email va password nguoi dung bang bcrypt.
-   * Chuan theo tai lieu: https://docs.nestjs.com/security/authentication#jwt-functionality
    */
   async validateUser(email: string, pass: string): Promise<any> {
     const user = await this.userService.findByEmail(email);

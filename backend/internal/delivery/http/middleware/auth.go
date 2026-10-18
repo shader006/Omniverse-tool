@@ -19,6 +19,10 @@ type contextKey string
 const (
 	contextKeyUID   contextKey = "firebase_uid"
 	contextKeyEmail contextKey = "firebase_email"
+
+	// ContextKeyUID và ContextKeyEmail được export để test package có thể inject context thủ công.
+	ContextKeyUID   = contextKeyUID
+	ContextKeyEmail = contextKeyEmail
 )
 
 var (

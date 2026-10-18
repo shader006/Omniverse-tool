@@ -4,13 +4,11 @@ import { translations } from '../../locales/translations';
 import { transcribeHybrid } from '../../utils/whisperClient';
 import SyncedLyrics from './SyncedLyrics';
 import RawTextView from './RawTextView';
-import WhisperArchitectureModal from './WhisperArchitectureModal';
 
 export default function WhisperTranscribe({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
 
   const [selectedFile, setSelectedFile] = useState(null);
-  const [isArchModalOpen, setIsArchModalOpen] = useState(false);
   const [language, setLanguage] = useState('auto');
   const [format, setFormat] = useState('txt');
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -298,28 +296,6 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       </div>
 
       <div className="card file-converter-card">
-        {/* Nút Test Giao Diện & Nút Xem Kiến Trúc AI Whisper */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.whisper_test_btn}
-          >
-            {tr.whisper_test_btn}
-          </button>
-
-          <button
-            type="button"
-            className="btn-test-export"
-            style={{ borderColor: '#38bdf8', color: '#38bdf8', background: 'rgba(56, 189, 248, 0.08)' }}
-            onClick={() => setIsArchModalOpen(true)}
-            title={lang === 'vi' ? 'Xem Sơ Đồ Kiến Trúc Đa Tầng AI Whisper' : 'Explore Whisper AI Architecture'}
-          >
-            🏛️ {lang === 'vi' ? 'Kiến Trúc AI Whisper' : 'AI Architecture'}
-          </button>
-        </div>
-
         {/* Dropzone */}
         <div 
           className={`file-dropzone ${isDragOver ? 'drag-over' : ''}`}
@@ -637,12 +613,6 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
         </div>
       </div>
 
-      {/* Sơ đồ Tượng đài Kiến trúc AI Whisper */}
-      <WhisperArchitectureModal 
-        isOpen={isArchModalOpen} 
-        onClose={() => setIsArchModalOpen(false)} 
-        lang={lang} 
-      />
     </section>
   );
 }

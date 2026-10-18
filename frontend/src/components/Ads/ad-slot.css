@@ -63,9 +63,12 @@
   width: 100%;
 }
 
+.ad-placeholder--banner,
 .ad-placeholder--horizontal {
   height: 90px;
   width: 100%;
+  max-width: 728px;
+  margin: 0 auto;
 }
 
 .ad-placeholder--rectangle {
@@ -155,10 +158,15 @@
   display: block !important;
 }
 
-/* ── Vị trí đặc biệt: Between Tools ── */
+/* ── Vị trí đặc biệt ── */
 .ad-slot-wrapper.ad-between-tools {
   margin: 28px 0;
   padding: 0;
+}
+
+.ad-slot-wrapper.ad-after-tool {
+  margin: 32px auto 16px;
+  max-width: 728px;
 }
 
 /* ── Sidebar sticky ad ── */

@@ -120,4 +120,36 @@ export const authService = {
     }
     return null;
   },
+
+  /**
+   * Đổi tên tài khoản (cập nhật đồng bộ cả Firebase Auth và Backend NestJS)
+   */
+  async updateAccountName(newName, userId) {
+    const trimmed = (newName || '').trim();
+    if (!trimmed) throw new Error('Tên tài khoản không được để trống.');
+
+    // 1. Cập nhật Firebase nếu đang dùng tài khoản Firebase
+    if (auth?.currentUser) {
+      try {
+        await updateProfile(auth.currentUser, { displayName: trimmed });
+      } catch (err) {
+        console.warn('[AuthService] Lỗi updateProfile Firebase:', err);
+      }
+    }
+
+    // 2. Cập nhật Backend NestJS nếu có userId
+    let backendUser = null;
+    if (userId) {
+      try {
+        const res = await authApi.updateUser(userId, { username: trimmed });
+        if (res.ok) {
+          backendUser = await res.json();
+        }
+      } catch (err) {
+        console.warn('[AuthService] Lỗi update username trên backend:', err);
+      }
+    }
+
+    return { displayName: trimmed, backendUser };
+  },
 };

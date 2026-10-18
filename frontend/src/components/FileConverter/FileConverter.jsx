@@ -178,18 +178,6 @@ export default function FileConverter({ lang = 'vi' }) {
       </div>
 
       <div className="card file-converter-card">
-        {/* Nút Test Giao Diện Xuất File */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.file_test_btn}
-          >
-            {tr.file_test_btn}
-          </button>
-        </div>
-
         {/* Dropzone */}
         <div 
           className={`file-dropzone ${isDragOver ? 'drag-over' : ''}`}

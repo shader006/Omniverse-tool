@@ -279,16 +279,6 @@ export default function PictureUpscaler({ lang = 'vi' }) {
                 <span className="browse-link">{lang === 'vi' ? 'chọn ảnh từ máy tính' : 'browse from your device'}</span>
               </p>
               <div className="dropzone-hint">PNG, JPG, WEBP (Tối đa 30MB)</div>
-              <button
-                type="button"
-                className="btn-quick-sample"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  loadSampleImage();
-                }}
-              >
-                🧪 {lang === 'vi' ? 'Thử ảnh mẫu Low-Res' : 'Try Low-Res Sample'}
-              </button>
             </div>
           </div>
         ) : (

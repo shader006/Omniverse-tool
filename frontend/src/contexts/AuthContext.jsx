@@ -128,6 +128,45 @@ export function AuthProvider({ children }) {
     return Promise.resolve('mock-dev-token');
   };
 
+  /** Đổi tên tài khoản (hỗ trợ đồng bộ Firebase, NestJS Backend và Demo/Local Mode) */
+  const updateDisplayName = async (newName) => {
+    const trimmed = (newName || '').trim();
+    if (!trimmed) {
+      throw new Error('Tên tài khoản không được để trống.');
+    }
+
+    // 1. Cập nhật qua authService (Firebase Auth + NestJS API)
+    try {
+      const res = await authService.updateAccountName(trimmed, backendUser?.id);
+      if (res?.backendUser) {
+        setBackendUser(res.backendUser);
+      }
+    } catch (err) {
+      console.warn('[AuthContext] updateAccountName warning:', err);
+    }
+
+    // 2. Cập nhật React state ngay lập tức (không cần reload trang)
+    setUser((prev) => {
+      if (!prev) {
+        return {
+          displayName: trimmed,
+          email: 'gamer@omniverse.local',
+          photoURL: null,
+          getIdToken: () => Promise.resolve('mock-dev-token')
+        };
+      }
+      return {
+        ...prev,
+        displayName: trimmed
+      };
+    });
+
+    // 3. Lưu localStorage để giữ tên sau khi F5 refresh
+    localStorage.setItem('omniverse_display_name', trimmed);
+
+    return { success: true, displayName: trimmed };
+  };
+
   const value = {
     user,
     backendUser,
@@ -143,6 +182,7 @@ export function AuthProvider({ children }) {
     logout,
     switchLanguage,
     getIdToken,
+    updateDisplayName,
   };
 
   return (

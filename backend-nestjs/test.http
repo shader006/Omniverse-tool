@@ -3,9 +3,9 @@ POST http://localhost:4000/api/v1/auth/register
 Content-Type: application/json
 
 {
-  "email": "student@phenikaa.edu.vn",
-  "password": "Password123@",
-  "username": "NguyenVanA"
+  "email": "student1234@phenikaa.edu.vn",
+  "password": "Password123",
+  "username": "NguyenVan123"
 }
 
 ### 2. ĐĂNG NHẬP LẤY TOKEN (POST /auth/login)
@@ -20,6 +20,6 @@ Content-Type: application/json
 ### 3. GỌI API BẢO MẬT PROFILE VỚI BEARER TOKEN (GET /auth/profile)
 # Thay chuỗi token bên dưới bằng token nhận được từ bước 2
 GET http://localhost:4000/api/v1/auth/profile
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjYWY5ZjMwOC05N2YxLTQ3MDUtYTQxZC05N2NkMjQ1ZDYzMTEiLCJlbWFpbCI6InN0dWRlbnRAcGhlbmlrYWEuZWR1LnZuIiwidXNlcm5hbWUiOiJOZ3V5ZW5WYW5BIiwicm9sZSI6InVzZXIiLCJpYXQiOjE3OTEzNDU1MDMsImV4cCI6MTc5MTQzMTkwM30.zJDEysblxRTeyRV2QqwOJNMtfJvYRIIWJsvrtxQbOXs
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjYWY5ZjMwOC05N2YxLTQ3MDUtYTQxZC05N2NkMjQ1ZDYzMTEiLCJlbWFpbCI6InN0dWRlbnRAcGhlbmlrYWEuZWR1LnZuIiwidXNlcm5hbWUiOiJOZ3V5ZW5WYW5BIiwicm9sZSI6InVzZXIiLCJpYXQiOjE3OTEzNDg5MDcsImV4cCI6MTc5MTQzNTMwN30.PCVIYuc71uzSgAJJlvQaXAdIbHiz7xztpylpQDg0zSw
 ### 4. THỬ GỌI PROFILE KHI KHÔNG CÓ TOKEN (Kiểm tra Guard chặn 401)
 GET http://localhost:4000/api/v1/auth/profile

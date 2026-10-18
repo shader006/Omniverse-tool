@@ -35,6 +35,15 @@ export default function Footer({ lang = 'vi', onOpenPolicy, onOpenAbout }) {
           <button className="footer-link" onClick={() => onOpenAbout?.()}>
             About Us
           </button>
+          <span className="footer-dot">·</span>
+          <a 
+            href="https://www.facebook.com/profile.php?id=61595131252251" 
+            target="_blank" 
+            rel="noreferrer" 
+            className="footer-link"
+          >
+            Facebook
+          </a>
         </div>
 
         {/* Copyright */}

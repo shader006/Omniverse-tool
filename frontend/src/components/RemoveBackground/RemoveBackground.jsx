@@ -7,6 +7,7 @@ import {
   isMobileDevice 
 } from '../../utils/rmbgClient';
 import ComparisonSlider from './ComparisonSlider';
+import './remove-background.css';
 
 export default function RemoveBackground({ lang = 'vi' }) {
   const tr = translations[lang] || translations.vi;
@@ -236,18 +237,6 @@ export default function RemoveBackground({ lang = 'vi' }) {
       </div>
 
       <div className="card search-card file-conver-card">
-        {/* Nút Test Giao Diện Xuất File */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.bg_test_btn}
-          >
-            {tr.bg_test_btn}
-          </button>
-        </div>
-
         {/* Dropzone */}
         <div 
           className={`file-dropzone ${isDragOver ? 'drag-over' : ''}`}
@@ -341,82 +330,132 @@ export default function RemoveBackground({ lang = 'vi' }) {
 
         {/* Options Panel */}
         {selectedFile && (
-          <div id="bg-options-panel" className="file-options-panel">
-            <div className="options-grid">
-              <div className="option-item">
-                <label htmlFor="bg-engine-select" className="option-label">
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
-                    <path d="M9 1H6L3 9h4l-2 6 8-8H9l1-6z" />
-                  </svg>
+          <div id="bg-options-panel" className="bg-options-panel">
+            <div className="bg-options-grid">
+              {/* Chế độ xử lý (Engine) */}
+              <div className="bg-option-field">
+                <label className="bg-option-label">
                   <span>{tr.bg_engine_label}</span>
                 </label>
-                <select 
-                  id="bg-engine-select" 
-                  className="form-select"
-                  value={engine}
-                  onChange={(e) => setEngine(e.target.value)}
-                >
-                  <option value="client">
+                <div className="bg-segmented-control" role="group" aria-label={tr.bg_engine_label}>
+                  <button
+                    type="button"
+                    className={`bg-segmented-btn ${engine === 'client' ? 'active' : ''}`}
+                    onClick={() => setEngine('client')}
+                  >
                     {isMobile ? tr.bg_engine_client_mobile : tr.bg_engine_client}
-                  </option>
-                  <option value="server">
+                  </button>
+                  <button
+                    type="button"
+                    className={`bg-segmented-btn ${engine === 'server' ? 'active' : ''}`}
+                    onClick={() => setEngine('server')}
+                  >
                     {isMobile ? tr.bg_engine_server_mobile : tr.bg_engine_server}
-                  </option>
-                </select>
-              </div>
-              <div className="option-item" id="bg-model-select-wrapper">
-                <label htmlFor="bg-model-select" className="option-label">
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
-                    <path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zm-3-2h2v2H9V5zm-4 4h2v2H5V9zm4 0h2v2H9V9zm-4-4h2v2H5V5z" />
-                  </svg>
-                  <span>{tr.bg_model_label}</span>
-                </label>
-                <select 
-                  id="bg-model-select" 
-                  className="form-select"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                >
-                  <option value="birefnet-lite">{tr.bg_model_birefnet}</option>
-                </select>
+                  </button>
+                </div>
               </div>
 
-              <div className="option-item">
-                <label htmlFor="bg-color-select" className="option-label">
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
-                    <path d="M5 1h6v2h2v2h1v6h-1v2h-2v2H5v-2H3v-2H2V5h1V3h2V1zm3 2v10h3v-2h1V5h-1V3H8z" />
-                  </svg>
+              {/* Chế độ AI (Model) */}
+              <div className="bg-option-field" id="bg-model-select-wrapper">
+                <label className="bg-option-label">
+                  <span>{tr.bg_model_label}</span>
+                </label>
+                <div className="bg-model-card">
+                  <span className="bg-model-name">BiRefNet Studio SOTA</span>
+                  <span className="bg-model-status">{lang === 'vi' ? 'Tự Động' : 'Auto'}</span>
+                </div>
+              </div>
+
+              {/* Màu nền thay thế (Background Color) */}
+              <div className="bg-option-field bg-option-field--full">
+                <label className="bg-option-label">
                   <span>{tr.bg_color_label}</span>
                 </label>
-                <div className="bg-color-picker-wrapper">
-                  <select 
-                    id="bg-color-select" 
-                    className="form-select"
-                    value={colorOption}
-                    onChange={(e) => {
-                      setColorOption(e.target.value);
-                      handleColorChange(e.target.value, customColor);
+                <div className="bg-color-swatches" role="radiogroup" aria-label={tr.bg_color_label}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={colorOption === 'transparent'}
+                    className={`bg-swatch-btn ${colorOption === 'transparent' ? 'active' : ''}`}
+                    onClick={() => {
+                      setColorOption('transparent');
+                      handleColorChange('transparent', customColor);
                     }}
                   >
-                    <option value="transparent">{tr.bg_color_transparent}</option>
-                    <option value="#ffffff">{tr.bg_color_white}</option>
-                    <option value="#000000">{tr.bg_color_black}</option>
-                    <option value="#1e293b">{tr.bg_color_navy}</option>
-                    <option value="custom">{tr.bg_color_custom}</option>
-                  </select>
-                  {colorOption === 'custom' && (
-                    <input 
-                      type="color" 
-                      id="bg-custom-color-input" 
-                      className="bg-custom-color-input" 
-                      value={customColor}
-                      title="Color picker"
-                      onChange={(e) => {
-                        setCustomColor(e.target.value);
-                        handleColorChange('custom', e.target.value);
+                    <span className="swatch-box-preview swatch-box-checker" />
+                    <span>{tr.bg_color_transparent}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={colorOption === '#ffffff'}
+                    className={`bg-swatch-btn ${colorOption === '#ffffff' ? 'active' : ''}`}
+                    onClick={() => {
+                      setColorOption('#ffffff');
+                      handleColorChange('#ffffff', customColor);
+                    }}
+                  >
+                    <span className="swatch-box-preview" style={{ background: '#ffffff', border: '1px solid #64748b' }} />
+                    <span>{tr.bg_color_white}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={colorOption === '#000000'}
+                    className={`bg-swatch-btn ${colorOption === '#000000' ? 'active' : ''}`}
+                    onClick={() => {
+                      setColorOption('#000000');
+                      handleColorChange('#000000', customColor);
+                    }}
+                  >
+                    <span className="swatch-box-preview" style={{ background: '#000000', border: '1px solid #334155' }} />
+                    <span>{tr.bg_color_black}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={colorOption === '#1e293b'}
+                    className={`bg-swatch-btn ${colorOption === '#1e293b' ? 'active' : ''}`}
+                    onClick={() => {
+                      setColorOption('#1e293b');
+                      handleColorChange('#1e293b', customColor);
+                    }}
+                  >
+                    <span className="swatch-box-preview" style={{ background: '#1e293b', border: '1px solid #475569' }} />
+                    <span>{tr.bg_color_navy}</span>
+                  </button>
+
+                  <div className="bg-custom-swatch-wrapper">
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={colorOption === 'custom'}
+                      className={`bg-swatch-btn ${colorOption === 'custom' ? 'active' : ''}`}
+                      onClick={() => {
+                        setColorOption('custom');
+                        handleColorChange('custom', customColor);
                       }}
-                    />
-                  )}
+                    >
+                      <span className="swatch-box-preview" style={{ background: customColor, border: '1px solid #475569' }} />
+                      <span>{tr.bg_color_custom}</span>
+                    </button>
+                    {colorOption === 'custom' && (
+                      <input
+                        type="color"
+                        id="bg-custom-color-input"
+                        className="bg-custom-color-input"
+                        value={customColor}
+                        title="Chọn màu tùy chỉnh"
+                        onChange={(e) => {
+                          setCustomColor(e.target.value);
+                          handleColorChange('custom', e.target.value);
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

@@ -39,6 +39,11 @@
   width: 100%;
 }
 
+.pixel-navbar-left {
+  display: flex;
+  align-items: center;
+}
+
 .pixel-logo-container {
   display: flex;
   align-items: center;
@@ -60,7 +65,9 @@
 .pixel-navbar-right {
   display: flex;
   align-items: center;
-  gap: 28px;
+  justify-content: flex-end;
+  margin-left: auto;
+  gap: 24px;
 }
 
 .pixel-nav-links {
@@ -434,25 +441,313 @@
   margin-top: 6px;
 }
 
+/* =========================================================
+   USER BADGE & DROPDOWN (trang chủ)
+   ========================================================= */
+
+.pixel-user-chip-wrapper {
+  position: relative;
+}
+
+.pixel-hero-user-badge {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0 !important;
+  cursor: pointer !important;
+  background: #111827;
+  border: 2px solid #22c55e;
+  box-shadow: 2px 2px 0 #000;
+  transition: all 0.15s ease;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.pixel-hero-user-badge:hover {
+  background: #111827;
+  border-color: #4ade80;
+  box-shadow: 2px 2px 0 #000, 0 0 10px rgba(34, 197, 94, 0.5);
+  transform: translateY(-1px);
+}
+
+.pixel-hero-signin-btn {
+  background: rgba(17, 24, 39, 0.85);
+  border: 2px solid #22c55e;
+  box-shadow: 2px 2px 0 #000;
+  padding: 8px 14px;
+  color: #22c55e;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.65rem;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+}
+
+.pixel-hero-signin-btn:hover {
+  background: #22c55e;
+  color: #000;
+  box-shadow: 2px 2px 0 #000, 0 0 12px rgba(34, 197, 94, 0.6);
+}
+
+.pixel-hero-user-mini-avatar {
+  width: 100%;
+  height: 100%;
+  border: none;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: block;
+}
+
+.pixel-hero-user-mini-avatar--initial {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #000;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.pixel-hero-user-hi {
+  font-size: 0.65rem;
+  color: #22c55e;
+  text-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* User Dropdown */
+.pixel-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 220px;
+  background: #0d0f14;
+  border: 2px solid #1e222d;
+  box-shadow: 4px 4px 0 #000, 0 0 20px rgba(0, 0, 0, 0.7);
+  z-index: 200;
+  animation: pixel-dropdown-pop 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pixel-dropdown-pop {
+  0% {
+    transform: scale(0.95) translateY(-4px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+.pixel-user-dropdown-header {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pixel-user-dropdown-email {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.55rem;
+  color: #cbd5e1;
+  letter-spacing: 0.3px;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.pixel-user-dropdown-provider {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #64748b;
+  letter-spacing: 0.3px;
+}
+
+.pixel-user-dropdown-divider {
+  height: 2px;
+  background: #1e222d;
+  margin: 0 10px;
+}
+
+.pixel-user-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #94a3b8;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.1s ease;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pixel-user-dropdown-item:hover {
+  background: #141720;
+  color: #ffffff;
+}
+
+.pixel-user-dropdown-item--logout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.pixel-user-dropdown-item--logout:hover svg {
+  stroke: #ef4444;
+}
+
+/* =========================================================
+   HAMBURGER 3-BAR BUTTON & MOBILE DROPDOWN
+   ========================================================= */
+
+.pixel-hamburger-wrapper {
+  position: relative;
+  display: none; /* Ẩn mặc định trên Desktop */
+}
+
+.pixel-hamburger-btn {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 38px;
+  height: 38px;
+  background: rgba(17, 24, 39, 0.9);
+  border: 2px solid #334155;
+  box-shadow: 2px 2px 0 #000;
+  cursor: pointer;
+  padding: 6px;
+  transition: all 0.15s ease;
+}
+
+.pixel-hamburger-btn:hover,
+.pixel-hamburger-btn.active {
+  border-color: #22c55e;
+  background: #111827;
+  box-shadow: 2px 2px 0 #000, 0 0 10px rgba(34, 197, 94, 0.4);
+}
+
+.pixel-hamburger-bar {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background-color: #f8fafc;
+  box-shadow: 0 1px 0 #000;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.pixel-hamburger-btn.active .pixel-hamburger-bar:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.pixel-hamburger-btn.active .pixel-hamburger-bar:nth-child(2) {
+  opacity: 0;
+}
+
+.pixel-hamburger-btn.active .pixel-hamburger-bar:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
+}
+
+/* Mobile Nav Dropdown */
+.pixel-mobile-nav-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 210px;
+  background: #0d0f14;
+  border: 2px solid #22c55e;
+  box-shadow: 4px 4px 0 #000, 0 0 20px rgba(0, 0, 0, 0.8);
+  z-index: 250;
+  animation: pixel-dropdown-pop 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.pixel-mobile-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pixel-mobile-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  background: transparent;
+  border: none;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.62rem;
+  color: #cbd5e1;
+  text-decoration: none;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-align: left;
+  transition: all 0.1s ease;
+  white-space: nowrap;
+}
+
+.pixel-mobile-nav-item:hover {
+  background: #141720;
+  color: #22c55e;
+}
+
+.pixel-nav-icon {
+  font-size: 0.85rem;
+  width: 18px;
+  text-align: center;
+  display: inline-block;
+}
+
+.pixel-mobile-nav-divider {
+  height: 2px;
+  background: #1e222d;
+  margin: 6px 12px;
+}
+
+.pixel-mobile-nav-item--logout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.pixel-mobile-nav-item--login:hover {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
 /* ==================== RESPONSIVE TWEAKS ==================== */
 @media (max-width: 900px) {
   .pixel-navbar {
-    padding: 16px 20px;
-    flex-wrap: wrap;
-    gap: 16px;
-    justify-content: center;
+    padding: 14px 16px;
+    justify-content: flex-end;
+  }
+  .pixel-navbar-left {
+    display: none !important;
   }
   .pixel-navbar-right {
-    gap: 16px;
-    width: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
+    gap: 12px;
+    width: auto;
+    justify-content: flex-end;
   }
   .pixel-nav-links {
-    gap: 16px;
-    width: 100%;
-    justify-content: center;
-    flex-wrap: wrap;
+    display: none !important;
+  }
+  .pixel-hamburger-wrapper {
+    display: block !important;
   }
   .pixel-floating-left,
   .pixel-floating-right {
@@ -468,50 +763,22 @@
   }
 }
 
-/* =========================================================
-   USER BADGE (trang chủ — khi đã đăng nhập)
-   ========================================================= */
-
-.pixel-hero-user-badge {
-  display: flex !important;
-  align-items: center;
-  gap: 8px;
-  cursor: default !important;
-}
-
-.pixel-hero-user-mini-avatar {
-  width: 24px;
-  height: 24px;
-  border: 2px solid #22c55e;
-  object-fit: cover;
-  flex-shrink: 0;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
-}
-
-.pixel-hero-user-mini-avatar--initial {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  color: #000;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 0.55rem;
-  font-weight: bold;
-}
-
-.pixel-hero-user-hi {
-  font-size: 0.65rem;
-  color: #22c55e;
-  text-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 @media (max-width: 520px) {
   .pixel-hero-user-hi {
     display: none;
   }
+  .pixel-user-caret {
+    display: none;
+  }
+  .pixel-hero-user-badge {
+    width: 38px !important;
+    height: 38px !important;
+    padding: 0 !important;
+  }
+  .pixel-navbar {
+    padding: 12px 16px;
+    justify-content: flex-end !important;
+  }
 }
+
 

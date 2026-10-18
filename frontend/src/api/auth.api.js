@@ -52,4 +52,12 @@ export const authApi = {
   async switchLanguage(userId, lang) {
     return apiPatch(`/api/v1/users/${userId}/language`, { lang });
   },
+
+  /**
+   * PATCH /api/v1/users/:userId
+   * Cập nhật thông tin tài khoản (đổi tên hiển thị, ảnh đại diện, v.v.)
+   */
+  async updateUser(userId, data) {
+    return apiPatch(`/api/v1/users/${userId}`, data);
+  },
 };

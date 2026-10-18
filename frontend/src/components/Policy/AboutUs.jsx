@@ -66,29 +66,6 @@ export default function AboutUs({ lang = 'vi', onNavigateTools }) {
           )}
         </section>
 
-        {/* Tech Stack */}
-        <section className="about-section">
-          <div className="about-section-label">
-            {lang === 'vi' ? '▶ CÔNG NGHỆ' : '▶ TECH STACK'}
-          </div>
-          <div className="about-tech-list">
-            {[
-              ['⚛️', 'React 18 + Vite', 'Frontend SPA'],
-              ['🐍', 'Python FastAPI', 'Backend API'],
-              ['🤖', 'BiRefNet-Lite', 'AI Background Removal'],
-              ['🎤', 'OpenAI Whisper', 'Speech Recognition'],
-              ['📄', 'Gotenberg v8', 'Document Conversion'],
-              ['🎞️', 'FFmpeg', 'Media Processing'],
-              ['🔥', 'Firebase', 'Auth & Realtime DB'],
-            ].map(([icon, name, role], i) => (
-              <div key={i} className="about-tech-item">
-                <span>{icon}</span>
-                <strong>{name}</strong>
-                <span className="about-tech-role">{role}</span>
-              </div>
-            ))}
-          </div>
-        </section>
 
         {/* Legal Policies */}
         <section className="about-section">
@@ -148,6 +125,9 @@ export default function AboutUs({ lang = 'vi', onNavigateTools }) {
           <div className="about-contact-list">
             <div>📧 contact@omniversetool.online</div>
             <div>🌐 omniversetool.online</div>
+            <div>
+              📘 <a href="https://www.facebook.com/profile.php?id=61595131252251" target="_blank" rel="noreferrer" style={{ color: '#22c55e', textDecoration: 'none' }}>Facebook Fanpage</a>
+            </div>
             <div>📅 {lang === 'vi' ? 'Hiệu lực từ 01/10/2026' : 'Effective from 01/10/2026'}</div>
           </div>
         </section>
