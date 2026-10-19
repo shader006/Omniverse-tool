@@ -43,6 +43,17 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lang, setLang] = useState('vi'); // 'vi' | 'en'
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('omni_theme') || 'dark';
+  });
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('omni_theme', next);
+      return next;
+    });
+  };
 
   // Global policy modal state (Footer / LoginModal / anywhere)
   const [policyOpen, setPolicyOpen] = useState(false);
@@ -147,7 +158,12 @@ export default function App() {
           </div>
         ) : (
           /* TRANG TOOLS: TRANG RIÊNG BIỆT CÓ THANH NAV TIỆN LỢI */
-          <div id="tools-page" className="workspace-section" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          <div 
+            id="tools-page" 
+            className={`workspace-section ${theme === 'light' ? 'theme-light' : 'theme-dark'}`} 
+            data-theme={theme}
+            style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}
+          >
             <ToolsNavbar 
               onGoHome={navigateToHome} 
               onGoAbout={navigateToAbout}
@@ -157,10 +173,18 @@ export default function App() {
               lang={lang}
               onToggleLang={toggleLang}
               currentPage="tools"
+              theme={theme}
+              onToggleTheme={toggleTheme}
             />
 
             <main className="container" style={{ flex: 1, paddingTop: '10px' }}>
-              <ModeSwitcher currentMode={currentMode} onSelectMode={handleSelectMode} lang={lang} />
+              <ModeSwitcher 
+                currentMode={currentMode} 
+                onSelectMode={handleSelectMode} 
+                lang={lang} 
+                theme={theme}
+                onToggleTheme={toggleTheme}
+              />
 
               {/* Before/After showcase phía trên tool content – chỉ áp dụng cho công cụ ảnh */}
               {['bg', 'pixel', 'upscale'].includes(currentMode) && (
@@ -209,12 +233,17 @@ export default function App() {
           onClose={() => setPolicyOpen(false)}
         />
 
-        {/* Modal Cài đặt tài khoản, Đổi tên & Ngôn ngữ */}
+        {/* Modal Cài đặt tài khoản, Đổi tên & Ngôn ngữ & Theme */}
         <SettingsModal 
           isOpen={isSettingsOpen} 
           onClose={() => setIsSettingsOpen(false)} 
           lang={lang} 
           onSelectLang={(newLang) => setLang(newLang)}
+          theme={theme}
+          onSelectTheme={(newTheme) => {
+            setTheme(newTheme);
+            localStorage.setItem('omni_theme', newTheme);
+          }}
         />
 
         {/* Modal đăng nhập dùng chung ở cả 2 view */}

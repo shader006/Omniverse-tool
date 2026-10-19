@@ -2695,3 +2695,352 @@ body {
     padding: 10px 12px;
   }
 }
+
+/* ==========================================================================
+   LIGHT MODE STYLING CHO PHẦN CÁC CHỨC NĂNG CHÍNH (TOOLS WORKSPACE LIGHT THEME)
+   ========================================================================== */
+
+.workspace-section.theme-light {
+  background-color: #f8fafc;
+  background-image: 
+    linear-gradient(rgba(100, 116, 139, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 116, 139, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+  border-top: 4px solid #cbd5e1;
+  color: #0f172a;
+}
+
+/* Hero Section */
+.theme-light .hero-title {
+  color: #0f172a;
+  text-shadow: none;
+}
+
+.theme-light .hero-subtitle {
+  color: #475569;
+}
+
+.theme-light .gradient-text {
+  color: #059669;
+  text-shadow: none;
+}
+
+/* Mode Switcher */
+.theme-light .mode-switcher {
+  background: #ffffff;
+  border: 3px solid #cbd5e1;
+  box-shadow: 
+    0 0 0 3px #94a3b8, 
+    6px 6px 0 rgba(0, 0, 0, 0.12);
+}
+
+.theme-light .mode-btn {
+  background: #f8fafc;
+  border: 2px solid #cbd5e1;
+  color: #475569;
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.03);
+}
+
+.theme-light .mode-btn:hover:not(.active) {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.theme-light .mode-btn.active {
+  background: #059669;
+  color: #ffffff;
+  border-color: #047857;
+  box-shadow: 
+    inset -2px -2px 0 #047857,
+    inset 2px 2px 0 #a7f3d0,
+    0 0 10px rgba(5, 150, 105, 0.25);
+}
+
+.theme-light .mode-theme-btn {
+  background: #f1f5f9;
+  border-color: #0284c7;
+  color: #0284c7;
+}
+
+.theme-light .mode-theme-btn:hover {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+/* Retro Pixel Cards */
+.theme-light .card {
+  background: #ffffff;
+  border: 3px solid #cbd5e1;
+  box-shadow: 
+    0 0 0 3px #94a3b8, 
+    6px 6px 0 rgba(0, 0, 0, 0.12);
+  color: #0f172a;
+}
+
+.theme-light .search-card {
+  background: #ffffff;
+}
+
+.theme-light #url-input {
+  background: #f8fafc;
+  border: 2px solid #cbd5e1;
+  color: #0f172a;
+  box-shadow: inset 2px 2px 0 #e2e8f0;
+}
+
+.theme-light #url-input:focus {
+  border-color: #059669;
+  box-shadow: inset 2px 2px 0 #e2e8f0, 0 0 8px rgba(5, 150, 105, 0.25);
+  color: #0f172a;
+}
+
+.theme-light .btn-paste {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0284c7;
+}
+
+.theme-light .btn-paste:hover {
+  background: #e0f2fe;
+  border-color: #0284c7;
+}
+
+/* Media Result Card */
+.theme-light .media-result-card {
+  background: #ffffff;
+}
+
+.theme-light .media-header {
+  background: #f8fafc;
+  border-bottom: 3px solid #cbd5e1;
+}
+
+.theme-light .media-title {
+  color: #0f172a;
+  text-shadow: none;
+}
+
+.theme-light .format-tabs-wrapper {
+  background: #f1f5f9;
+}
+
+.theme-light .format-tab {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.theme-light .format-tab.active {
+  background: #059669;
+  border-color: #047857;
+  color: #ffffff;
+}
+
+.theme-light .download-table {
+  background: #ffffff;
+}
+
+.theme-light .download-row {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.theme-light .download-row:hover {
+  background: #f8fafc;
+}
+
+.theme-light .res-badge {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+}
+
+/* File Converter & Whisper Dropzones */
+.theme-light .file-converter-card,
+.theme-light .whisper-card {
+  background: #ffffff;
+}
+
+.theme-light .file-dropzone,
+.theme-light .whisper-dropzone {
+  background: #f8fafc;
+  border: 3px dashed #cbd5e1;
+  color: #334155;
+}
+
+.theme-light .file-dropzone:hover,
+.theme-light .whisper-dropzone:hover {
+  background: #f1f5f9;
+  border-color: #059669;
+}
+
+.theme-light .dropzone-title {
+  color: #0f172a;
+}
+
+.theme-light .dropzone-subtitle {
+  color: #64748b;
+}
+
+.theme-light .whisper-textarea {
+  background: #f8fafc;
+  border: 2px solid #cbd5e1;
+  color: #0f172a;
+}
+
+/* Pixel Fixer Studio Card */
+.theme-light .pixel-studio-card {
+  background: #ffffff;
+  border: 3px solid #cbd5e1;
+  box-shadow: 
+    0 0 0 3px #94a3b8, 
+    6px 6px 0 rgba(0, 0, 0, 0.12),
+    inset 0 0 10px rgba(0, 0, 0, 0.02);
+  color: #0f172a;
+}
+
+.theme-light .pixel-studio-topbar {
+  background: #f8fafc;
+  border-bottom: 2px solid #cbd5e1;
+  color: #0f172a;
+}
+
+.theme-light .pixel-upload-quick-zone {
+  background: #f1f5f9;
+  border: 2px dashed #cbd5e1;
+  color: #334155;
+}
+
+.theme-light .pixel-upload-quick-zone:hover {
+  background: #e2e8f0;
+  border-color: #059669;
+  color: #0f172a;
+}
+
+.theme-light .pixel-setting-label {
+  color: #334155;
+}
+
+.theme-light .pixel-custom-select-btn {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  box-shadow: 2px 2px 0 #94a3b8;
+}
+
+.theme-light .pixel-custom-select-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.theme-light .pixel-custom-options-menu {
+  background: #ffffff;
+  border: 2px solid #94a3b8;
+  box-shadow: 0 0 0 2px #cbd5e1, 4px 4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.theme-light .pixel-custom-option-item {
+  color: #334155;
+}
+
+.theme-light .pixel-custom-option-item:hover {
+  background: #f1f5f9;
+  color: #0284c7;
+}
+
+.theme-light .pixel-custom-option-item.active {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.theme-light .pixel-stat-chip {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+/* Remove Background Panel */
+.theme-light .bg-options-panel {
+  background: #f8fafc;
+  border: 2px solid #cbd5e1;
+  box-shadow: 3px 3px 0 #94a3b8;
+}
+
+.theme-light .bg-option-label {
+  color: #334155;
+}
+
+/* Picture Upscaler Studio Card */
+.theme-light .upscale-studio-card {
+  background: #ffffff;
+  border: 3px solid #cbd5e1;
+  box-shadow: 
+    0 0 0 3px #94a3b8, 
+    6px 6px 0 rgba(0, 0, 0, 0.12);
+  color: #0f172a;
+}
+
+/* Before / After Showcase */
+.theme-light .pixel-ba-card {
+  background: #ffffff;
+  border: 3px solid #cbd5e1;
+  box-shadow: 
+    0 0 0 3px #94a3b8, 
+    6px 6px 0 rgba(0, 0, 0, 0.12);
+}
+
+.theme-light .pixel-ba-tab {
+  background: #f1f5f9;
+  border: 2px solid #cbd5e1;
+  color: #475569;
+}
+
+.theme-light .pixel-ba-tab.active {
+  background: #059669;
+  color: #ffffff;
+  border-color: #047857;
+}
+
+/* Fox Tutorial Dialogue */
+.theme-light .fox-bubble {
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+  color: #0f172a;
+  box-shadow: 
+    0 0 0 3px #94a3b8, 
+    4px 4px 0 rgba(0, 0, 0, 0.12);
+}
+
+/* Test Export Button */
+.theme-light .btn-test-export {
+  background: #ffffff;
+  border-color: #059669;
+  color: #059669;
+  box-shadow: 3px 3px 0 #94a3b8;
+}
+
+.theme-light .btn-test-export:hover {
+  background: #059669;
+  color: #ffffff;
+  border-color: #047857;
+}
+
+/* Footer in Light Mode */
+.theme-light .footer {
+  background: #ffffff;
+  border-top: 3px solid #cbd5e1;
+  color: #475569;
+}
+
+.theme-light .footer-link {
+  color: #64748b;
+}
+
+.theme-light .footer-link:hover {
+  color: #0f172a;
+}
+
+.theme-light .footer-copy {
+  color: #94a3b8;
+}
+

@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { formatFileBytes } from '../../utils/formatters';
 import { translations } from '../../locales/translations';
 import { aiService } from '../../services/ai.service';
-import { PresetVisualCard, PresetComparisonModal } from './PresetVisualGuide';
 import './pixel-fixer.css';
 
 // ==========================================
@@ -210,8 +209,6 @@ export default function PixelFixer({ lang = 'vi' }) {
   const [resultUrl, setResultUrl] = useState('');
   const [resultBlob, setResultBlob] = useState(null);
   const [sliderPos, setSliderPos] = useState(50);
-  const [activePreset, setActivePreset] = useState('auto');
-  const [isPresetModalOpen, setIsPresetModalOpen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
   // Studio Controls
@@ -431,54 +428,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     processFix(file);
   };
 
-  const handlePresetSelect = (presetKey) => {
-    setActivePreset(presetKey);
-    let newEngine = 'fast';
-    let newTopology = 'uniform';
-    let newPalette = 'auto';
-    let newScale = '1';
 
-    if (presetKey === 'crisp-sprite') {
-      newEngine = 'advanced';
-      newTopology = 'uniform';
-      newScale = '1';
-      newPalette = 'auto';
-    } else if (presetKey === 'transparent-icon') {
-      newEngine = 'advanced';
-      newTopology = 'elastic';
-      newScale = '1';
-      newPalette = 'auto';
-    } else if (presetKey === 'retro-console') {
-      newEngine = 'fast';
-      newTopology = 'uniform';
-      newPalette = 'pico8';
-      newScale = '1';
-    } else if (presetKey === 'photo-pixel') {
-      newEngine = 'advanced';
-      newTopology = 'uniform';
-      newPalette = 'pico8';
-      newScale = '2';
-    } else if (presetKey === 'fine-details') {
-      newEngine = 'advanced';
-      newTopology = 'elastic';
-      newScale = '1';
-      newPalette = 'auto';
-    }
-
-    setEngineMode(newEngine);
-    setTopology(newTopology);
-    setPalette(newPalette);
-    setScaleFactor(newScale);
-
-    if (selectedFile) {
-      processFix(selectedFile, {
-        engine: newEngine,
-        topology: newTopology,
-        palette: newPalette,
-        scale: newScale
-      });
-    }
-  };
 
   const loadSample = async () => {
     try {
@@ -505,19 +455,7 @@ export default function PixelFixer({ lang = 'vi' }) {
     }
   };
 
-  const handleLoadPresetSample = async (preset) => {
-    try {
-      const samplePath = preset.sampleFile || preset.beforeImg || preset.afterImg;
-      const resp = await fetch(samplePath);
-      if (!resp.ok) throw new Error('Preset sample not found');
-      const blob = await resp.blob();
-      const sampleFile = new File([blob], `sample_${preset.id}.png`, { type: 'image/png' });
-      handlePresetSelect(preset.id);
-      onSelectFile(sampleFile);
-    } catch (err) {
-      console.warn('Failed to load preset sample:', err);
-    }
-  };
+
 
   const processFix = async (fileObj, overrides = {}) => {
     const targetFile = fileObj || selectedFile;
@@ -646,72 +584,6 @@ export default function PixelFixer({ lang = 'vi' }) {
       <div className="hero-section">
         <h1 className="hero-title">{tr.pixel_title} <span className="gradient-text">{tr.pixel_title_highlight}</span></h1>
         <p className="hero-subtitle">{tr.pixel_subtitle}</p>
-
-        {/* Presets Bar */}
-        <div className="pixel-presets-bar">
-          <span className="pixel-presets-label">{tr.pixel_presets_label}</span>
-          <button 
-            type="button" 
-            className={`pixel-preset-btn ${activePreset === 'auto' ? 'active' : ''}`}
-            onClick={() => handlePresetSelect('auto')}
-          >
-            {tr.pixel_preset_auto}
-          </button>
-          <button 
-            type="button" 
-            className={`pixel-preset-btn ${activePreset === 'crisp-sprite' ? 'active' : ''}`}
-            onClick={() => handlePresetSelect('crisp-sprite')}
-          >
-            {tr.pixel_preset_crisp}
-          </button>
-          <button 
-            type="button" 
-            className={`pixel-preset-btn ${activePreset === 'transparent-icon' ? 'active' : ''}`}
-            onClick={() => handlePresetSelect('transparent-icon')}
-          >
-            {tr.pixel_preset_transparent}
-          </button>
-          <button 
-            type="button" 
-            className={`pixel-preset-btn ${activePreset === 'retro-console' ? 'active' : ''}`}
-            onClick={() => handlePresetSelect('retro-console')}
-          >
-            {tr.pixel_preset_retro}
-          </button>
-          <button 
-            type="button" 
-            className={`pixel-preset-btn ${activePreset === 'photo-pixel' ? 'active' : ''}`}
-            onClick={() => handlePresetSelect('photo-pixel')}
-          >
-            {tr.pixel_preset_photo}
-          </button>
-          <button 
-            type="button" 
-            className={`pixel-preset-btn ${activePreset === 'fine-details' ? 'active' : ''}`}
-            onClick={() => handlePresetSelect('fine-details')}
-          >
-            {tr.pixel_preset_fine}
-          </button>
-          <button
-            type="button"
-            className="pixel-preset-btn pixel-preset-guide-toggle-btn"
-            style={{ borderColor: '#38bdf8', color: '#38bdf8' }}
-            onClick={() => setIsPresetModalOpen(true)}
-            title={tr.pixel_preset_view_all_modal || 'Xem cả 6 tùy chỉnh'}
-          >
-            👁️ {tr.pixel_presets_guide_btn || 'Xem ví dụ 6 tùy chỉnh'}
-          </button>
-        </div>
-
-        {/* Visual Example Card for Active Preset */}
-        <PresetVisualCard
-          activePreset={activePreset}
-          onSelectPreset={handlePresetSelect}
-          onLoadSample={handleLoadPresetSample}
-          onOpenModal={() => setIsPresetModalOpen(true)}
-          lang={lang}
-          tr={tr}
-        />
       </div>
 
       {/* ==================== MAIN STUDIO CARD ==================== */}
@@ -1122,16 +994,6 @@ export default function PixelFixer({ lang = 'vi' }) {
         )}
       </div>
 
-      {/* Preset Visual Comparison Gallery Modal */}
-      <PresetComparisonModal
-        isOpen={isPresetModalOpen}
-        onClose={() => setIsPresetModalOpen(false)}
-        activePreset={activePreset}
-        onSelectPreset={handlePresetSelect}
-        onLoadSample={handleLoadPresetSample}
-        lang={lang}
-        tr={tr}
-      />
     </section>
   );
 }

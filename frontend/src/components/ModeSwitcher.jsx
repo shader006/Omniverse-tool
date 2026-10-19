@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ModeSwitcher({ currentMode, onSelectMode, lang = 'vi' }) {
+export default function ModeSwitcher({ currentMode, onSelectMode, lang = 'vi', theme = 'dark', onToggleTheme }) {
   const modes = [
     {
       id: 'url',
@@ -81,6 +81,17 @@ export default function ModeSwitcher({ currentMode, onSelectMode, lang = 'vi' })
             <span>{mode.label}</span>
           </button>
         ))}
+        {onToggleTheme && (
+          <button
+            type="button"
+            className="mode-btn mode-theme-btn"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? (lang === 'vi' ? 'Chuyển sang Chế độ Sáng' : 'Switch to Light Mode') : (lang === 'vi' ? 'Chuyển sang Chế độ Tối' : 'Switch to Dark Mode')}
+          >
+            <span style={{ fontSize: '0.9rem' }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
+            <span>{theme === 'dark' ? (lang === 'vi' ? 'Sáng' : 'Light') : (lang === 'vi' ? 'Tối' : 'Dark')}</span>
+          </button>
+        )}
       </div>
     </div>
   );

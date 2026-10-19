@@ -2,7 +2,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import './tools-navbar.css';
 
-export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onOpenLogin, lang = 'vi', currentPage = 'tools', onOpenSettings }) {
+export default function ToolsNavbar({ 
+  onGoHome, 
+  onGoAbout, 
+  onGoTools, 
+  onOpenLogin, 
+  lang = 'vi', 
+  currentPage = 'tools', 
+  onOpenSettings,
+  theme = 'dark',
+  onToggleTheme
+}) {
   const { user, isLoggedIn, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -100,6 +110,20 @@ export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onOpenLogi
             </svg>
           </a>
 
+          {/* Theme Toggle Button (Desktop) */}
+          {onToggleTheme && (
+            <button
+              type="button"
+              className="pixel-theme-toggle-btn pixel-theme-toggle-desktop"
+              onClick={onToggleTheme}
+              title={theme === 'dark' ? (lang === 'vi' ? 'Chuyển sang Giao diện Sáng' : 'Switch to Light Mode') : (lang === 'vi' ? 'Chuyển sang Giao diện Tối' : 'Switch to Dark Mode')}
+              aria-label="Toggle Theme"
+            >
+              <span className="pixel-theme-icon">{theme === 'dark' ? '☀️' : '🌙'}</span>
+              <span className="pixel-theme-text">{theme === 'dark' ? (lang === 'vi' ? 'SÁNG' : 'LIGHT') : (lang === 'vi' ? 'TỐI' : 'DARK')}</span>
+            </button>
+          )}
+
           {/* ── Nút 3 gạch (Hamburger Menu Button) bên phải trên Mobile ── */}
           <div className="pixel-hamburger-wrapper" ref={mobileNavRef}>
             <button
@@ -174,6 +198,22 @@ export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onOpenLogi
                       <span>{lang === 'vi' ? 'Cài đặt' : 'Settings'}</span>
                     </button>
                   </li>
+
+                  {onToggleTheme && (
+                    <li>
+                      <button
+                        type="button"
+                        className="pixel-mobile-nav-item"
+                        onClick={() => {
+                          setIsMobileNavOpen(false);
+                          onToggleTheme();
+                        }}
+                      >
+                        <span className="pixel-nav-icon">{theme === 'dark' ? '☀️' : '🌙'}</span>
+                        <span>{theme === 'dark' ? (lang === 'vi' ? 'Chế độ Sáng' : 'Light Mode') : (lang === 'vi' ? 'Chế độ Tối' : 'Dark Mode')}</span>
+                      </button>
+                    </li>
+                  )}
 
                   {isLoggedIn ? (
                     <li>
