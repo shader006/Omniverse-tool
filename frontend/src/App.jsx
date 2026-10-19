@@ -16,7 +16,7 @@ import BeforeAfterShowcase from './components/BeforeAfter/BeforeAfterShowcase';
 import AdSlot from './components/Ads/AdSlot';
 import PolicyModal from './components/Policy/PolicyModal';
 import AboutUs from './components/Policy/AboutUs';
-import UserList from './components/UserList/UserList';
+
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
 import SettingsModal from './components/Settings/SettingsModal';
 import { AuthProvider } from './contexts/AuthContext';
@@ -27,9 +27,7 @@ export default function App() {
     if (hash === 'about') {
       return { page: 'about', mode: 'url' };
     }
-    if (hash === 'users') {
-      return { page: 'users', mode: 'url' };
-    }
+
     if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
       return { page: 'tools', mode: hash };
     }
@@ -64,8 +62,6 @@ export default function App() {
       const hash = window.location.hash.replace('#', '').toLowerCase();
       if (hash === 'about') {
         setCurrentPage('about');
-      } else if (hash === 'users') {
-        setCurrentPage('users');
       } else if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale', 'tools', 'tools-workspace'].includes(hash)) {
         setCurrentPage('tools');
         if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
@@ -104,11 +100,7 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
-  const navigateToUsers = () => {
-    setCurrentPage('users');
-    window.location.hash = '#users';
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  };
+
 
   const handleSelectMode = (mode) => {
     setCurrentMode(mode);
@@ -125,7 +117,6 @@ export default function App() {
               onGoHome={navigateToHome}
               onGoAbout={navigateToAbout}
               onGoTools={() => navigateToTools()}
-              onGoUsers={navigateToUsers}
               onOpenLogin={() => setIsLoginOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               lang={lang}
@@ -142,29 +133,6 @@ export default function App() {
               onOpenAbout={navigateToAbout}
             />
           </div>
-        ) : currentPage === 'users' ? (
-          /* TRANG DANH SÁCH NGƯỜI DÙNG */
-          <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-            <ToolsNavbar
-              onGoHome={navigateToHome}
-              onGoAbout={navigateToAbout}
-              onGoTools={() => navigateToTools()}
-              onGoUsers={navigateToUsers}
-              onOpenLogin={() => setIsLoginOpen(true)}
-              onOpenSettings={() => setIsSettingsOpen(true)}
-              lang={lang}
-              onToggleLang={toggleLang}
-              currentPage="users"
-            />
-            <main style={{ flex: 1 }}>
-              <UserList lang={lang} onBack={navigateToHome} />
-            </main>
-            <Footer
-              lang={lang}
-              onOpenPolicy={openPolicy}
-              onOpenAbout={navigateToAbout}
-            />
-          </div>
         ) : currentPage === 'home' ? (
           /* TRANG CHỦ: HERO BANNER (ĐÃ XÓA TOÀN BỘ PHẦN PHÍA DƯỚI THEO YÊU CẦU) */
           <div className="home-layout">
@@ -172,7 +140,6 @@ export default function App() {
               onExploreTools={() => navigateToTools()}
               onSelectTool={(toolId) => navigateToTools(toolId)}
               onGoAbout={navigateToAbout}
-              onGoUsers={navigateToUsers}
               onOpenLogin={() => setIsLoginOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               lang={lang}
@@ -185,7 +152,6 @@ export default function App() {
               onGoHome={navigateToHome} 
               onGoAbout={navigateToAbout}
               onGoTools={() => navigateToTools()}
-              onGoUsers={navigateToUsers}
               onOpenLogin={() => setIsLoginOpen(true)} 
               onOpenSettings={() => setIsSettingsOpen(true)}
               lang={lang}

@@ -17,7 +17,6 @@ export default function Banner({
   onSelectTool, 
   onOpenLogin, 
   onGoAbout, 
-  onGoUsers,
   lang = 'vi', 
   onOpenSettings 
 }) {
@@ -105,19 +104,6 @@ export default function Banner({
                 {lang === 'vi' ? 'Công cụ AI' : 'AI Tools'}
               </a>
             </li>
-            <li>
-              <a 
-                href="#users" 
-                className="pixel-nav-link" 
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (onGoUsers) onGoUsers();
-                  else window.location.hash = '#users';
-                }}
-              >
-                {lang === 'vi' ? 'Người dùng' : 'Users'}
-              </a>
-            </li>
           </ul>
         </div>
 
@@ -183,20 +169,6 @@ export default function Banner({
                     </button>
                   </li>
 
-                  <li>
-                    <button
-                      type="button"
-                      className="pixel-mobile-nav-item"
-                      onClick={(e) => {
-                        setIsMobileNavOpen(false);
-                        if (onGoUsers) onGoUsers();
-                        else window.location.hash = '#users';
-                      }}
-                    >
-                      <span className="pixel-nav-icon">👥</span>
-                      <span>{lang === 'vi' ? 'Người dùng' : 'Users'}</span>
-                    </button>
-                  </li>
 
                   <li className="pixel-mobile-nav-divider"></li>
 

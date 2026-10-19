@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import './tools-navbar.css';
 
-export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onGoUsers, onOpenLogin, lang = 'vi', currentPage = 'tools', onOpenSettings }) {
+export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onOpenLogin, lang = 'vi', currentPage = 'tools', onOpenSettings }) {
   const { user, isLoggedIn, logout } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -69,15 +69,6 @@ export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onGoUsers,
                 onClick={onGoTools}
               >
                 {lang === 'vi' ? 'Công cụ AI' : 'AI Tools'}
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                className={`pixel-nav-link-item${currentPage === 'users' ? ' active' : ''}`}
-                onClick={onGoUsers}
-              >
-                {lang === 'vi' ? 'Người dùng' : 'Users'}
               </button>
             </li>
           </ul>
@@ -167,19 +158,6 @@ export default function ToolsNavbar({ onGoHome, onGoAbout, onGoTools, onGoUsers,
                     </button>
                   </li>
 
-                  <li>
-                    <button
-                      type="button"
-                      className="pixel-mobile-nav-item"
-                      onClick={() => {
-                        setIsMobileNavOpen(false);
-                        if (onGoUsers) onGoUsers();
-                      }}
-                    >
-                      <span className="pixel-nav-icon">👥</span>
-                      <span>{lang === 'vi' ? 'Người dùng' : 'Users'}</span>
-                    </button>
-                  </li>
 
                   <li className="pixel-mobile-nav-divider"></li>
 
