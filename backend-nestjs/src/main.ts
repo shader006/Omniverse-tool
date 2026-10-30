@@ -1,10 +1,30 @@
-﻿import 'reflect-metadata';
+import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
 import { AppModule } from './app.module.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Cookie Parser middleware
+  app.use(cookieParser(process.env.COOKIE_SECRET || 'oniverse-cookie-secret'));
+
+  // Express Session middleware
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || 'oniverse-session-secret',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngay
+      },
+    }),
+  );
 
   // Bat CORS cho frontend React goi API
   app.enableCors({

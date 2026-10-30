@@ -13,7 +13,10 @@ export class AuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers['authorization'];
-    const sessionId = request.headers['x-session-id'] || request.cookies?.sessionId;
+    const sessionId =
+      request.cookies?.sessionId ||
+      request.session?.sessionId ||
+      request.headers['x-session-id'];
 
     if (!authHeader && !sessionId) {
       throw new UnauthorizedException('Yêu cầu đăng nhập để truy cập tài nguyên này.');
