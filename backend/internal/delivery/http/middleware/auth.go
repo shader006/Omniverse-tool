@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -127,12 +126,3 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func writeAuthError(w http.ResponseWriter, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"error":   message,
-		"code":    "AUTH_REQUIRED",
-	})
-}

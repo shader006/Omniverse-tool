@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Inject } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  All,
+  Req,
+  Res,
+  Inject,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { Request, Response } from 'express';
 import { AiWorkerPort } from '../../domain/ports/ai-worker.port';
 import { AI_WORKER_PORT } from '../../application/ports/ai-worker.token';
 
@@ -23,36 +34,38 @@ export class AiHttpController {
   }
 
   /**
-   * PixelFixer APIs
+   * PixelFixer APIs (chỉ cho phép POST, các method khác trả về 405)
    */
-  @Post('pixel/detect')
-  detectPixels(@Body() body: any) {
-    return this.aiWorker.proxyPost('pixelfixer', '/detect', body);
+  @All('pixel/detect')
+  detectPixels(@Req() req: Request, @Res() res: Response) {
+    return this.aiWorker.forwardRawStream('pixelfixer', '/api/pixel/detect', req, res);
   }
 
-  @Post('pixel/fix')
-  fixPixels(@Body() body: any) {
-    return this.aiWorker.proxyPost('pixelfixer', '/fix', body);
+  @All('pixel/fix')
+  fixPixels(@Req() req: Request, @Res() res: Response) {
+    return this.aiWorker.forwardRawStream('pixelfixer', '/api/pixel/fix', req, res);
   }
 
   /**
-   * Upscaler API
+   * Upscaler API (chỉ cho phép POST, các method khác trả về 405)
    */
-  @Post('upscale')
-  upscaleImage(@Body() body: any) {
-    return this.aiWorker.proxyPost('upscaler', '/upscale', body);
+  @All('upscale')
+  upscaleImage(@Req() req: Request, @Res() res: Response) {
+    return this.aiWorker.forwardRawStream('upscaler', '/api/upscale', req, res);
   }
 
   /**
    * Whisper Transcribe & RMBG Remove Background
    */
   @Post('transcribe')
-  transcribeAudio(@Body() body: any) {
-    return this.aiWorker.proxyPost('whisper', '/transcribe', body);
+  @HttpCode(HttpStatus.OK)
+  transcribeAudio(@Req() req: Request, @Res() res: Response) {
+    return this.aiWorker.handleTranscribe(req, res);
   }
 
   @Post('remove-bg')
-  removeBackground(@Body() body: any) {
-    return this.aiWorker.proxyPost('rmbg', '/remove-bg', body);
+  @HttpCode(HttpStatus.OK)
+  removeBackground(@Req() req: Request, @Res() res: Response) {
+    return this.aiWorker.handleRemoveBackground(req, res);
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import {
   MediaWorkerPort,
   MediaInfoResult,
@@ -21,15 +21,30 @@ export class HttpMediaWorkerAdapter implements MediaWorkerPort {
       });
 
       if (!resp.ok) {
-        const errorText = await resp.text();
-        throw new Error(errorText || `Worker returned HTTP ${resp.status}`);
+        let errorMsg = `Worker returned HTTP ${resp.status}`;
+        try {
+          const errJson = await resp.json();
+          errorMsg = errJson.detail || errJson.error || errJson.message || errorMsg;
+        } catch {
+          const text = await resp.text();
+          if (text) errorMsg = text;
+        }
+        throw new BadRequestException(errorMsg);
       }
 
       const json = await resp.json();
+      if (json && json.success === false) {
+        throw new BadRequestException(
+          json.error || json.detail || 'Không thể trích xuất thông tin từ liên kết này.',
+        );
+      }
       return (json.data || json) as MediaInfoResult;
     } catch (err: any) {
-      throw new InternalServerErrorException(
-        `Không thể kết nối hoặc lấy thông tin từ worker ytdlp: ${err.message}`,
+      if (err instanceof BadRequestException) {
+        throw err;
+      }
+      throw new BadRequestException(
+        `Không thể trích xuất thông tin từ liên kết này: ${err.message}`,
       );
     }
   }

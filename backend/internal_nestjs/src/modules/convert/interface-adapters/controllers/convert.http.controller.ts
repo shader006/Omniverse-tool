@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Inject } from '@nestjs/common';
+import { Controller, Post, Req, Inject, HttpCode, HttpStatus } from '@nestjs/common';
+import { Request } from 'express';
 import { ConvertWorkerPort } from '../../domain/ports/convert-worker.port';
 import { CONVERT_WORKER_PORT } from '../../application/ports/convert-worker.token';
 
@@ -10,7 +11,8 @@ export class ConvertHttpController {
   ) {}
 
   @Post('file')
-  convertFile(@Body() body: any) {
-    return this.convertWorker.convertDocument(body);
+  @HttpCode(HttpStatus.OK)
+  async convertFile(@Req() req: Request) {
+    return this.convertWorker.convertMultipartRequest(req);
   }
 }

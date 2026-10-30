@@ -4,12 +4,22 @@ import { MEDIA_WORKER_PORT } from '../ports/media-worker.token';
 import { CreateTaskUseCase } from '../../../task/application/use-cases/create-task.use-case';
 import { UpdateTaskProgressUseCase } from '../../../task/application/use-cases/update-task-progress.use-case';
 import { TaskStatus } from '../../../task/domain/value-objects/task-status.enum';
+import { cleanUrlKey, isInternalOrLoopbackUrl } from './get-media-info.use-case';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface StartDownloadCommand {
   url: string;
   format?: string;
   quality?: string;
 }
+
+const ALLOWED_FORMATS = new Set(['mp3', 'mp4', 'm4a', 'wav', 'flac', 'webm']);
+const ALLOWED_QUALITIES = new Set([
+  '64', '128', '192', '256', '320',
+  '360', '480', '720', '1080', '1440', '2160', 'best',
+]);
 
 @Injectable()
 export class StartDownloadUseCase {
@@ -20,23 +30,108 @@ export class StartDownloadUseCase {
     private readonly updateTaskProgressUseCase: UpdateTaskProgressUseCase,
   ) {}
 
-  async execute(command: StartDownloadCommand): Promise<{ job_id: string; status: string }> {
-    if (!command.url || (!command.url.startsWith('http://') && !command.url.startsWith('https://'))) {
-      throw new BadRequestException('URL không hợp lệ. Phải bắt đầu bằng http:// hoặc https://');
+  private findCachedFile(rawUrl: string, format: string, quality: string, downloadDir: string): string | null {
+    try {
+      if (!fs.existsSync(downloadDir)) return null;
+      const cleaned = cleanUrlKey(rawUrl);
+      const rawKey = `${cleaned}_${format.toLowerCase()}_${quality}`;
+      const prefixMd5 = crypto.createHash('md5').update(rawKey).digest('hex').slice(0, 10);
+      const prefixSha = crypto.createHash('sha256').update(rawKey).digest('hex').slice(0, 10);
+      const prefixSha12 = crypto
+        .createHash('sha256')
+        .update(`${rawUrl.trim()}_${format.toLowerCase()}_${quality}`)
+        .digest('hex')
+        .slice(0, 12);
+
+      const entries = fs.readdirSync(downloadDir, { withFileTypes: true });
+      const now = Date.now();
+      const targetExt = `.${format.toLowerCase()}`;
+
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const name = entry.name;
+        if (
+          name.startsWith(prefixMd5) ||
+          name.startsWith(prefixSha) ||
+          name.startsWith(prefixSha12)
+        ) {
+          const lower = name.toLowerCase();
+          if (lower.endsWith('.part') || lower.endsWith('.ytdl')) continue;
+          if (!lower.endsWith(targetExt)) continue;
+          const stat = fs.statSync(path.join(downloadDir, name));
+          if (now - stat.mtimeMs < 3600 * 1000 && stat.size > 0) {
+            return name;
+          }
+        }
+      }
+    } catch {
+      // ignore disk read errors
+    }
+    return null;
+  }
+
+  async execute(command: StartDownloadCommand): Promise<{ job_id: string; status: string; cached: boolean }> {
+    const url = (command.url || '').trim();
+    if (!url) {
+      throw new BadRequestException('Dữ liệu yêu cầu không hợp lệ hoặc thiếu URL.');
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      throw new BadRequestException('URL không hợp lệ. Đường dẫn phải bắt đầu bằng http:// hoặc https://');
+    }
+    if (isInternalOrLoopbackUrl(url)) {
+      throw new BadRequestException('URL nội bộ hoặc loopback không được phép truy cập.');
     }
 
-    const format = command.format || 'mp4';
-    const quality = command.quality || '1080p';
+    let format = (command.format || '').trim().toLowerCase();
+    if (!format) {
+      format = 'mp3';
+    }
+    if (!ALLOWED_FORMATS.has(format)) {
+      throw new BadRequestException(
+        `Định dạng '${format}' không được hỗ trợ. Các định dạng hợp lệ: mp3, mp4, m4a, wav, flac, webm.`,
+      );
+    }
+
+    let quality = String(command.quality ?? '').trim().toLowerCase();
+    if (!quality) {
+      quality = format === 'mp4' ? '720' : '320';
+    }
+    if (!ALLOWED_QUALITIES.has(quality)) {
+      throw new BadRequestException(
+        `Chất lượng '${quality}' không hợp lệ. Các chất lượng hợp lệ: 64, 128, 192, 256, 320, 360, 480, 720, 1080, 1440, 2160, best.`,
+      );
+    }
+
+    const downloadDir = process.env.DOWNLOAD_DIR || '/app/downloads';
+    const cachedFile = this.findCachedFile(url, format, quality, downloadDir);
+
+    if (cachedFile) {
+      const task = await this.createTaskUseCase.execute({
+        url,
+        format,
+        quality,
+        status: TaskStatus.COMPLETED,
+        percent: 100,
+        speed: 'Cached',
+        eta: '0s',
+        filename: cachedFile,
+        downloadUrl: `/api/file/${cachedFile}`,
+      });
+      return {
+        job_id: task.id.value,
+        status: 'completed',
+        cached: true,
+      };
+    }
 
     const task = await this.createTaskUseCase.execute({
-      url: command.url,
+      url,
       format,
       quality,
       status: TaskStatus.QUEUED,
     });
 
     const jobId = task.id.value;
-    const downloadDir = process.env.DOWNLOAD_DIR || '/app/downloads';
 
     // Gọi stream bất đồng bộ sang worker
     (async () => {
@@ -44,7 +139,7 @@ export class StartDownloadUseCase {
         await this.mediaWorker.triggerDownload(
           {
             job_id: jobId,
-            url: command.url,
+            url,
             format,
             quality,
             download_dir: downloadDir,
@@ -70,7 +165,7 @@ export class StartDownloadUseCase {
               await this.updateTaskProgressUseCase.execute({
                 id: jobId,
                 status: TaskStatus.ERROR,
-                error: event.error || 'Lỗi khi tải file',
+                error: event.error || 'Không thể tải hoặc chuyển đổi file media từ liên kết.',
               });
             }
           },
@@ -87,6 +182,7 @@ export class StartDownloadUseCase {
     return {
       job_id: jobId,
       status: 'queued',
+      cached: false,
     };
   }
 }

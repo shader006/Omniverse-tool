@@ -1,3 +1,5 @@
+import { Request } from 'express';
+
 export interface ConvertWorkerPort {
-  convertDocument(payload: any): Promise<any>;
+  convertMultipartRequest(req: Request): Promise<any>;
 }

@@ -50,6 +50,49 @@ impl OmniverseReverseProxy {
     }
 }
 
+fn is_dangerous_probe(raw_path: &str) -> bool {
+    let path = raw_path.to_lowercase();
+
+    // 1. Chặn Path Traversal
+    if path.contains("..") {
+        return true;
+    }
+
+    // 2. Chặn Dotfile / Dotfolder (ví dụ: /.git, /.env, /.aws, /.docker)
+    for segment in path.split('/') {
+        let s = segment.trim();
+        if s.starts_with('.') && s != "." {
+            return true;
+        }
+    }
+
+    // 3. Chặn đuôi file nguy hiểm
+    let dangerous_exts = [
+        ".php", ".key", ".pem", ".crt", ".env", ".bak", ".sql", ".log",
+        ".yml", ".yaml", ".ini", ".conf", ".config", ".sh", ".py", ".go",
+        ".rb", ".asp", ".aspx", ".jsp", ".cgi",
+    ];
+    for ext in &dangerous_exts {
+        if path.ends_with(ext) {
+            return true;
+        }
+    }
+
+    // 4. Chặn các file nhạy cảm và mẫu dò quét phổ biến (WordPress, phpmyadmin, credentials...)
+    let dangerous_patterns = [
+        "/wp-", "/phpmyadmin", "/admin-ajax", "/actuator",
+        "appsettings.json", "stripe-keys.json", "master.key",
+        "credentials", "/etc/passwd", "/etc/shadow",
+    ];
+    for pattern in &dangerous_patterns {
+        if path.contains(pattern) {
+            return true;
+        }
+    }
+
+    false
+}
+
 #[async_trait]
 impl ProxyHttp for OmniverseReverseProxy {
     type CTX = RequestContext;
@@ -59,6 +102,20 @@ impl ProxyHttp for OmniverseReverseProxy {
             start_time: Instant::now(),
             selected_addr: None,
         }
+    }
+
+    async fn request_filter(
+        &self,
+        session: &mut Session,
+        _ctx: &mut Self::CTX,
+    ) -> Result<bool> {
+        let path = session.req_header().uri.path();
+        if is_dangerous_probe(path) {
+            log::warn!("🛡️ [PINGORA WAF] Đã chặn probe / dotfile nhạy cảm: {}", path);
+            let _ = session.respond_error(403).await;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     async fn upstream_peer(

@@ -49,6 +49,13 @@ if [ "$BACKEND_TARGET" = "nestjs" ]; then
 else
     echo -e "${GREEN}⚙️ Backend Engine được chọn: Golang (High Performance Gateway)${NC}"
     export GATEWAY_IMAGE="omniversetool-gateway:latest"
+
+    # Tự động build nếu image chưa tồn tại
+    if ! docker image inspect "$GATEWAY_IMAGE" >/dev/null 2>&1; then
+        echo -e "${YELLOW}🔨 Chưa tìm thấy image '$GATEWAY_IMAGE', đang tiến hành build...${NC}"
+        docker build -t "$GATEWAY_IMAGE" -f "$DIR/backend/Dockerfile" "$DIR/backend"
+        echo -e "${GREEN}✅ Build image Golang Gateway thành công!${NC}"
+    fi
 fi
 
 # 1. Kiểm tra trạng thái Docker Swarm

@@ -58,24 +58,64 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	}
 
 	isBlockedStaticFile := func(p string) bool {
-		base := strings.ToLower(filepath.Base(filepath.Clean(p)))
+		clean := strings.ToLower(filepath.Clean(p))
+
+		// 1. Chặn Path Traversal & Dotfile/Dotfolder ở bất kỳ vị trí nào (ví dụ: /.git, /static../.git, /.env, /.aws, /.docker)
+		if strings.Contains(clean, "..") {
+			return true
+		}
+		for _, segment := range strings.Split(clean, "/") {
+			segment = strings.TrimSpace(segment)
+			if strings.HasPrefix(segment, ".") && segment != "." {
+				return true
+			}
+		}
+
+		base := strings.ToLower(filepath.Base(clean))
 		if strings.HasPrefix(base, ".") {
 			return true
 		}
+
+		// 2. Chặn các file cấu hình, khóa bí mật, tệp nhạy cảm cụ thể
 		blockedExact := map[string]bool{
-			"package.json":      true,
-			"package-lock.json": true,
-			"tsconfig.json":     true,
-			"vite.config.js":    true,
-			"vite.config.ts":    true,
+			"package.json":       true,
+			"package-lock.json":  true,
+			"tsconfig.json":      true,
+			"vite.config.js":     true,
+			"vite.config.ts":     true,
+			"docker-compose.yml": true,
+			"docker-stack.yml":   true,
+			"dockerfile":         true,
+			"appsettings.json":   true,
+			"stripe-keys.json":   true,
+			"master.key":         true,
+			"credentials":        true,
+			"passwd":             true,
+			"shadow":             true,
+			"access.log":         true,
+			"error.log":          true,
 		}
 		if blockedExact[base] {
 			return true
 		}
+
+		// 3. Chặn tiền tố dò quét thường gặp (WordPress, PHPMyAdmin, actuator, v.v.)
+		for _, probePrefix := range []string{
+			"/wp-", "/phpmyadmin", "/admin", "/actuator", "/etc/", "/var/",
+		} {
+			if strings.HasPrefix(clean, probePrefix) || strings.Contains(clean, probePrefix) {
+				return true
+			}
+		}
+
+		// 4. Chặn các đuôi file mã nguồn, file cấu hình và kịch bản thực thi
 		ext := filepath.Ext(base)
 		blockedExts := map[string]bool{
 			".go": true, ".py": true, ".sh": true, ".ts": true, ".tsx": true,
-			".env": true, ".lock": true,
+			".env": true, ".lock": true, ".php": true, ".key": true, ".pem": true,
+			".crt": true, ".bak": true, ".sql": true, ".log": true, ".yml": true,
+			".yaml": true, ".ini": true, ".conf": true, ".config": true, ".rb": true,
+			".asp": true, ".aspx": true, ".jsp": true, ".cgi": true,
 		}
 		return blockedExts[ext]
 	}
@@ -147,7 +187,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			return
 		}
 		if isBlockedStaticFile(r.URL.Path) {
-			http.NotFound(w, r)
+			http.Error(w, "403 Forbidden: Access to sensitive or restricted resource is denied", http.StatusForbidden)
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/index.html" {

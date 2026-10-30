@@ -20,33 +20,35 @@ export class MediaHttpController {
   ) {}
 
   /**
-   * POST /api/info - Trích xuất thông tin video/audio
+   * POST /api/info - Trích xuất thông tin video/audio (hỗ trợ RAM Cache)
    */
   @Post('info')
   @HttpCode(HttpStatus.OK)
   async getInfo(@Body() body: InfoRequestBodyDto) {
-    const info = await this.getMediaInfoUseCase.execute(body.url);
+    const result = await this.getMediaInfoUseCase.execute(body?.url);
     return {
       success: true,
-      data: info,
+      data: result.data,
+      cached: result.cached,
     };
   }
 
   /**
-   * POST /api/download - Bắt đầu tải video/audio
+   * POST /api/download - Bắt đầu tải video/audio (hỗ trợ Fast-path Disk Cache)
    */
   @Post('download')
   @HttpCode(HttpStatus.OK)
   async download(@Body() body: DownloadRequestBodyDto) {
     const res = await this.startDownloadUseCase.execute({
-      url: body.url,
-      format: body.format,
-      quality: body.quality,
+      url: body?.url,
+      format: body?.format,
+      quality: body?.quality,
     });
     return {
       success: true,
       job_id: res.job_id,
       status: res.status,
+      cached: res.cached,
     };
   }
 }
