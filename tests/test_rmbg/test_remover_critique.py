@@ -19,6 +19,7 @@ except ImportError:
     pass
 from app.rmbg import remover
 
+@unittest.skip("Kiểm chứng lỗi trên phiên bản cũ trước khi tối ưu; xem test_remover_fixed.py")
 class TestRemoverCritique(unittest.TestCase):
 
     def test_01_inference_lacks_lock_allows_concurrency(self):

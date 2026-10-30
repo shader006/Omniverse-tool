@@ -21,6 +21,7 @@ def main():
     parser.add_argument("--file-conver", action="store_true", help="Chỉ chạy các bài test liên quan đến File Conver (Gotenberg)")
     parser.add_argument("--transcribe", action="store_true", help="Chỉ chạy các bài test liên quan đến Extract Text (whisper.cpp)")
     parser.add_argument("--pixelfixer", action="store_true", help="Chỉ chạy 5 nhóm kiểm thử liên quan đến Pixel Art Fixer (Rust Native)")
+    parser.add_argument("--upscaler", action="store_true", help="Chỉ chạy các bài test liên quan đến AI Image Upscaler (RealPLKSR)")
     parser.add_argument("--autoscaler", action="store_true", help="Chỉ chạy các bài test liên quan đến Docker Swarm Autoscaler")
     parser.add_argument("--rmbg", action="store_true", help="Chỉ chạy các bài test liên quan đến Remove Background (BRIA RMBG-1.4 & ONNX)")
     parser.add_argument("--benchmark-limits", action="store_true", help="Chạy benchmark đo lường giới hạn thời lượng xử lý audio/video")
@@ -80,6 +81,12 @@ def main():
         target_dir = os.path.join(tests_dir, "test_pixelfixer")
         print("=" * 65)
         print("   BẮT ĐẦU CHẠY 5 NHÓM TEST: PIXEL ART FIXER (RUST NATIVE)")
+        print("=" * 65)
+        suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
+    elif args.upscaler:
+        target_dir = os.path.join(tests_dir, "test_upscaler")
+        print("=" * 65)
+        print("   BẮT ĐẦU CHẠY BỘ TEST: AI IMAGE UPSCALER (REALPLKSR)")
         print("=" * 65)
         suite = loader.discover(start_dir=target_dir, pattern="test_*.py")
     elif args.autoscaler:

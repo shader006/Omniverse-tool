@@ -66,8 +66,8 @@ class TestSecurityAndValidation(unittest.TestCase):
                     self.assertNotIn("root:x:0:0", body, f"LỖ HỔNG NGUY HIỂM: Path traversal thành công với {fname}")
                     self.assertNotIn("package main", body, f"LỖ HỔNG: Lộ file nguồn backend với {fname}")
             except urllib.error.HTTPError as e:
-                # Bắt buộc phải là 400 Bad Request hoặc 404 Not Found
-                self.assertIn(e.code, [400, 404], f"Kỳ vọng 400/404 cho {fname} nhưng nhận {e.code}")
+                # Bắt buộc phải là 400 Bad Request, 403 Forbidden (Pingora WAF) hoặc 404 Not Found
+                self.assertIn(e.code, [400, 403, 404], f"Kỳ vọng 400/403/404 cho {fname} nhưng nhận {e.code}")
 
         print(" [PASS] test_01: Chặn đứng 100% các nỗ lực tấn công Path Traversal trên /api/file/")
 
@@ -103,8 +103,8 @@ class TestSecurityAndValidation(unittest.TestCase):
                 with make_request(f"/api/file/{p}", timeout=3) as res:
                     self.fail(f"Kỳ vọng 400/404/502 cho null-byte payload {p} nhưng nhận {res.status}")
             except urllib.error.HTTPError as e:
-                # Pingora hoặc Go Gateway chặn đứng với 400, 404 hoặc 502
-                self.assertIn(e.code, [400, 404, 502])
+                # Pingora hoặc Go/NestJS Gateway chặn đứng với 400, 403, 404 hoặc 502
+                self.assertIn(e.code, [400, 403, 404, 502])
             except Exception:
                 pass
         print(" [PASS] test_03: Chặn đứng tấn công Null-byte injection an toàn")
