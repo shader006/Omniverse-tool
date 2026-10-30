@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import PixelHero from './components/PixelHero/PixelHero';
+import Banner from './components/Banner/Banner';
 import ToolsNavbar from './components/ToolsNavbar/ToolsNavbar';
 import ModeSwitcher from './components/ModeSwitcher';
 import UrlDownloader from './components/UrlDownloader/UrlDownloader';
@@ -9,38 +9,23 @@ import RemoveBackground from './components/RemoveBackground/RemoveBackground';
 import PixelFixer from './components/PixelFixer/PixelFixer';
 import PictureUpscaler from './components/PictureUpscaler/PictureUpscaler';
 import Footer from './components/Footer';
+import FaqSection from './components/FaqSection';
+import FeaturesGrid from './components/FeaturesGrid';
+import FoxTutorial from './components/FoxTutorial/FoxTutorial';
+import BeforeAfterShowcase from './components/BeforeAfter/BeforeAfterShowcase';
+import AdSlot from './components/Ads/AdSlot';
+import PolicyModal from './components/Policy/PolicyModal';
+import AboutUs from './components/Policy/AboutUs';
 import LoginModal from './components/ui/pixelact-ui/LoginModal';
-import PixelMascot from './components/PixelMascot/PixelMascot';
+import SettingsModal from './components/Settings/SettingsModal';
 import { AuthProvider } from './contexts/AuthContext';
-
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null, stack: null };
-  }
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error: error?.toString(), stack: error?.stack };
-  }
-  componentDidCatch(error, errorInfo) {
-    console.error("ErrorBoundary caught:", error, errorInfo);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ color: '#ff3333', background: '#111', padding: '20px', border: '3px solid red' }}>
-          <h3>COMPONENT CRASHED:</h3>
-          <p>{this.state.error}</p>
-          <pre style={{ fontSize: '11px', whiteSpace: 'pre-wrap' }}>{this.state.stack}</pre>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
 
 export default function App() {
   const getInitialRoute = () => {
     const hash = typeof window !== 'undefined' ? window.location.hash.replace('#', '').toLowerCase() : '';
+    if (hash === 'about') {
+      return { page: 'about', mode: 'url' };
+    }
     if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
       return { page: 'tools', mode: hash };
     }
@@ -51,10 +36,20 @@ export default function App() {
   };
 
   const initialRoute = getInitialRoute();
-  const [currentPage, setCurrentPage] = useState(initialRoute.page);
+  const [currentPage, setCurrentPage] = useState(initialRoute.page); // 'home' | 'tools' | 'about'
   const [currentMode, setCurrentMode] = useState(initialRoute.mode);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lang, setLang] = useState('vi'); // 'vi' | 'en'
+
+  // Global policy modal state (Footer / LoginModal / anywhere)
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [policyType, setPolicyType] = useState('terms');
+
+  const openPolicy = (type) => {
+    setPolicyType(type);
+    setPolicyOpen(true);
+  };
 
   const toggleLang = () => {
     setLang((prev) => (prev === 'vi' ? 'en' : 'vi'));
@@ -63,12 +58,12 @@ export default function App() {
   useEffect(() => {
     const handleRoute = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase();
-      if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale', 'tools', 'tools-workspace'].includes(hash)) {
+      if (hash === 'about') {
+        setCurrentPage('about');
+      } else if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale', 'tools', 'tools-workspace'].includes(hash)) {
         setCurrentPage('tools');
         if (['url', 'file', 'transcribe', 'bg', 'pixel', 'upscale'].includes(hash)) {
           setCurrentMode(hash);
-        } else if (!currentMode) {
-          setCurrentMode('url');
         }
       } else {
         setCurrentPage('home');
@@ -78,7 +73,7 @@ export default function App() {
     handleRoute();
     window.addEventListener('hashchange', handleRoute);
     return () => window.removeEventListener('hashchange', handleRoute);
-  }, [currentMode]);
+  }, []);
 
   const navigateToTools = (mode) => {
     setCurrentPage('tools');
@@ -97,6 +92,12 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
+  const navigateToAbout = () => {
+    setCurrentPage('about');
+    window.location.hash = '#about';
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+
   const handleSelectMode = (mode) => {
     setCurrentMode(mode);
     window.location.hash = `#${mode}`;
@@ -105,47 +106,115 @@ export default function App() {
   return (
     <AuthProvider>
       <div className="app-root">
-        {currentPage === 'home' ? (
-          /* TRANG CHỦ: PIXEL HERO RIÊNG BIỆT (KHÔNG CÒN GỘP CHUNG VỚI TOOLS) */
-          <PixelHero 
-            onExploreTools={() => navigateToTools()}
-            onSelectTool={(toolId) => navigateToTools(toolId)}
-            onOpenLogin={() => setIsLoginOpen(true)}
-            lang={lang}
-            onToggleLang={toggleLang}
-          />
+        {currentPage === 'about' ? (
+          /* TRANG ABOUT US */
+          <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+            <ToolsNavbar
+              onGoHome={navigateToHome}
+              onGoAbout={navigateToAbout}
+              onGoTools={() => navigateToTools()}
+              onOpenLogin={() => setIsLoginOpen(true)}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              lang={lang}
+              onToggleLang={toggleLang}
+              currentPage="about"
+            />
+            <AboutUs
+              lang={lang}
+              onNavigateTools={() => navigateToTools()}
+            />
+            <Footer
+              lang={lang}
+              onOpenPolicy={openPolicy}
+              onOpenAbout={navigateToAbout}
+            />
+          </div>
+        ) : currentPage === 'home' ? (
+          /* TRANG CHỦ: HERO BANNER */
+          <div className="home-layout">
+            <Banner 
+              onExploreTools={() => navigateToTools()}
+              onSelectTool={(toolId) => navigateToTools(toolId)}
+              onGoAbout={navigateToAbout}
+              onOpenLogin={() => setIsLoginOpen(true)}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              lang={lang}
+            />
+          </div>
         ) : (
           /* TRANG TOOLS: TRANG RIÊNG BIỆT CÓ THANH NAV TIỆN LỢI */
           <div id="tools-page" className="workspace-section" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
             <ToolsNavbar 
               onGoHome={navigateToHome} 
+              onGoAbout={navigateToAbout}
+              onGoTools={() => navigateToTools()}
               onOpenLogin={() => setIsLoginOpen(true)} 
+              onOpenSettings={() => setIsSettingsOpen(true)}
               lang={lang}
               onToggleLang={toggleLang}
+              currentPage="tools"
             />
 
             <main className="container" style={{ flex: 1, paddingTop: '10px' }}>
               <ModeSwitcher currentMode={currentMode} onSelectMode={handleSelectMode} lang={lang} />
 
-              <ErrorBoundary>
-                {currentMode === 'url' && <UrlDownloader lang={lang} />}
-                {currentMode === 'file' && <FileConverter lang={lang} />}
-                {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
-                {currentMode === 'bg' && <RemoveBackground lang={lang} />}
-                {currentMode === 'pixel' && <PixelFixer lang={lang} />}
-                {currentMode === 'upscale' && <PictureUpscaler lang={lang} />}
-              </ErrorBoundary>
+              {/* Before/After showcase phía trên tool content – chỉ áp dụng cho công cụ ảnh */}
+              {['bg', 'pixel', 'upscale'].includes(currentMode) && (
+                <BeforeAfterShowcase mode={currentMode} lang={lang} />
+              )}
+
+              {currentMode === 'url' && <UrlDownloader lang={lang} />}
+              {currentMode === 'file' && <FileConverter lang={lang} />}
+              {currentMode === 'transcribe' && <WhisperTranscribe lang={lang} />}
+              {currentMode === 'bg' && <RemoveBackground lang={lang} />}
+              {currentMode === 'pixel' && <PixelFixer lang={lang} />}
+              {currentMode === 'upscale' && <PictureUpscaler lang={lang} />}
+
+              {/* 💰 Quảng cáo duy nhất ở cuối trang (Adsterra – Rectangle 336x280) */}
+              <AdSlot
+                network="adsterra"
+                format="rectangle"
+                width={336}
+                height={280}
+                className="ad-after-tool"
+              />
             </main>
 
-            <Footer lang={lang} />
+            <Footer
+              lang={lang}
+              onOpenPolicy={openPolicy}
+              onOpenAbout={navigateToAbout}
+            />
           </div>
         )}
 
+        {/* Hướng Dẫn Từng Bước Chú Cáo Pixel (Chỉ hiện khi ở trang Tools) */}
+        {currentPage === 'tools' && (
+          <FoxTutorial
+            key={currentMode}
+            mode={currentMode}
+            lang={lang}
+          />
+        )}
+
+        {/* Global Policy Modal – có thể mở từ Footer, LoginModal, hoặc bất kỳ đâu */}
+        <PolicyModal
+          type={policyType}
+          lang={lang}
+          isOpen={policyOpen}
+          onClose={() => setPolicyOpen(false)}
+        />
+
+        {/* Modal Cài đặt tài khoản, Đổi tên & Ngôn ngữ */}
+        <SettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)} 
+          lang={lang} 
+          onSelectLang={(newLang) => setLang(newLang)}
+        />
+
         {/* Modal đăng nhập dùng chung ở cả 2 view */}
         <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} lang={lang} />
-
-        {/* Mascot Cáo Pixel tương tác thông minh */}
-        <PixelMascot lang={lang} />
       </div>
     </AuthProvider>
   );

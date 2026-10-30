@@ -178,18 +178,6 @@ export default function FileConverter({ lang = 'vi' }) {
       </div>
 
       <div className="card file-converter-card">
-        {/* Nút Test Giao Diện Xuất File */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.file_test_btn}
-          >
-            {tr.file_test_btn}
-          </button>
-        </div>
-
         {/* Dropzone */}
         <div 
           className={`file-dropzone ${isDragOver ? 'drag-over' : ''}`}
@@ -269,7 +257,7 @@ export default function FileConverter({ lang = 'vi' }) {
         </div>
 
         {/* Options & Action */}
-        {selectedFile && (
+        {selectedFile && !resultData && (
           <div className="file-options-panel">
             <div className="options-grid">
               <div className="option-field">
@@ -383,13 +371,23 @@ export default function FileConverter({ lang = 'vi' }) {
         {resultData && (
           <div className="file-result-card">
             <div className="result-success-box">
-              <div className="result-pdf-icon">
-                <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                </svg>
+              <div className={targetFormat === 'docx' ? 'result-doc-icon result-docx' : 'result-pdf-icon'}>
+                {targetFormat === 'docx' ? (
+                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="8" y1="13" x2="16" y2="13"></line>
+                    <line x1="8" y1="17" x2="16" y2="17"></line>
+                    <line x1="10" y1="9" x2="8" y2="9"></line>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                  </svg>
+                )}
               </div>
               <div className="result-details">
                 <div className="result-tag">{tr.file_result_tag}</div>

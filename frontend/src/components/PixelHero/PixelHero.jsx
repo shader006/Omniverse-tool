@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/pixelact-ui/button';
 import LoginModal from '@/components/ui/pixelact-ui/LoginModal';
 import { useAuth } from '../../hooks/useAuth';
@@ -6,7 +6,21 @@ import './pixel-hero.css';
 
 export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, lang = 'vi', onToggleLang }) {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const { user, isLoggedIn } = useAuth();
+  const { user, isLoggedIn, logout } = useAuth();
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  const displayName = user?.displayName || user?.email?.split('@')[0] || 'User';
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleOpenTools = (e) => {
     if (e) e.preventDefault();
@@ -77,18 +91,101 @@ export default function PixelHero({ onExploreTools, onSelectTool, onOpenLogin, l
             <span className="pixel-hero-lang-tag">{(lang || 'vi').toUpperCase()}</span>
           </button>
 
-          {/* ── Sát bên phải: User Avatar Badge (khi đã login) hoặc Login ── */}
+          {/* ── Sát bên phải: User Avatar Chip & Dropdown (khi đã login) hoặc Login ── */}
           {isLoggedIn ? (
-            <span className="pixel-nav-link pixel-hero-user-badge" title={user?.email || user?.displayName}>
-              {user?.photoURL ? (
-                <img src={user.photoURL} alt="" className="pixel-hero-user-mini-avatar" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="pixel-hero-user-mini-avatar pixel-hero-user-mini-avatar--initial">
-                  {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
+            <div className="pixel-user-chip-wrapper" ref={menuRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                className="pixel-user-chip"
+                onClick={() => setShowUserMenu((prev) => !prev)}
+                title={user?.email || displayName}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: '#111827',
+                  border: '2px solid #22c55e',
+                  padding: '4px 10px 4px 4px',
+                  cursor: 'pointer',
+                  boxShadow: '2px 2px 0 #000',
+                  fontFamily: "'Press Start 2P', monospace"
+                }}
+              >
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt="" className="pixel-hero-user-mini-avatar" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="pixel-hero-user-mini-avatar pixel-hero-user-mini-avatar--initial">
+                    {(displayName || 'U').charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="pixel-hero-user-hi" style={{ fontSize: '0.62rem', color: '#e2e8f0', maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {displayName}
                 </span>
+                <svg viewBox="0 0 10 6" fill="currentColor" width="8" height="5" style={{ color: '#22c55e' }}>
+                  <path d="M0 0l5 6 5-6z" />
+                </svg>
+              </button>
+
+              {/* Dropdown Menu */}
+              {showUserMenu && (
+                <div 
+                  className="pixel-user-dropdown" 
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    minWidth: '220px',
+                    background: '#0d0f14',
+                    border: '2px solid #1e222d',
+                    boxShadow: '4px 4px 0 #000, 0 0 20px rgba(0, 0, 0, 0.6)',
+                    zIndex: 200,
+                    textAlign: 'left'
+                  }}
+                >
+                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '0.55rem', color: '#cbd5e1', wordBreak: 'break-all', lineHeight: '1.5' }}>
+                      {user?.email || 'demo@oniverse.local'}
+                    </span>
+                    <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '0.5rem', color: '#64748b' }}>
+                      {user?.providerData?.[0]?.providerId === 'google.com'
+                        ? '🔵 Google'
+                        : user?.providerData?.[0]?.providerId === 'github.com'
+                          ? '⚫ GitHub'
+                          : '🎮 Demo User'}
+                    </span>
+                  </div>
+                  <div style={{ height: '2px', background: '#1e222d', margin: '0 12px' }} />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setShowUserMenu(false);
+                      try { await logout(); } catch (e) { console.error(e); }
+                    }}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '12px 16px',
+                      background: 'transparent',
+                      border: 'none',
+                      fontFamily: "'Press Start 2P', monospace",
+                      fontSize: '0.6rem',
+                      color: '#f87171',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+                      <polyline points="16 17 21 12 16 7"/>
+                      <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    {lang === 'vi' ? 'Đăng xuất' : 'Sign Out'}
+                  </button>
+                </div>
               )}
-              <span className="pixel-hero-user-hi">{user?.displayName || user?.email?.split('@')[0] || 'User'}</span>
-            </span>
+            </div>
           ) : (
             <button 
               type="button" 

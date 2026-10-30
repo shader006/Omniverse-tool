@@ -26,7 +26,10 @@ export const authApi = {
    * Thu hồi phiên đăng nhập hiện tại trên backend.
    */
   async logout(sessionId) {
-    return apiPost(`/api/v1/auth/logout/${sessionId}`);
+    if (sessionId) {
+      return apiPost(`/api/v1/auth/logout/${sessionId}`);
+    }
+    return apiPost('/api/v1/auth/logout');
   },
 
   /**

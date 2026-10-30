@@ -24,6 +24,7 @@ export async function apiFetch(url, options = {}) {
   }
 
   return fetch(`${API_BASE}${url}`, {
+    credentials: 'include',
     ...options,
     headers,
   });

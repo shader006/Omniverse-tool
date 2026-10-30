@@ -236,18 +236,6 @@ export default function RemoveBackground({ lang = 'vi' }) {
       </div>
 
       <div className="card search-card file-conver-card">
-        {/* Nút Test Giao Diện Xuất File */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.bg_test_btn}
-          >
-            {tr.bg_test_btn}
-          </button>
-        </div>
-
         {/* Dropzone */}
         <div 
           className={`file-dropzone ${isDragOver ? 'drag-over' : ''}`}
@@ -340,58 +328,21 @@ export default function RemoveBackground({ lang = 'vi' }) {
         </div>
 
         {/* Options Panel */}
-        {selectedFile && (
+        {selectedFile && !resultData && (
           <div id="bg-options-panel" className="file-options-panel">
-            <div className="options-grid">
-              <div className="option-item">
-                <label htmlFor="bg-engine-select" className="option-label">
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
-                    <path d="M9 1H6L3 9h4l-2 6 8-8H9l1-6z" />
-                  </svg>
-                  <span>{tr.bg_engine_label}</span>
-                </label>
-                <select 
-                  id="bg-engine-select" 
-                  className="form-select"
-                  value={engine}
-                  onChange={(e) => setEngine(e.target.value)}
-                >
-                  <option value="client">
-                    {isMobile ? tr.bg_engine_client_mobile : tr.bg_engine_client}
-                  </option>
-                  <option value="server">
-                    {isMobile ? tr.bg_engine_server_mobile : tr.bg_engine_server}
-                  </option>
-                </select>
-              </div>
-              <div className="option-item" id="bg-model-select-wrapper">
-                <label htmlFor="bg-model-select" className="option-label">
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
-                    <path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zm-3-2h2v2H9V5zm-4 4h2v2H5V9zm4 0h2v2H9V9zm-4-4h2v2H5V5z" />
-                  </svg>
-                  <span>{tr.bg_model_label}</span>
-                </label>
-                <select 
-                  id="bg-model-select" 
-                  className="form-select"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                >
-                  <option value="birefnet-lite">{tr.bg_model_birefnet}</option>
-                </select>
-              </div>
-
-              <div className="option-item">
-                <label htmlFor="bg-color-select" className="option-label">
+            <div className="options-grid" style={{ gridTemplateColumns: '1fr', maxWidth: '420px', marginBottom: '16px' }}>
+              <div className="option-field">
+                <label htmlFor="bg-color-select" className="option-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', marginBottom: '8px' }}>
                   <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" shapeRendering="crispEdges">
                     <path d="M5 1h6v2h2v2h1v6h-1v2h-2v2H5v-2H3v-2H2V5h1V3h2V1zm3 2v10h3v-2h1V5h-1V3H8z" />
                   </svg>
                   <span>{tr.bg_color_label}</span>
                 </label>
-                <div className="bg-color-picker-wrapper">
+                <div className="bg-color-picker-wrapper" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <select 
                     id="bg-color-select" 
-                    className="form-select"
+                    className="select-option"
+                    style={{ flex: 1 }}
                     value={colorOption}
                     onChange={(e) => {
                       setColorOption(e.target.value);
@@ -421,44 +372,27 @@ export default function RemoveBackground({ lang = 'vi' }) {
               </div>
             </div>
 
-            <div className="option-checkbox-row">
-              <label className="custom-checkbox">
-                <input 
-                  type="checkbox" 
-                  id="bg-auto-compress" 
-                  checked={autoCompress}
-                  onChange={(e) => setAutoCompress(e.target.checked)}
-                />
-                <span className="checkbox-box"></span>
-                <span className="checkbox-label">{tr.bg_auto_compress}</span>
-              </label>
-            </div>
-
-            <div className="option-checkbox-row">
-              <label className="custom-checkbox">
-                <input 
-                  type="checkbox" 
-                  id="bg-alpha-matting" 
-                  checked={alphaMatting}
-                  onChange={(e) => setAlphaMatting(e.target.checked)}
-                />
-                <span className="checkbox-box"></span>
-                <span className="checkbox-label">{tr.bg_alpha_matting}</span>
-              </label>
-            </div>
-
-            <div className="convert-action-wrapper">
+            <div className="file-action-wrapper">
               <button 
                 type="button" 
                 id="btn-start-remove-bg" 
-                className="btn-convert btn-start-convert"
+                className="btn-convert-file" 
                 disabled={isProcessing}
                 onClick={handleStartRemoveBg}
               >
-                <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" shapeRendering="crispEdges">
-                  <path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zm-3-2h2v2H9V5zm-4 4h2v2H5V9zm4 0h2v2H9V9zm-4-4h2v2H5V5z" />
-                </svg>
-                <span>{isProcessing ? tr.bg_btn_processing : tr.bg_btn_action}</span>
+                {isProcessing ? (
+                  <>
+                    <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }}></div>
+                    <span>{tr.bg_btn_processing}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" shapeRendering="crispEdges">
+                      <path d="M7 1h2v3H7V1zm0 11h2v3H7v-3zM1 7h3v2H1V7zm11 0h3v2h-3V7zm-3-2h2v2H9V5zm-4 4h2v2H5V9zm4 0h2v2H9V9zm-4-4h2v2H5V5z" />
+                    </svg>
+                    <span>{tr.bg_btn_action}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -518,6 +452,39 @@ export default function RemoveBackground({ lang = 'vi' }) {
               afterSrc={resultData.downloadUrl || resultData.previewBase64} 
               lang={lang}
             />
+
+            {/* Instant Background Recolor Pills */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '14px 0', flexWrap: 'wrap' }}>
+              <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: '0.62rem', color: '#94a3b8' }}>Màu nền:</span>
+              <button 
+                type="button" 
+                className={`btn-color-pill ${colorOption === 'transparent' ? 'active' : ''}`}
+                onClick={() => { setColorOption('transparent'); handleColorChange('transparent'); }}
+              >
+                🏁 Trong suốt
+              </button>
+              <button 
+                type="button" 
+                className={`btn-color-pill ${colorOption === '#ffffff' ? 'active' : ''}`}
+                onClick={() => { setColorOption('#ffffff'); handleColorChange('#ffffff'); }}
+              >
+                ⚪ Trắng
+              </button>
+              <button 
+                type="button" 
+                className={`btn-color-pill ${colorOption === '#000000' ? 'active' : ''}`}
+                onClick={() => { setColorOption('#000000'); handleColorChange('#000000'); }}
+              >
+                ⚫ Đen
+              </button>
+              <button 
+                type="button" 
+                className={`btn-color-pill ${colorOption === '#1e293b' ? 'active' : ''}`}
+                onClick={() => { setColorOption('#1e293b'); handleColorChange('#1e293b'); }}
+              >
+                🔵 Navy
+              </button>
+            </div>
 
             <div className="result-actions">
               <a 

@@ -300,17 +300,8 @@ export default function WhisperTranscribe({ lang = 'vi' }) {
       </div>
 
       <div className="card file-converter-card">
-        {/* Nút Test Giao Diện & Nút Xem Kiến Trúc AI Whisper */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.whisper_test_btn}
-          >
-            {tr.whisper_test_btn}
-          </button>
-
+        {/* Nút Xem Kiến Trúc AI Whisper */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
           <button
             type="button"
             className="btn-test-export"

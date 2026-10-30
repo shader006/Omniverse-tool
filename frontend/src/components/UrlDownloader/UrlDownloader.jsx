@@ -305,18 +305,6 @@ export default function UrlDownloader({ lang = 'vi' }) {
           </button>
         </form>
 
-        {/* Nút Test Giao Diện Xuất File */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '14px' }}>
-          <button 
-            type="button" 
-            className="btn-test-export"
-            onClick={triggerDemoExport}
-            title={tr.url_test_btn}
-          >
-            {tr.url_test_btn}
-          </button>
-        </div>
-
         {/* Loading State for Info extraction */}
         {isLoadingInfo && (
           <div id="info-loading" className="info-loading">

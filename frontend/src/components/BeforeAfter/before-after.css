@@ -1,0 +1,227 @@
+/* ================================================================
+   BEFORE / AFTER SHOWCASE – CHỈ DÀNH CHO CÔNG CỤ ẢNH (BG & PIXEL)
+   ================================================================ */
+
+.ba-showcase-wrapper {
+  margin: 16px 0 28px;
+  background: #07090e;
+  border: 2px solid #1e293b;
+  box-shadow: 4px 4px 0 #000;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+/* ── Header ── */
+.ba-header {
+  padding: 14px 18px;
+  background: #0d1117;
+  border-bottom: 2px solid #1e293b;
+}
+
+.ba-header-label {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.5rem;
+  color: #22c55e;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ba-pixel-dot {
+  width: 7px;
+  height: 7px;
+  background: #22c55e;
+  display: inline-block;
+  animation: ba-dot-pulse 1.4s step-end infinite;
+}
+
+@keyframes ba-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.ba-title {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: clamp(0.65rem, 1.8vw, 0.8rem);
+  color: #f8fafc;
+  margin: 0 0 6px;
+  letter-spacing: 0.5px;
+  text-shadow: 1px 1px 0 #000;
+}
+
+.ba-subtitle {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.55rem;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.7;
+  letter-spacing: 0.3px;
+}
+
+/* ── Slider Body ── */
+.ba-slider-body {
+  padding: 16px;
+  background: #05070a;
+  display: flex;
+  justify-content: center;
+}
+
+/* ── Image Comparison Slider Container ── */
+.ba-img-slider-container {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  height: 320px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 2px solid #1e293b;
+  box-shadow: 
+    -2px 0 0 #000, 
+     2px 0 0 #000, 
+     0 -2px 0 #000, 
+     0  2px 0 #000, 
+     0 6px 18px rgba(0, 0, 0, 0.7);
+  background: #090c14;
+  cursor: col-resize;
+  user-select: none;
+  border-radius: 4px;
+}
+
+/* Layers: Before & After */
+.ba-slider-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ba-slider-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+/* Badges TRƯỚC / SAU */
+.ba-img-tag {
+  position: absolute;
+  top: 12px;
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.52rem;
+  padding: 4px 8px;
+  letter-spacing: 1px;
+  border: 2px solid #000;
+  box-shadow: 2px 2px 0 #000;
+  z-index: 4;
+}
+
+.ba-tag-before {
+  right: 14px;
+  background: rgba(239, 68, 68, 0.95);
+  color: #ffffff;
+}
+
+.ba-tag-after {
+  left: 14px;
+  background: rgba(34, 197, 94, 0.95);
+  color: #000000;
+  font-weight: bold;
+}
+
+/* Invisible Range Input for Scrubbing */
+.ba-img-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: col-resize;
+  z-index: 10;
+  margin: 0;
+}
+
+/* Divider Handle */
+.ba-img-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.ba-handle-line {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 100%;
+  background: #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.9);
+}
+
+.ba-handle-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  background: #0f172a;
+  border: 2px solid #22c55e;
+  box-shadow: 
+    -2px 0 0 #000, 
+     2px 0 0 #000, 
+     0 -2px 0 #000, 
+     0  2px 0 #000, 
+     0 0 12px rgba(34, 197, 94, 0.6);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  color: #22c55e;
+}
+
+/* ── Footer Hint ── */
+.ba-slider-footer {
+  padding: 10px 16px;
+  background: #07090e;
+  border-top: 1px solid #1e293b;
+  text-align: center;
+}
+
+.ba-slider-hint {
+  font-family: 'Press Start 2P', monospace, sans-serif;
+  font-size: 0.5rem;
+  color: #64748b;
+  letter-spacing: 0.5px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .ba-img-slider-container {
+    height: 240px;
+  }
+
+  .ba-title {
+    font-size: 0.65rem;
+  }
+
+  .ba-subtitle {
+    font-size: 0.5rem;
+  }
+}
